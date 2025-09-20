@@ -52,6 +52,7 @@ public class AppConfig {
             @Value("${app.cache.segments:8}") int segments,
             @Value("${app.cache.maxCapacity:10000}") int maxCap,
             @Value("${app.cache.cleanerPollMillis:100}") long pollMs,
+            @Value("${app.aof.path:data.aof}") String path,
             AppendOnlyFile<String,String> aof,
             MetricsRegistry metrics,
             Broker broker
@@ -62,7 +63,7 @@ public class AppConfig {
                 .build();
 
         // Açılışta AOF replay
-        AppendOnlyFile.replay(new File(System.getProperty("user.dir"), "data.aof"), engine);
+        AppendOnlyFile.replay(new File(path), engine);
         return engine;
     }
 
