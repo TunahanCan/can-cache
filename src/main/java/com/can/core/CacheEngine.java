@@ -33,12 +33,13 @@ public final class CacheEngine<K,V> implements AutoCloseable {
 
     @SuppressWarnings("unchecked")
     private CacheEngine(int segments, int maxCapacity, long cleanerPollMillis,
+                        EvictionPolicyType evictionPolicy,
                         Codec<K> keyCodec, Codec<V> valCodec,
                         AppendOnlyFile<K,V> aof, MetricsRegistry metrics, Broker broker) {
         this.segments = segments;
         this.table = new CacheSegment[segments];
         int per = Math.max(1, maxCapacity / segments);
-        for (int i=0;i<segments;i++) table[i] = new CacheSegment<>(per);
+        for (int i=0;i<segments;i++) table[i] = new CacheSegment<>(per, evictionPolicy.create(per));
 
         this.cleanerPollMillis = cleanerPollMillis;
         this.keyCodec = keyCodec; this.valCodec = valCodec;
@@ -62,6 +63,7 @@ public final class CacheEngine<K,V> implements AutoCloseable {
         private int segments = 8, maxCapacity = 10_000; private long cleanerPollMillis = 100;
         private final Codec<K> keyCodec; private final Codec<V> valCodec;
         private AppendOnlyFile<K,V> aof; private MetricsRegistry metrics; private Broker broker;
+        private EvictionPolicyType evictionPolicy = EvictionPolicyType.LRU;
         public Builder(Codec<K> keyCodec, Codec<V> valCodec){ this.keyCodec=keyCodec; this.valCodec=valCodec; }
         public Builder<K,V> segments(int s){ this.segments=s; return this; }
         public Builder<K,V> maxCapacity(int c){ this.maxCapacity=c; return this; }
@@ -69,9 +71,10 @@ public final class CacheEngine<K,V> implements AutoCloseable {
         public Builder<K,V> aof(AppendOnlyFile<K,V> a){ this.aof=a; return this; }
         public Builder<K,V> metrics(MetricsRegistry m){ this.metrics=m; return this; }
         public Builder<K,V> broker(Broker b){ this.broker=b; return this; }
-        public CacheEngine<K,V> build(){ return new CacheEngine<>(segments, maxCapacity, cleanerPollMillis, keyCodec, valCodec, aof, metrics, broker); }
+        public Builder<K,V> evictionPolicy(EvictionPolicyType p){ this.evictionPolicy=Objects.requireNonNull(p); return this; }
+        public CacheEngine<K,V> build(){ return new CacheEngine<>(segments, maxCapacity, cleanerPollMillis, evictionPolicy,
+                keyCodec, valCodec, aof, metrics, broker); }
     }
-
     private int segIndex(Object key){ return (key.hashCode() & 0x7fffffff) % segments; }
     private CacheSegment<K> seg(Object key){ return table[segIndex(key)]; }
 
@@ -94,7 +97,11 @@ public final class CacheEngine<K,V> implements AutoCloseable {
         long expireAt = (ttl == null || ttl.isZero() || ttl.isNegative()) ? 0L
                 : System.currentTimeMillis() + ttl.toMillis();
         int idx = segIndex(key);
-        seg(key).put(key, new CacheValue(valCodec.encode(value), expireAt));
+        boolean stored = seg(key).put(key, new CacheValue(valCodec.encode(value), expireAt));
+        if (!stored) {
+            if (tSet != null) tSet.record(System.nanoTime() - t0);
+            return;
+        }
         if (expireAt > 0) ttlQueue.offer(new ExpiringKey(key, idx, expireAt));
         if (aof != null) aof.appendSet(key, value, expireAt);
         if (broker != null) broker.publish("keyspace:set", keyCodec.encode(key));
@@ -154,8 +161,8 @@ public final class CacheEngine<K,V> implements AutoCloseable {
             segment.remove(key);
             return;
         }
-        segment.put(key, new CacheValue(value, expireAt));
-        if (expireAt > 0) ttlQueue.offer(new ExpiringKey(key, idx, expireAt));
+        if (segment.putForce(key, new CacheValue(value, expireAt)) && expireAt > 0)
+            ttlQueue.offer(new ExpiringKey(key, idx, expireAt));
     }
 
     private void applyReplayDelete(K key) {
