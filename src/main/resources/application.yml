@@ -1,0 +1,13 @@
+app:
+  cache:
+    segments: 8
+    maxCapacity: 10000
+    cleanerPollMillis: 100
+  aof:
+    path: data.aof
+    fsyncEvery: true
+  cluster:
+    replicationFactor: 1
+    virtualNodes: 64
+  metrics:
+    reportIntervalSeconds: 5
