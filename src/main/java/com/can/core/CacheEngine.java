@@ -140,11 +140,26 @@ public final class CacheEngine<K,V> implements AutoCloseable {
     public void replay(byte[] op, byte[] k, byte[] v, long expireAt){
         K key = keyCodec.decode(k);
         if (op[0] == 'S') {
-            long ttlMs = expireAt > 0 ? (expireAt - System.currentTimeMillis()) : 0;
-            set(key, valCodec.decode(v), ttlMs > 0 ? Duration.ofMillis(ttlMs) : null);
+            applyReplayEntry(key, v, expireAt);
         } else if (op[0] == 'D') {
-            delete(key);
+            applyReplayDelete(key);
         }
+    }
+
+    private void applyReplayEntry(K key, byte[] value, long expireAt) {
+        Objects.requireNonNull(key);
+        int idx = segIndex(key);
+        CacheSegment<K> segment = table[idx];
+        if (expireAt > 0 && expireAt <= System.currentTimeMillis()) {
+            segment.remove(key);
+            return;
+        }
+        segment.put(key, new CacheValue(value, expireAt));
+        if (expireAt > 0) ttlQueue.offer(new ExpiringKey(key, idx, expireAt));
+    }
+
+    private void applyReplayDelete(K key) {
+        seg(key).remove(key);
     }
 
     @Override public void close(){
