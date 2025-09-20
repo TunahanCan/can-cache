@@ -7,6 +7,7 @@ import com.can.cluster.HashFn;
 import com.can.cluster.Node;
 import com.can.codec.StringCodec;
 import com.can.core.CacheEngine;
+import com.can.core.EvictionPolicyType;
 import com.can.metric.MetricsRegistry;
 import com.can.metric.MetricsReporter;
 import com.can.pubsub.Broker;
@@ -52,6 +53,7 @@ public class AppConfig {
             @Value("${app.cache.segments:8}") int segments,
             @Value("${app.cache.maxCapacity:10000}") int maxCap,
             @Value("${app.cache.cleanerPollMillis:100}") long pollMs,
+            @Value("${app.cache.evictionPolicy:LRU}") String evictionPolicy,
             @Value("${app.aof.path:data.aof}") String path,
             AppendOnlyFile<String,String> aof,
             MetricsRegistry metrics,
@@ -59,6 +61,7 @@ public class AppConfig {
     ) {
         var engine = CacheEngine.<String,String>builder(StringCodec.UTF8, StringCodec.UTF8)
                 .segments(segments).maxCapacity(maxCap).cleanerPollMillis(pollMs)
+                .evictionPolicy(EvictionPolicyType.fromConfig(evictionPolicy))
                 .aof(aof).metrics(metrics).broker(broker)
                 .build();
 
