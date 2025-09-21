@@ -1,6 +1,5 @@
 package com.can.config;
 
-import com.can.aof.AppendOnlyFile;
 import com.can.cluster.ClusterClient;
 import com.can.cluster.ConsistentHashRing;
 import com.can.cluster.HashFn;
@@ -10,6 +9,8 @@ import com.can.core.CacheEngine;
 import com.can.core.EvictionPolicyType;
 import com.can.metric.MetricsRegistry;
 import com.can.metric.MetricsReporter;
+import com.can.rdb.SnapshotFile;
+import com.can.rdb.SnapshotScheduler;
 import com.can.pubsub.Broker;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Disposes;
@@ -63,33 +64,48 @@ public class AppConfig {
 
     @Produces
     @Singleton
-    public CacheEngine<String, String> cacheEngine(MetricsRegistry metrics, Broker broker) {
+    public CacheEngine<String, String> cacheEngine(MetricsRegistry metrics, Broker broker, SnapshotFile<String, String> snapshotFile) {
         var cacheProps = properties.cache();
-        var aofProps = properties.aof();
-
-        AppendOnlyFile<String, String> aof = new AppendOnlyFile<>(
-                new File(aofProps.path()),
-                StringCodec.UTF8,
-                StringCodec.UTF8,
-                aofProps.fsyncEvery()
-        );
 
         CacheEngine<String, String> engine = CacheEngine.<String, String>builder(StringCodec.UTF8, StringCodec.UTF8)
                 .segments(cacheProps.segments())
                 .maxCapacity(cacheProps.maxCapacity())
                 .cleanerPollMillis(cacheProps.cleanerPollMillis())
                 .evictionPolicy(EvictionPolicyType.fromConfig(cacheProps.evictionPolicy()))
-                .aof(aof)
                 .metrics(metrics)
                 .broker(broker)
                 .build();
 
-        AppendOnlyFile.replay(new File(aofProps.path()), engine);
+        snapshotFile.load(engine);
         return engine;
     }
 
     void disposeCacheEngine(@Disposes CacheEngine<String, String> engine) {
         engine.close();
+    }
+
+    @Produces
+    @Singleton
+    public SnapshotFile<String, String> snapshotFile() {
+        var rdbProps = properties.rdb();
+        return new SnapshotFile<>(
+                new File(rdbProps.path()),
+                StringCodec.UTF8
+        );
+    }
+
+    @Produces
+    @Singleton
+    public SnapshotScheduler<String, String> snapshotScheduler(CacheEngine<String, String> engine,
+                                                               SnapshotFile<String, String> snapshotFile) {
+        long interval = properties.rdb().snapshotIntervalSeconds();
+        SnapshotScheduler<String, String> scheduler = new SnapshotScheduler<>(engine, snapshotFile, interval);
+        scheduler.start();
+        return scheduler;
+    }
+
+    void disposeSnapshotScheduler(@Disposes SnapshotScheduler<String, String> scheduler) {
+        scheduler.close();
     }
 
     @Produces

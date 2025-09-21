@@ -7,7 +7,7 @@ import io.smallrye.config.WithDefault;
 public interface AppProperties {
 
     Metrics metrics();
-    Aof aof();
+    Rdb rdb();
     Cache cache();
     Cluster cluster();
 
@@ -16,12 +16,12 @@ public interface AppProperties {
         long reportIntervalSeconds();
     }
 
-    interface Aof {
-        @WithDefault("data.aof")
+    interface Rdb {
+        @WithDefault("data.rdb")
         String path();
 
-        @WithDefault("true")
-        boolean fsyncEvery();
+        @WithDefault("60")
+        long snapshotIntervalSeconds();
     }
 
     interface Cache {
