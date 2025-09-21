@@ -48,6 +48,9 @@ class AppConfigRdbPathTest {
         private static final String KEY = Base64.getEncoder().encodeToString("foo".getBytes(StandardCharsets.UTF_8));
         private static final String VALUE = Base64.getEncoder().encodeToString("bar".getBytes(StandardCharsets.UTF_8));
 
+        public CustomSnapshotProfile() {
+        }
+
         static {
             try {
                 SNAPSHOT_FILE = Files.createTempFile("can-cache-test", ".rdb");
