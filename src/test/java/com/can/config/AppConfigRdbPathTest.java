@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @QuarkusTest
 @TestProfile(AppConfigRdbPathTest.CustomSnapshotProfile.class)
-class AppConfigRdbPathTest {
+public class AppConfigRdbPathTest {
 
     @Inject
     CacheEngine<String, String> engine;
@@ -42,7 +42,7 @@ class AppConfigRdbPathTest {
         }
     }
 
-    static class CustomSnapshotProfile implements QuarkusTestProfile {
+    public static class CustomSnapshotProfile implements QuarkusTestProfile {
 
         static final Path SNAPSHOT_FILE;
         private static final String KEY = Base64.getEncoder().encodeToString("foo".getBytes(StandardCharsets.UTF_8));
