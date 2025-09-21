@@ -1,6 +1,7 @@
 package com.can.rdb;
 
 import com.can.core.CacheEngine;
+import org.jboss.logging.Logger;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -9,6 +10,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class SnapshotScheduler<K, V> implements AutoCloseable
 {
+    private static final Logger LOG = Logger.getLogger(SnapshotScheduler.class);
+
     private final CacheEngine<K, V> engine;
     private final SnapshotFile<K, V> snapshotFile;
     private final long intervalSeconds;
@@ -35,8 +38,9 @@ public final class SnapshotScheduler<K, V> implements AutoCloseable
     private void safeSnapshot() {
         try {
             snapshotFile.write(engine);
-        } catch (Throwable t) {
-            t.printStackTrace();
+        } catch (Throwable t)
+        {
+            LOG.log(Logger.Level.ERROR,t .getMessage());
         }
     }
 

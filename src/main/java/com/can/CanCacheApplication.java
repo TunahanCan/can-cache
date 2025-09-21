@@ -8,7 +8,8 @@ import io.quarkus.runtime.annotations.QuarkusMain;
 public class CanCacheApplication implements QuarkusApplication {
 
     @Override
-    public int run(String... args) {
+    public int run(String... args)
+    {
         Quarkus.waitForExit();
         return 0;
     }

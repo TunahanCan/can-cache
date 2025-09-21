@@ -80,7 +80,7 @@ public final class CacheEngine<K,V> implements AutoCloseable {
             try {
                 ExpiringKey ek;
                 while ((ek = ttlQueue.poll()) != null) {
-                    table[ek.segmentIndex].remove((K) ek.key);
+                    table[ek.segmentIndex()].remove((K) ek.key());
                     if (evictions != null) evictions.inc();
                 }
             } catch (Throwable ignored) {}

@@ -18,6 +18,7 @@ public final class StreamLog
         log.addLast(record);
         return System.nanoTime();
     }
+
     public synchronized List<byte[]> xrange(int count) {
         var out = new ArrayList<byte[]>(Math.min(count, log.size()));
         int i=0; for (var b : log) { if (i++>=count) break; out.add(b); }

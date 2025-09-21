@@ -111,7 +111,7 @@ public class AppConfig {
     @Produces
     @Singleton
     public ConsistentHashRing<Node<String, String>> ring() {
-        HashFn hash = key -> Arrays.hashCode(key);
+        HashFn hash = Arrays::hashCode;
         return new ConsistentHashRing<>(hash, properties.cluster().virtualNodes());
     }
 

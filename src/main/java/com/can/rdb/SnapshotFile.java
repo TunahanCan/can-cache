@@ -15,15 +15,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Base64;
 
-public final class SnapshotFile<K, V> {
-
-    private final File file;
-    private final Codec<K> keyCodec;
-
-    public SnapshotFile(File file, Codec<K> keyCodec) {
-        this.file = file;
-        this.keyCodec = keyCodec;
-    }
+public record SnapshotFile<K, V>(File file, Codec<K> keyCodec) {
 
     public synchronized void write(CacheEngine<K, V> engine) {
         try {

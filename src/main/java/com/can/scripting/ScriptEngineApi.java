@@ -9,8 +9,10 @@ public final class ScriptEngineApi<K,V>
 {
     private final Map<String, BiFunction<Context<K,V>, Object[], Object>> funcs = new ConcurrentHashMap<>();
 
-    public static final class Context<K,V> {
-        public interface CacheOps<K,V> {
+    public static final class Context<K,V>
+    {
+        public interface CacheOps<K,V>
+        {
             void set(K key, V value, Duration ttl);
             V get(K key);
             boolean del(K key);
@@ -20,7 +22,8 @@ public final class ScriptEngineApi<K,V>
         public CacheOps<K,V> cache(){ return ops; }
     }
 
-    public void register(String name, BiFunction<Context<K,V>, Object[], Object> fn) {
+    public void register(String name, BiFunction<Context<K,V>, Object[], Object> fn)
+    {
         funcs.put(name, fn);
     }
     public Object run(String name, Context<K,V> ctx, Object... args) {

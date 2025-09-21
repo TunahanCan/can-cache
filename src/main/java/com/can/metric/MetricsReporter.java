@@ -11,11 +11,12 @@ public final class MetricsReporter implements AutoCloseable
             Executors.newScheduledThreadPool(2, Thread.ofVirtual().factory());
 
     public MetricsReporter(MetricsRegistry reg){ this.reg = reg; }
-    public void start(long intervalSeconds){ exec.scheduleAtFixedRate(this::dump, intervalSeconds, intervalSeconds, TimeUnit.SECONDS); }
+    public void start(long intervalSeconds){ exec.scheduleAtFixedRate(this::dump,
+            intervalSeconds, intervalSeconds, TimeUnit.SECONDS); }
 
     private void dump()
     {
-        System.out.println("=== metrics ===");
+        IO.println("=== METRICS ====");
         for (var c : reg.counters().values()) System.out.printf("counter %s = %d%n", c.name(), c.get());
         for (var t : reg.timers().values()){
             var s = t.snapshot();
