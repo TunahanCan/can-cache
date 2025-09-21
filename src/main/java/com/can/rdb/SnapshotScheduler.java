@@ -7,8 +7,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public final class SnapshotScheduler<K, V> implements AutoCloseable {
-
+public final class SnapshotScheduler<K, V> implements AutoCloseable
+{
     private final CacheEngine<K, V> engine;
     private final SnapshotFile<K, V> snapshotFile;
     private final long intervalSeconds;

@@ -66,8 +66,8 @@ public class AppConfig {
     @Singleton
     public CacheEngine<String, String> cacheEngine(MetricsRegistry metrics, Broker broker, SnapshotFile<String, String> snapshotFile) {
         var cacheProps = properties.cache();
-
-        CacheEngine<String, String> engine = CacheEngine.<String, String>builder(StringCodec.UTF8, StringCodec.UTF8)
+        CacheEngine<String, String> engine =
+                CacheEngine.<String, String>builder(StringCodec.UTF8, StringCodec.UTF8)
                 .segments(cacheProps.segments())
                 .maxCapacity(cacheProps.maxCapacity())
                 .cleanerPollMillis(cacheProps.cleanerPollMillis())
