@@ -39,7 +39,7 @@ interface EvictionPolicy<K>
             this.evictKey = evictKey;
         }
 
-        public boolean admit(){ return admit; }
+        public boolean shouldAdmit(){ return admit; }
         public K evictKey(){ return evictKey; }
 
         @SuppressWarnings("unchecked")

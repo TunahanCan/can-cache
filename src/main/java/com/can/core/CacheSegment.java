@@ -49,7 +49,7 @@ final class CacheSegment<K>
 
             if (!force) {
                 EvictionPolicy.AdmissionDecision<K> decision = policy.admit(key, map, capacity);
-                if (!decision.admit()) {
+                if (!decision.shouldAdmit()) {
                     return false;
                 }
                 K victim = decision.evictKey();
