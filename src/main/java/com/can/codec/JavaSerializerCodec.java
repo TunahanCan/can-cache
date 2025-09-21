@@ -2,6 +2,11 @@ package com.can.codec;
 
 import java.io.*;
 
+/**
+ * Java'nın yerleşik {@link Serializable} mekanizmasını kullanarak herhangi bir
+ * nesneyi bayt dizisine dönüştüren ve tekrar oluşturan codec'tir. Böylece özel
+ * türler için ek serileştirme kodu yazılmadan önbelleğe alınmaları mümkün olur.
+ */
 public final class JavaSerializerCodec<T extends Serializable> implements Codec<T>
 {
 

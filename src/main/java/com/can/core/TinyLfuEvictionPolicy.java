@@ -2,6 +2,11 @@ package com.can.core;
 
 import java.util.LinkedHashMap;
 
+/**
+ * TinyLFU algoritmasını uygulayarak yeni girişlerin kabul edilip edilmeyeceğine
+ * karar veren gelişmiş tahliye politikasıdır. Sıklık skeçi ve örnekleme dizisi
+ * kullanarak aday ile mevcut kurbanın erişim frekanslarını karşılaştırır.
+ */
 final class TinyLfuEvictionPolicy<K> implements EvictionPolicy<K>
 {
     private static final int[] SEEDS = {0x7f4a7c15, 0x9e3779b9, 0xc2b2ae35, 0x165667b1};

@@ -8,6 +8,13 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * Belirlenen aralıklarla {@link CacheEngine} üzerindeki veriyi güvenli bir şekilde
+ * diske yazmak için arka planda çalışan zamanlayıcıdır. Sanal thread tabanlı
+ * planlayıcıyı kullanarak ilk başlangıçta ve devamında periyodik olarak
+ * {@link SnapshotFile#write(CacheEngine)} çağrısını gerçekleştirir ve hata
+ * durumlarını loglayarak sistemin ayakta kalmasını sağlar.
+ */
 public final class SnapshotScheduler<K, V> implements AutoCloseable
 {
     private static final Logger LOG = Logger.getLogger(SnapshotScheduler.class);

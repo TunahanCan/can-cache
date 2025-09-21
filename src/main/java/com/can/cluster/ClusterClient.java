@@ -4,6 +4,12 @@ import com.can.codec.Codec;
 import java.time.Duration;
 import java.util.List;
 
+/**
+ * Tutarlı hash halkası üzerinden anahtarları ilgili düğümlere yönlendirerek
+ * küme içinde okuma/yazma işlemlerini çoğaltan istemci katmanıdır. Anahtarları
+ * verilen codec ile bayt dizisine çevirir, belirlenen replikasyon faktörü kadar
+ * düğüm seçer ve her işlemde tüm kopyalara ulaşıp tutarlılığı sağlar.
+ */
 public record ClusterClient<K, V>(ConsistentHashRing<Node<K, V>> ring, int replicationFactor, Codec<K> keyCodec)
 {
     public ClusterClient(ConsistentHashRing<Node<K, V>> ring, int replicationFactor, Codec<K> keyCodec) {

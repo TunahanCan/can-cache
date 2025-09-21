@@ -23,6 +23,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 
+/**
+ * CDI tarafından yönetilen bu yapılandırma sınıfı, önbellek motoru, metrik
+ * bileşenleri, snapshot alma mekanizması ve küme istemcisi gibi uygulamanın
+ * çalışması için gerekli tüm tekil bean'leri üretir. Bean oluşturulurken
+ * {@link AppProperties} üzerinden okunan değerler kullanılır ve yaşam döngüsü
+ * boyunca gerekli kaynakların başlatılıp kapatılmasından sorumludur.
+ */
 @ApplicationScoped
 public class AppConfig {
 

@@ -7,6 +7,12 @@ import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Önbellek kapasitesini parçalara ayırarak eşzamanlı erişimi azaltan segment
+ * yapısıdır. Her segment LRU erişim sırası izleyen bir {@link LinkedHashMap}
+ * ve seçilen tahliye politikasını kullanarak anahtarların kabul edilmesi ya da
+ * silinmesini kontrol eder.
+ */
 final class CacheSegment<K>
 {
     private final ReentrantLock lock = new ReentrantLock();

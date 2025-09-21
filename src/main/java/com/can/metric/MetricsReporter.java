@@ -4,6 +4,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Metrik kayıt defterindeki sayaç ve zamanlayıcıları belirli aralıklarla konsola
+ * raporlayan yardımcı servistir. Sanal thread'ler üzerinden çalışan zamanlayıcı
+ * görevleri yönetir ve kapatıldığında kaynakları serbest bırakır.
+ */
 public final class MetricsReporter implements AutoCloseable
 {
     private final MetricsRegistry reg;

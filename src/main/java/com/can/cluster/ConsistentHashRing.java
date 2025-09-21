@@ -7,6 +7,12 @@ import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
+/**
+ * Küme düğümlerini ve anahtarları sabit bir hash halkasında konumlandırarak
+ * yük dağılımını sağlayan veri yapısıdır. Sanal düğüm kavramını destekler,
+ * düğüm ekleme/çıkarma işlemlerini yönetir ve verilen anahtar için replikaları
+ * deterministik şekilde seçer.
+ */
 public final class ConsistentHashRing<N>
 {
     private final SortedMap<Integer,N> ring = new TreeMap<>();

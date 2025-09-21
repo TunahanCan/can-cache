@@ -3,7 +3,12 @@ package com.can.pubsub;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
 
-/** Minimal in-process Pub/Sub; virtual thread per task. */
+/**
+ * Uygulama içinde hafif bir yayınla-abone ol mekanizması sağlayarak önbellek
+ * olaylarının diğer bileşenlere iletilmesini kolaylaştırır. Sanal thread'ler
+ * üzerinden her mesajı abonelere asenkron iletir ve abonelik yaşam döngüsünü
+ * yönetir.
+ */
 public final class Broker implements AutoCloseable
 {
     private final ConcurrentMap<String, CopyOnWriteArrayList<Consumer<byte[]>>> subs = new ConcurrentHashMap<>();

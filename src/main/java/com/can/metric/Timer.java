@@ -2,7 +2,11 @@ package com.can.metric;
 import java.util.Arrays;
 import java.util.concurrent.atomic.LongAdder;
 
-/** Basit Timer: toplam ns, min/max ve reservoir'dan p50/p95. */
+/**
+ * Süre ölçümlerini toplayan ve ortalama, yüzdelik dilim gibi istatistikler üreten
+ * metrik zamanlayıcısıdır. Sanal reservoir kullanarak p50/p95 değerlerini
+ * kestirir ve toplam çağrı sayısı ile minimum/maksimum süreleri saklar.
+ */
 public final class Timer {
     private final String name;
     private final LongAdder count = new LongAdder();
@@ -45,6 +49,9 @@ public final class Timer {
         return new Sample(name, c, t, avg, min, max, p50, p95);
     }
 
+    /**
+     * Anlık metrik değerlerini temsil eden immutable taşıyıcıdır.
+     */
     public record Sample(String name, long count, long totalNs, double avgNs,
                          long minNs, long maxNs, long p50Ns, long p95Ns) {}
 }

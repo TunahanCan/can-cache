@@ -5,7 +5,11 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
-/** Basit stream: in-memory log + okurken numerik ID. */
+/**
+ * Yayınlanan mesajları sıralı bir tamponda tutan ve istenilen sayıda kaydı
+ * okuma imkânı veren basit stream yapısıdır. Bellek içi log yaklaşımı sayesinde
+ * son gelen olayları hızlıca tüketmek mümkündür.
+ */
 public final class StreamLog
 {
     private final Deque<byte[]> log = new ArrayDeque<>();

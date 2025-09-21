@@ -15,6 +15,13 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Base64;
 
+/**
+ * Önbellek içeriğini kalıcı hale getirmek amacıyla RDB benzeri düz dosya formatı
+ * üzerinden okuma/yazma işlemlerini üstlenen kayıt sınıfıdır. Anahtarları verilen
+ * codec ile kodlayıp Base64'e çevirerek satır satır diske yazar, uygulama
+ * yeniden başladığında ise aynı dosyayı okuyup {@link CacheEngine} üzerinde
+ * komutları tekrar oynatarak belleği geri yükler.
+ */
 public record SnapshotFile<K, V>(File file, Codec<K> keyCodec) {
 
     public synchronized void write(CacheEngine<K, V> engine) {
