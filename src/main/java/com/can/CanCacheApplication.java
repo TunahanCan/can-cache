@@ -1,12 +1,19 @@
 package com.can;
 
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
+import io.quarkus.runtime.Quarkus;
+import io.quarkus.runtime.QuarkusApplication;
+import io.quarkus.runtime.annotations.QuarkusMain;
 
-@SpringBootApplication
-public class CanCacheApplication {
+@QuarkusMain
+public class CanCacheApplication implements QuarkusApplication {
+
+    @Override
+    public int run(String... args) {
+        Quarkus.waitForExit();
+        return 0;
+    }
 
     public static void main(String... args) {
-        SpringApplication.run(CanCacheApplication.class, args);
+        Quarkus.run(CanCacheApplication.class, args);
     }
 }

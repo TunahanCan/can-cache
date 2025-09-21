@@ -1,13 +1,20 @@
 package com.can;
 
+import com.can.cluster.ClusterClient;
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+@QuarkusTest
 class CanCacheApplicationTests {
 
-	@Test
-	void contextLoads() {
-	}
+    @Inject
+    ClusterClient<String, String> cluster;
 
+    @Test
+    void clusterClientIsAvailable() {
+        assertNotNull(cluster);
+    }
 }
