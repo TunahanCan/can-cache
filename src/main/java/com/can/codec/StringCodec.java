@@ -2,6 +2,11 @@ package com.can.codec;
 
 import java.nio.charset.StandardCharsets;
 
+/**
+ * Java {@link String} nesnelerini UTF-8 karakter setiyle kodlayıp çözen basit
+ * codec implementasyonudur. Null değerleri boş diziye/boş referansa çevirerek
+ * ağ ve disk operasyonlarında tutarlı davranış sergiler.
+ */
 public final class StringCodec implements Codec<String>
 {
     public static final StringCodec UTF8 = new StringCodec();

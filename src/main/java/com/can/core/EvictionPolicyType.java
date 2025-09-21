@@ -2,6 +2,11 @@ package com.can.core;
 
 import java.util.Locale;
 
+/**
+ * Önbellekte kullanılabilecek tahliye stratejilerini listeler ve yapılandırmadan
+ * gelen metin değerlerini ilgili implementasyona dönüştürür. LRU ve TinyLFU
+ * seçeneklerini destekler.
+ */
 public enum EvictionPolicyType
 {
     LRU {

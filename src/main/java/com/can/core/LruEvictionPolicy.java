@@ -2,6 +2,10 @@ package com.can.core;
 
 import java.util.LinkedHashMap;
 
+/**
+ * Klasik son kullanılan ilk çıkar yaklaşımını uygulayan basit tahliye politikasıdır.
+ * Segment kapasitesi dolduğunda en eski erişilen girdiyi kurban seçer.
+ */
 final class LruEvictionPolicy<K> implements EvictionPolicy<K>
 {
     @Override

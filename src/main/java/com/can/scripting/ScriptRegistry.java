@@ -3,6 +3,11 @@ package com.can.scripting;
 import javax.script.*;
 import java.util.Map;
 
+/**
+ * JVM üzerinde mevcutsa JavaScript motorunu başlatıp saklayan yardımcı
+ * sınıftır. Kullanıcı tanımlı script'lerin önbellek üzerinde çalıştırılabilmesi
+ * için bağlam değişkenleriyle birlikte kodu yorumlayarak sonuç döndürür.
+ */
 public final class ScriptRegistry
 {
     private final ScriptEngine js;

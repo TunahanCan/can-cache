@@ -13,6 +13,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Anahtar-değer çiftlerini segmentlere bölerek depolayan, TTL yönetimi yapan,
+ * metrik ve yayın mekanizmalarıyla entegre çalışan önbellek motorudur. Verileri
+ * serileştirmek için codec'ler kullanır, arka planda TTL kuyruğunu temizleyen
+ * bir görev çalıştırır ve persistans katmanından gelen kayıtları tekrar oynatabilir.
+ */
 public final class CacheEngine<K,V> implements AutoCloseable
 {
 
@@ -61,6 +67,10 @@ public final class CacheEngine<K,V> implements AutoCloseable
 
     public static <K,V> Builder<K,V> builder(Codec<K> keyCodec, Codec<V> valCodec) { return new Builder<>(keyCodec, valCodec); }
 
+    /**
+     * Önbellek motorunun kurulumu sırasında segment sayısı, kapasite gibi
+     * parametreleri ayarlamaya yarayan akıcı yapılandırma sınıfıdır.
+     */
     public static final class Builder<K,V>
     {
         private int segments = 8, maxCapacity = 10_000; private long cleanerPollMillis = 100;
@@ -191,6 +201,9 @@ public final class CacheEngine<K,V> implements AutoCloseable
     }
 
     @FunctionalInterface
+    /**
+     * Persistans katmanına veri aktarımı yapılırken her anahtar için çağrılan fonksiyonel arayüzdür.
+     */
     public interface EntryConsumer<K>
     {
         void accept(K key, byte[] value, long expireAtMillis);

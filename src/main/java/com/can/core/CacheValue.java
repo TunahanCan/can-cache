@@ -1,5 +1,9 @@
 package com.can.core;
 
+/**
+ * Önbellekte tutulan bayt değerini ve varsa son kullanma zamanını kapsülleyen
+ * basit taşıyıcı sınıftır.
+ */
 final class CacheValue
 {
     final byte[] value;

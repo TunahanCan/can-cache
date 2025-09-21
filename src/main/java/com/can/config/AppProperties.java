@@ -3,6 +3,13 @@ package com.can.config;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
+/**
+ * Uygulama yapılandırma değerlerini tip güvenli bir şekilde okumak için kullanılan
+ * konfigürasyon arayüzüdür. Alt arayüzler metrik raporlama sıklığı, RDB anlık
+ * görüntü ayarları, önbellek segment sayısı ve kapasitesi ile küme topolojisini
+ * belirleyen parametreler gibi alanları gruplayarak {@code application.properties}
+ * içindeki "app" önekiyle başlayan değerleri CDI bileşenlerine sağlar.
+ */
 @ConfigMapping(prefix = "app")
 public interface AppProperties
 {

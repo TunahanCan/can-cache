@@ -3,29 +3,29 @@ package com.can.core;
 import java.util.LinkedHashMap;
 
 /**
- * Abstraction that encapsulates admission and eviction behaviour for a cache segment.
- * Implementations may track access history or frequency statistics to decide whether
- * an entry should be admitted and which victim, if any, should be evicted.
+ * Bir segmentin hangi anahtarları kabul edeceğini ve kapasite aşıldığında hangi
+ * girdilerin tahliye edileceğini tanımlayan politika arayüzüdür. Uygulamalar
+ * erişim geçmişi veya frekans istatistiklerinden yararlanarak karar verebilir.
  */
 interface EvictionPolicy<K>
 {
-    /** Records that the given key has been accessed (hit or set). */
+    /** Verilen anahtarın erişildiğini kaydeder. */
     void recordAccess(K key);
 
     /**
-     * Called when a new key is about to be inserted into the segment.
+     * Yeni bir anahtar segment içine eklenmeden önce çağrılarak kabul kurallarını uygular.
      *
-     * @param key       the candidate key that should be considered for admission
-     * @param map       current storage map for the segment (access-order)
-     * @param capacity  maximum number of entries allowed in the segment
-     * @return decision describing whether the key should be admitted and an optional victim
+     * @param key       kabul edilmek istenen aday anahtar
+     * @param map       segmentin erişim sırasına göre tutulan mevcut haritası
+     * @param capacity  segment için tanımlı maksimum giriş sayısı
+     * @return anahtarın kabul edilip edilmeyeceğini ve gerekirse kurban anahtarı döndürür
      */
     AdmissionDecision<K> admit(K key, LinkedHashMap<K, CacheValue> map, int capacity);
 
-    /** Signals that the given key has been removed from the segment. */
+    /** Belirtilen anahtarın segmentten çıkarıldığını bildirir. */
     void onRemove(K key);
 
-    /** Result returned from {@link #admit(Object, LinkedHashMap, int)}. */
+    /** {@link #admit(Object, LinkedHashMap, int)} çağrısının sonucunu kapsüller. */
     final class AdmissionDecision<K>
     {
         private static final AdmissionDecision<?> REJECT = new AdmissionDecision<>(false, null);
