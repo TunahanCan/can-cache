@@ -7,7 +7,8 @@ import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
-public final class ConsistentHashRing<N> {
+public final class ConsistentHashRing<N>
+{
     private final SortedMap<Integer,N> ring = new TreeMap<>();
     private final HashFn hash;
     private final int vnodes;

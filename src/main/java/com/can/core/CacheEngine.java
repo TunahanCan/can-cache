@@ -13,7 +13,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public final class CacheEngine<K,V> implements AutoCloseable {
+public final class CacheEngine<K,V> implements AutoCloseable
+{
 
     private final int segments;
     private final CacheSegment<K>[] table;
@@ -47,7 +48,9 @@ public final class CacheEngine<K,V> implements AutoCloseable {
             this.hits = metrics.counter("cache_hits");
             this.misses = metrics.counter("cache_misses");
             this.evictions = metrics.counter("cache_evictions");
-            this.tGet = metrics.timer("cache_get"); this.tSet = metrics.timer("cache_set"); this.tDel = metrics.timer("cache_del");
+            this.tGet = metrics.timer("cache_get");
+            this.tSet = metrics.timer("cache_set");
+            this.tDel = metrics.timer("cache_del");
         } else {
             this.hits=this.misses=this.evictions=null; this.tGet=this.tSet=this.tDel=null;
         }
@@ -57,7 +60,9 @@ public final class CacheEngine<K,V> implements AutoCloseable {
     }
 
     public static <K,V> Builder<K,V> builder(Codec<K> keyCodec, Codec<V> valCodec) { return new Builder<>(keyCodec, valCodec); }
-    public static final class Builder<K,V> {
+
+    public static final class Builder<K,V>
+    {
         private int segments = 8, maxCapacity = 10_000; private long cleanerPollMillis = 100;
         private final Codec<K> keyCodec; private final Codec<V> valCodec;
         private MetricsRegistry metrics; private Broker broker;
@@ -87,8 +92,12 @@ public final class CacheEngine<K,V> implements AutoCloseable {
         }, cleanerPollMillis, cleanerPollMillis, TimeUnit.MILLISECONDS);
     }
 
-    public void set(K key, V value){ set(key, value, null); }
-    public void set(K key, V value, Duration ttl) {
+    public void set(K key, V value){
+        set(key, value, null);
+    }
+
+    public void set(K key, V value, Duration ttl)
+    {
         long t0 = System.nanoTime();
         Objects.requireNonNull(key);
         long expireAt = (ttl == null || ttl.isZero() || ttl.isNegative()) ? 0L
@@ -104,7 +113,8 @@ public final class CacheEngine<K,V> implements AutoCloseable {
         if (tSet != null) tSet.record(System.nanoTime() - t0);
     }
 
-    public V get(K key){
+    public V get(K key)
+    {
         long t0 = System.nanoTime();
         CacheValue cv = seg(key).get(key);
         V out = null;
@@ -121,7 +131,8 @@ public final class CacheEngine<K,V> implements AutoCloseable {
         return out;
     }
 
-    public boolean delete(K key){
+    public boolean delete(K key)
+    {
         long t0 = System.nanoTime();
         boolean ok = seg(key).remove(key) != null;
         if (ok && broker != null) broker.publish("keyspace:del", keyCodec.encode(key));
@@ -174,12 +185,14 @@ public final class CacheEngine<K,V> implements AutoCloseable {
         seg(key).remove(key);
     }
 
-    @Override public void close(){
+    @Override
+    public void close(){
         cleaner.shutdownNow();
     }
 
     @FunctionalInterface
-    public interface EntryConsumer<K> {
+    public interface EntryConsumer<K>
+    {
         void accept(K key, byte[] value, long expireAtMillis);
     }
 }

@@ -2,7 +2,8 @@ package com.can.codec;
 
 import java.io.*;
 
-public final class JavaSerializerCodec<T extends Serializable> implements Codec<T> {
+public final class JavaSerializerCodec<T extends Serializable> implements Codec<T>
+{
 
     @Override
     public byte[] encode(T obj) {
