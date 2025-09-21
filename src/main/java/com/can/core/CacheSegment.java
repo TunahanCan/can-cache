@@ -4,6 +4,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 import java.util.concurrent.locks.ReentrantLock;
 
 final class CacheSegment<K>
@@ -87,5 +88,16 @@ final class CacheSegment<K>
     }
     int size() {
         lock.lock(); try { return map.size(); } finally { lock.unlock(); }
+    }
+
+    void forEach(BiConsumer<K, CacheValue> consumer) {
+        Map<K, CacheValue> snapshot;
+        lock.lock();
+        try {
+            snapshot = new LinkedHashMap<>(map);
+        } finally {
+            lock.unlock();
+        }
+        snapshot.forEach(consumer);
     }
 }
