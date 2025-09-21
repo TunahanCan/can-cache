@@ -11,14 +11,21 @@ import com.can.core.EvictionPolicyType;
 import com.can.metric.MetricsRegistry;
 import com.can.metric.MetricsReporter;
 import com.can.pubsub.Broker;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.io.File;
 
 @Configuration
+@EnableConfigurationProperties(AppProperties.class)
 public class AppConfig {
+
+    private final AppProperties properties;
+
+    public AppConfig(AppProperties properties) {
+        this.properties = properties;
+    }
 
     // ---- Metrics ----
     @Bean
@@ -27,11 +34,11 @@ public class AppConfig {
     }
 
     @Bean(destroyMethod = "close")
-    public MetricsReporter metricsReporter(
-            MetricsRegistry reg,
-            @Value("${app.metrics.reportIntervalSeconds:5}") long intervalSec
-    ) {
-        var r = new MetricsReporter(reg); r.start(intervalSec); return r;
+    public MetricsReporter metricsReporter(MetricsRegistry reg) {
+        long interval = properties.getMetrics().getReportIntervalSeconds();
+        var reporter = new MetricsReporter(reg);
+        reporter.start(interval);
+        return reporter;
     }
 
     // ---- Pub/Sub ----
@@ -40,43 +47,37 @@ public class AppConfig {
 
     // ---- AOF ----
     @Bean(destroyMethod = "close")
-    public AppendOnlyFile<String,String> aof(
-            @Value("${app.aof.path:data.aof}") String path,
-            @Value("${app.aof.fsyncEvery:true}") boolean fsyncEvery
-    ) {
-        return new AppendOnlyFile<>(new File(path), StringCodec.UTF8, StringCodec.UTF8, fsyncEvery);
+    public AppendOnlyFile<String,String> aof() {
+        var aofProps = properties.getAof();
+        return new AppendOnlyFile<>(new File(aofProps.getPath()), StringCodec.UTF8, StringCodec.UTF8, aofProps.isFsyncEvery());
     }
 
     // ---- Cache Engine ----
     @Bean(destroyMethod = "close")
     public CacheEngine<String,String> cacheEngine(
-            @Value("${app.cache.segments:8}") int segments,
-            @Value("${app.cache.maxCapacity:10000}") int maxCap,
-            @Value("${app.cache.cleanerPollMillis:100}") long pollMs,
-            @Value("${app.cache.evictionPolicy:LRU}") String evictionPolicy,
-            @Value("${app.aof.path:data.aof}") String path,
             AppendOnlyFile<String,String> aof,
             MetricsRegistry metrics,
             Broker broker
     ) {
+        var cacheProps = properties.getCache();
         var engine = CacheEngine.<String,String>builder(StringCodec.UTF8, StringCodec.UTF8)
-                .segments(segments).maxCapacity(maxCap).cleanerPollMillis(pollMs)
-                .evictionPolicy(EvictionPolicyType.fromConfig(evictionPolicy))
+                .segments(cacheProps.getSegments())
+                .maxCapacity(cacheProps.getMaxCapacity())
+                .cleanerPollMillis(cacheProps.getCleanerPollMillis())
+                .evictionPolicy(EvictionPolicyType.fromConfig(cacheProps.getEvictionPolicy()))
                 .aof(aof).metrics(metrics).broker(broker)
                 .build();
 
         // Açılışta AOF replay
-        AppendOnlyFile.replay(new File(path), engine);
+        AppendOnlyFile.replay(new File(properties.getAof().getPath()), engine);
         return engine;
     }
 
     // ---- Cluster (tek node; istersen başka node bean'leri ekleyip RF>1 yap) ----
     @Bean
-    public ConsistentHashRing<Node<String,String>> ring(
-            @Value("${app.cluster.virtualNodes:64}") int vnodes
-    ) {
+    public ConsistentHashRing<Node<String,String>> ring() {
         HashFn hash = key -> java.util.Arrays.hashCode(key); // basit demo hash
-        return new ConsistentHashRing<>(hash, vnodes);
+        return new ConsistentHashRing<>(hash, properties.getCluster().getVirtualNodes());
     }
 
     @Bean
@@ -92,10 +93,9 @@ public class AppConfig {
     @Bean
     public ClusterClient<String,String> clusterClient(
             ConsistentHashRing<Node<String,String>> ring,
-            Node<String,String> localNode,
-            @Value("${app.cluster.replicationFactor:1}") int rf
+            Node<String,String> localNode
     ) {
         ring.addNode(localNode, localNode.id().getBytes());
-        return new ClusterClient<>(ring, rf, StringCodec.UTF8);
+        return new ClusterClient<>(ring, properties.getCluster().getReplicationFactor(), StringCodec.UTF8);
     }
 }
