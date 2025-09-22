@@ -92,6 +92,21 @@ final class CacheSegment<K>
         }
         finally { lock.unlock(); }
     }
+
+    boolean removeIfMatches(K key, long expireAtMillis) {
+        lock.lock();
+        try {
+            CacheValue existing = map.get(key);
+            if (existing == null || existing.expireAtMillis != expireAtMillis) {
+                return false;
+            }
+            map.remove(key);
+            policy.onRemove(key);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
     int size() {
         lock.lock(); try { return map.size(); } finally { lock.unlock(); }
     }

@@ -114,6 +114,34 @@ class CacheEngineBehaviourTest {
             assertNull(engine.get("lazy"), "Geçen sürede TTL dolduğu için get null dönmeli");
             assertEquals(1, metrics.counter("cache_misses").get(), "Expire olan kayıt miss olarak sayılmalı");
         }
+
+        @Test
+        void updatingTtlDoesNotRemoveNewValuePrematurely() throws Exception {
+            engine = CacheEngine.<String, String>builder(StringCodec.UTF8, StringCodec.UTF8)
+                    .segments(1)
+                    .maxCapacity(4)
+                    .cleanerPollMillis(5)
+                    .build();
+
+            engine.set("ttl", "old", Duration.ofMillis(40));
+            engine.set("ttl", "new", Duration.ofMillis(200));
+
+            Thread.sleep(120);
+            assertEquals("new", engine.get("ttl"), "Yeni TTL atanmış değer eski kuyruğa rağmen korunmalı");
+
+            long deadline = System.currentTimeMillis() + 1_000;
+            boolean removed = false;
+            while (System.currentTimeMillis() < deadline) {
+                if (engine.get("ttl") == null) {
+                    removed = true;
+                    break;
+                }
+                Thread.sleep(20);
+            }
+
+            assertTrue(removed, "Uzayan TTL süresi dolduğunda kayıt temizlenmeli");
+            assertNull(engine.get("ttl"));
+        }
     }
 
     @Nested
