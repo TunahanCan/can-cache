@@ -4,6 +4,7 @@ import com.can.cluster.ClusterClient;
 import com.can.cluster.ConsistentHashRing;
 import com.can.cluster.HashFn;
 import com.can.cluster.Node;
+import com.can.cluster.coordination.CoordinationService;
 import com.can.codec.StringCodec;
 import com.can.core.CacheEngine;
 import com.can.core.EvictionPolicyType;
@@ -19,7 +20,6 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
 import java.io.File;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 
@@ -125,6 +125,20 @@ public class AppConfig {
     @Produces
     @Singleton
     public Node<String, String> localNode(CacheEngine<String, String> engine) {
+        var discovery = properties.cluster().discovery();
+        var replication = properties.cluster().replication();
+        String nodeId = discovery.nodeId();
+        if (nodeId == null || nodeId.isBlank()) {
+            String host = replication.advertiseHost();
+            if (host == null || host.isBlank() || "0.0.0.0".equals(host)) {
+                host = replication.bindHost();
+            }
+            if (host == null || host.isBlank() || "0.0.0.0".equals(host)) {
+                host = "127.0.0.1";
+            }
+            nodeId = host + ":" + replication.port();
+        }
+        final String resolvedId = nodeId;
         return new Node<>() {
             @Override
             public void set(String k, String v, Duration ttl) {
@@ -143,7 +157,7 @@ public class AppConfig {
 
             @Override
             public String id() {
-                return "node-1";
+                return resolvedId;
             }
         };
     }
@@ -152,9 +166,8 @@ public class AppConfig {
     @Singleton
     public ClusterClient<String, String> clusterClient(
             ConsistentHashRing<Node<String, String>> ring,
-            Node<String, String> localNode
+            CoordinationService coordinationService
     ) {
-        ring.addNode(localNode, localNode.id().getBytes(StandardCharsets.UTF_8));
         return new ClusterClient<>(ring, properties.cluster().replicationFactor(), StringCodec.UTF8);
     }
 }
