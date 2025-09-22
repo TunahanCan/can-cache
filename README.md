@@ -1,6 +1,6 @@
 # can-cache
 
-can-cache, Quarkus üzerinde çalışan, memcached metin protokolü ile uyumlu, çok düğümlü ve bellek içi bir anahtar-değer mağazasıdır. Sistem; tutarlı hash halkası tabanlı yönlendirme, çoklu kopya replikasyonu, TTL ve tahliye politikaları, RDB benzeri anlık görüntü alma, metrik raporlama ve script/publish-subscribe eklentileriyle zenginleştirilmiştir.【F:src/main/java/com/can/CanCacheApplication.java†L7-L24】【F:src/main/java/com/can/net/CanCachedServer.java†L31-L421】【F:src/main/java/com/can/cluster/ClusterClient.java†L7-L45】【F:src/main/java/com/can/core/CacheEngine.java†L16-L216】
+can-cache, Quarkus üzerinde çalışan, memcached metin protokolü ile uyumlu, çok düğümlü ve bellek içi bir anahtar-değer mağazasıdır. Sistem; tutarlı hash halkası tabanlı yönlendirme, çoklu kopya replikasyonu, TTL ve tahliye politikaları, RDB benzeri anlık görüntü alma, metrik raporlama ve publish-subscribe eklentileriyle zenginleştirilmiştir.【F:src/main/java/com/can/CanCacheApplication.java†L7-L24】【F:src/main/java/com/can/net/CanCachedServer.java†L31-L421】【F:src/main/java/com/can/cluster/ClusterClient.java†L7-L45】【F:src/main/java/com/can/core/CacheEngine.java†L16-L216】
 
 ## Öne çıkan yetenekler
 
@@ -9,7 +9,7 @@ can-cache, Quarkus üzerinde çalışan, memcached metin protokolü ile uyumlu, 
 - **Otomatik keşif ve replikasyon:** Multicast kalp atışlarıyla düğüm keşfi, TCP tabanlı replikasyon protokolü ve uzak düğüm proxy’leri sayesinde veriler kümede eşlenir.【F:src/main/java/com/can/cluster/coordination/CoordinationService.java†L30-L299】【F:src/main/java/com/can/cluster/coordination/RemoteNode.java†L16-L151】【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L27-L199】
 - **TTL, tahliye ve metrik entegrasyonu:** Segmentlere bölünmüş yapı, DelayQueue tabanlı TTL temizliği, LRU/TinyLFU politikaları ve sayaç/zamanlayıcı metrikleri sağlar.【F:src/main/java/com/can/core/CacheEngine.java†L25-L212】【F:src/main/java/com/can/core/CacheSegment.java†L10-L123】【F:src/main/java/com/can/core/LruEvictionPolicy.java†L5-L20】【F:src/main/java/com/can/core/TinyLfuEvictionPolicy.java†L5-L128】【F:src/main/java/com/can/core/ExpiringKey.java†L6-L22】
 - **Kalıcılık ve toparlanma:** RDB benzeri düz dosya formatı, atomik dosya değişimi ve sanal thread ile periyodik snapshot alma desteği içerir.【F:src/main/java/com/can/rdb/SnapshotFile.java†L18-L99】【F:src/main/java/com/can/rdb/SnapshotScheduler.java†L11-L57】
-- **Gözlemlenebilirlik ve genişletilebilirlik:** Counter/timer metrikleri, sanal thread’li raporlama, olay yayın sistemi ve script motoru ile uygulama içi entegrasyonlar mümkün kılınır.【F:src/main/java/com/can/metric/MetricsRegistry.java†L6-L19】【F:src/main/java/com/can/metric/MetricsReporter.java†L7-L34】【F:src/main/java/com/can/pubsub/Broker.java†L6-L31】【F:src/main/java/com/can/scripting/ScriptRegistry.java†L6-L28】【F:src/main/java/com/can/scripting/ScriptEngineApi.java†L8-L46】
+- **Gözlemlenebilirlik ve genişletilebilirlik:** Counter/timer metrikleri, sanal thread’li raporlama ve olay yayın sistemi ile uygulama içi entegrasyonlar mümkün kılınır.【F:src/main/java/com/can/metric/MetricsRegistry.java†L6-L19】【F:src/main/java/com/can/metric/MetricsReporter.java†L7-L34】【F:src/main/java/com/can/pubsub/Broker.java†L6-L31】
 
 ## Mimari panorama
 
@@ -151,17 +151,16 @@ flowchart TD
 - Her metrik örneği Quarkus CDI ile tekil olarak enjekte edilir; `CacheEngine` operasyon sürelerini nanosecond cinsinden kaydeder ve snapshot sırasında p50/p95 değerleri hesaplanır.【F:src/main/java/com/can/config/AppConfig.java†L72-L116】【F:src/main/java/com/can/metric/Timer.java†L28-L55】
 - Log konfigürasyonu hem konsol hem de döner dosya için ayarlanmıştır (`logs/app.log`, 10MB rotasyon).【F:src/main/resources/application.properties†L17-L26】
 
-## Olay sistemi ve script entegrasyonu
+## Olay sistemi
 
 - `Broker`, konu bazlı abonelikler sağlar ve sanal thread’ler ile her mesajı abonelere iletir. `CacheEngine`, `keyspace:set` ve `keyspace:del` konularında byte dizisi olarak anahtar yayımlar.【F:src/main/java/com/can/pubsub/Broker.java†L14-L31】【F:src/main/java/com/can/core/CacheEngine.java†L118-L151】
 - `StreamLog` yardımıyla gelen olaylar hafızada tutulup son X kayıt okunabilir, bu da izleme araçlarına temel sağlar.【F:src/main/java/com/can/pubsub/StreamLog.java†L8-L30】
-- `ScriptRegistry`, JVM’de JS motoru varsa script’leri çalıştırır; `ScriptEngineApi` ise script fonksiyonları için minimal cache erişim API’si tanımlar (`set/get/del`) ve fonksiyon kayıt/çağrı altyapısı sunar. Böylece kullanıcı betikleri önbellek üzerinde atomik işlemler gerçekleştirebilir.【F:src/main/java/com/can/scripting/ScriptRegistry.java†L6-L28】【F:src/main/java/com/can/scripting/ScriptEngineApi.java†L14-L46】
 
 ## Genişletilebilirlik ipuçları
 
 - **Yeni codec veya veri türleri:** `CacheEngine.builder()` anahtar ve değer codec’lerini parametre olarak alır; farklı türler için `Codec<T>` implementasyonu yeterlidir.【F:src/main/java/com/can/core/CacheEngine.java†L68-L89】【F:src/main/java/com/can/codec/Codec.java†L4-L10】
 - **Özel tahliye politikası:** `EvictionPolicy` arayüzünü implemente edip `EvictionPolicyType` içine ekleyerek veya doğrudan builder’da kullanarak yeni bir strateji entegre edilebilir.【F:src/main/java/com/can/core/EvictionPolicy.java†L8-L44】【F:src/main/java/com/can/core/EvictionPolicyType.java†L5-L31】
-- **Gelişmiş replikasyon:** `RemoteNode` ve `ReplicationServer` tek baytlık protokolü basit tutar; ihtiyaç halinde komut kümesi genişletilerek script çağrıları veya toplu işlemler eklenebilir.【F:src/main/java/com/can/cluster/coordination/RemoteNode.java†L24-L151】【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L103-L180】
+- **Gelişmiş replikasyon:** `RemoteNode` ve `ReplicationServer` tek baytlık protokolü basit tutar; ihtiyaç halinde komut kümesi genişletilerek yeni işlemler eklenebilir.【F:src/main/java/com/can/cluster/coordination/RemoteNode.java†L24-L151】【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L103-L180】
 
 ## Depo yapısı
 
@@ -173,7 +172,6 @@ flowchart TD
 | `src/main/java/com/can/rdb` | Snapshot okuma/yazma ve zamanlayıcı. |
 | `src/main/java/com/can/metric` | Sayaç, zamanlayıcı ve raporlama altyapısı. |
 | `src/main/java/com/can/pubsub` | Uygulama içi yayın/abonelik araçları. |
-| `src/main/java/com/can/scripting` | Script çalıştırma ve fonksiyon kayıt API’sı. |
 | `src/main/resources` | Varsayılan yapılandırma dosyaları. |
 
 Bu README, sistemin her katmanını şemalarla ve kod referanslarıyla açıklayarak can-cache’i devreye alma, yapılandırma ve genişletme süreçlerinde kapsamlı bir rehber sunar.
