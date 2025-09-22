@@ -15,8 +15,15 @@ kurgulanmıştır.
   işler. 1 MB üzerindeki yükleri engeller, 30 gün üzeri TTL değerlerini epoch
   olarak yorumlar ve CAS sayaçlarını atomik olarak üretir.
 - **Tutarlı hash + replikasyon:** `ClusterClient`, sanal düğüm destekli
-  `ConsistentHashRing` üzerinde replikasyon faktörü kadar kopya seçer, yazmaları
-  tüm kopyalara, okumaları ilk başarılı yanıta yönlendirir.
+  `ConsistentHashRing` üzerinde replikasyon faktörü kadar kopya seçer; yazmaları
+  çoğunluk quorum'una taşır, başarısız kopyalar için `HintedHandoffService`
+  ipuçlarını kalıcılaştırıp yeniden oynatır, okumaları ilk başarılı yanıta
+  yönlendirir. İlk kopya lider kabul edilir; lider yazması başarısız olursa
+  istemciye hata fırlatılırken takipçi hataları hinted handoff ile toparlanır.
+  Örnek akış: üç kopyalı bir yazmada lider ve iki takipçi seçilir; yanıt veren
+  ilk iki kopya çoğunluğu sağladığında işlem başarılı sayılır, düşen kopyaya ait
+  ipuçları toparlanıp node geri geldiğinde `HintedHandoffService` tarafından
+  yeniden uygulanır.
 - **Otomatik keşif:** `CoordinationService`, multicast kalp atışları ile yeni JVM
   örneklerini bulur, `RemoteNode` vekilleri oluşturarak halkaya ekler ve zaman
   aşımına uğrayanları temizler.
