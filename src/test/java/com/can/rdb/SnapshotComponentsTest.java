@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class SnapshotComponentsTest {
 
     private CacheEngine<String, String> engine;
-    private SnapshotScheduler<String, String> scheduler;
+    private SnapshotScheduler scheduler;
 
     @AfterEach
     void tearDown() throws Exception {
@@ -83,7 +83,7 @@ class SnapshotComponentsTest {
                     .build();
             engine.set("key", "value");
 
-            scheduler = new SnapshotScheduler<>(engine, snapshot, 0);
+            scheduler = new SnapshotScheduler(engine, snapshot, 0);
             scheduler.start();
 
             Thread.sleep(200);

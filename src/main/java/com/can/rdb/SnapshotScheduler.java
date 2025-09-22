@@ -23,22 +23,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Startup
 @Singleton
-public class SnapshotScheduler<K, V> implements AutoCloseable {
+public class SnapshotScheduler implements AutoCloseable {
 
     private static final Logger LOG = Logger.getLogger(SnapshotScheduler.class);
 
-    private final CacheEngine<K, V> engine;
-    private final SnapshotFile<K, V> snapshotFile;
+    private final CacheEngine<String, String> engine;
+    private final SnapshotFile<String, String> snapshotFile;
     private final long intervalSeconds;
     private final AtomicBoolean started = new AtomicBoolean(false);
     private ScheduledExecutorService executor;
 
     @Inject
-    public SnapshotScheduler(CacheEngine<K, V> engine, SnapshotFile<K, V> snapshotFile, AppProperties properties) {
+    public SnapshotScheduler(CacheEngine<String, String> engine, SnapshotFile<String, String> snapshotFile, AppProperties properties) {
         this(engine, snapshotFile, properties.rdb().snapshotIntervalSeconds());
     }
 
-    public SnapshotScheduler(CacheEngine<K, V> engine, SnapshotFile<K, V> snapshotFile, long intervalSeconds) {
+    public SnapshotScheduler(CacheEngine<String, String> engine, SnapshotFile<String, String> snapshotFile, long intervalSeconds) {
         this.engine = engine;
         this.snapshotFile = snapshotFile;
         this.intervalSeconds = intervalSeconds;
