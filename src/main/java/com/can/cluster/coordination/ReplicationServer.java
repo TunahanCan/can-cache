@@ -105,6 +105,7 @@ public class ReplicationServer implements AutoCloseable
                     case 'G' -> handleGet(in, out);
                     case 'D' -> handleDelete(in, out);
                     case 'C' -> handleClear(out);
+                    case 'X' -> handleCas(in, out);
                     default -> {
                         LOG.warnf("Unknown replication command %d from %s", command & 0xff, socket.getRemoteSocketAddress());
                         return;
@@ -131,16 +132,18 @@ public class ReplicationServer implements AutoCloseable
         String value = new String(valueBytes, StandardCharsets.UTF_8);
         long now = System.currentTimeMillis();
 
+        boolean stored;
         if (expireAt <= 0L) {
-            engine.set(key, value);
+            stored = engine.set(key, value);
         } else if (expireAt <= now) {
             engine.delete(key);
+            stored = true;
         } else {
             long ttlMillis = expireAt - now;
-            engine.set(key, value, Duration.ofMillis(ttlMillis));
+            stored = engine.set(key, value, Duration.ofMillis(ttlMillis));
         }
 
-        out.writeByte('O');
+        out.writeByte(stored ? 'T' : 'F');
         out.flush();
     }
 
@@ -183,6 +186,37 @@ public class ReplicationServer implements AutoCloseable
     private void handleClear(DataOutputStream out) throws IOException {
         engine.clear();
         out.writeByte('O');
+        out.flush();
+    }
+
+    private void handleCas(DataInputStream in, DataOutputStream out) throws IOException {
+        int keyLen = in.readInt();
+        int valueLen = in.readInt();
+        long expireAt = in.readLong();
+        long expectedCas = in.readLong();
+
+        byte[] keyBytes = in.readNBytes(keyLen);
+        byte[] valueBytes = in.readNBytes(valueLen);
+        if (keyBytes.length != keyLen || valueBytes.length != valueLen) {
+            throw new EOFException("Incomplete cas payload");
+        }
+
+        String key = new String(keyBytes, StandardCharsets.UTF_8);
+        String value = new String(valueBytes, StandardCharsets.UTF_8);
+        long now = System.currentTimeMillis();
+
+        boolean stored;
+        if (expireAt <= 0L) {
+            stored = engine.compareAndSwap(key, value, expectedCas, null);
+        } else if (expireAt <= now) {
+            engine.delete(key);
+            stored = true;
+        } else {
+            long ttlMillis = expireAt - now;
+            stored = engine.compareAndSwap(key, value, expectedCas, Duration.ofMillis(ttlMillis));
+        }
+
+        out.writeByte(stored ? 'T' : 'F');
         out.flush();
     }
 

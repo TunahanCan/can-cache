@@ -16,8 +16,8 @@ class CacheSegmentEvictionPolicyTest
         @Test
         void tinyLfuRejectsColdKeysUnderSkew()
         {
-            CacheSegment<String> lru = new CacheSegment<>(2, new LruEvictionPolicy<>());
-            CacheSegment<String> tiny = new CacheSegment<>(2, new TinyLfuEvictionPolicy<>(2));
+            CacheSegment<String> lru = new CacheSegment<>(2, new LruEvictionPolicy<>(), null);
+            CacheSegment<String> tiny = new CacheSegment<>(2, new TinyLfuEvictionPolicy<>(2), null);
 
             assertTrue(lru.put("hot", value()));
             assertTrue(tiny.put("hot", value()));
