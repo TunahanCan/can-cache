@@ -92,17 +92,18 @@ public class AppConfig {
     public Node<String, String> localNode(CacheEngine<String, String> engine) {
         var discovery = properties.cluster().discovery();
         var replication = properties.cluster().replication();
-        String nodeId = discovery.nodeId();
-        if (nodeId == null || nodeId.isBlank()) {
-            String host = replication.advertiseHost();
-            if (host == null || host.isBlank() || "0.0.0.0".equals(host)) {
-                host = replication.bindHost();
-            }
-            if (host == null || host.isBlank() || "0.0.0.0".equals(host)) {
-                host = "127.0.0.1";
-            }
-            nodeId = host + ":" + replication.port();
-        }
+        String nodeId = discovery.nodeId()
+                .filter(id -> !id.isBlank())
+                .orElseGet(() -> {
+                    String host = replication.advertiseHost();
+                    if (host == null || host.isBlank() || "0.0.0.0".equals(host)) {
+                        host = replication.bindHost();
+                    }
+                    if (host == null || host.isBlank() || "0.0.0.0".equals(host)) {
+                        host = "127.0.0.1";
+                    }
+                    return host + ":" + replication.port();
+                });
         final String resolvedId = nodeId;
         return new Node<>() {
             @Override

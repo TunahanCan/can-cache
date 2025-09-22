@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.time.Duration;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -185,7 +186,7 @@ class ReplicationProtocolTest
         public long failureTimeoutMillis() { return 6000; }
 
         @Override
-        public String nodeId() { return "test-node"; }
+        public Optional<String> nodeId() { return Optional.of("test-node"); }
     }
 
     private static final class TestReplication implements AppProperties.Replication {
