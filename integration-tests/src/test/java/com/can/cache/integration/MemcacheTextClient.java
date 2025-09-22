@@ -19,9 +19,14 @@ import java.util.Map;
  */
 public class MemcacheTextClient implements AutoCloseable {
 
-    public static final String DEFAULT_HOST = System.getenv().getOrDefault("CAN_CACHE_HOST", "127.0.0.1");
-    public static final int DEFAULT_PORT = Integer.parseInt(System.getenv().getOrDefault("CAN_CACHE_PORT", "11211"));
+    private static final String LOOPBACK_HOST = "127.0.0.1";
+
+    public static final String DEFAULT_HOST = resolveDefaultHost();
+    public static final int DEFAULT_PORT = resolveDefaultPort();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(5);
+
+    private static volatile String currentHost = DEFAULT_HOST;
+    private static volatile int currentPort = DEFAULT_PORT;
 
     private final String host;
     private final int port;
@@ -32,7 +37,7 @@ public class MemcacheTextClient implements AutoCloseable {
     private BufferedOutputStream output;
 
     public MemcacheTextClient() {
-        this(DEFAULT_HOST, DEFAULT_PORT, DEFAULT_TIMEOUT);
+        this(currentHost, currentPort, DEFAULT_TIMEOUT);
     }
 
     public MemcacheTextClient(String host, int port, Duration timeout) {
@@ -281,7 +286,7 @@ public class MemcacheTextClient implements AutoCloseable {
     }
 
     public static void waitForService(Duration timeout) throws InterruptedException {
-        waitForService(DEFAULT_HOST, DEFAULT_PORT, timeout);
+        waitForService(currentHost, currentPort, timeout);
     }
 
     public static void waitForService(String host, int port, Duration timeout) throws InterruptedException {
@@ -299,5 +304,54 @@ public class MemcacheTextClient implements AutoCloseable {
     }
 
     public record ValueRecord(String key, int flags, String value, Long casToken) {
+    }
+
+    static String configuredHost() {
+        return DEFAULT_HOST;
+    }
+
+    static int configuredPort() {
+        return DEFAULT_PORT;
+    }
+
+    static synchronized void overrideDefaultEndpoint(String host, int port) {
+        currentHost = sanitizeHost(host);
+        currentPort = validatePort(port);
+    }
+
+    static String loopbackHost() {
+        return LOOPBACK_HOST;
+    }
+
+    private static String resolveDefaultHost() {
+        String host = System.getenv("CAN_CACHE_HOST");
+        return sanitizeHost(host);
+    }
+
+    private static int resolveDefaultPort() {
+        String value = System.getenv("CAN_CACHE_PORT");
+        if (value == null || value.isBlank()) {
+            return 11211;
+        }
+        try {
+            return validatePort(Integer.parseInt(value.trim(), 10));
+        } catch (NumberFormatException | IllegalArgumentException ex) {
+            return 11211;
+        }
+    }
+
+    private static String sanitizeHost(String host) {
+        if (host == null) {
+            return LOOPBACK_HOST;
+        }
+        String trimmed = host.trim();
+        return trimmed.isEmpty() ? LOOPBACK_HOST : trimmed;
+    }
+
+    private static int validatePort(int port) {
+        if (port < 1 || port > 65535) {
+            throw new IllegalArgumentException("Port out of range: " + port);
+        }
+        return port;
     }
 }
