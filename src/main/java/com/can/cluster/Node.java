@@ -9,9 +9,10 @@ import java.time.Duration;
  */
 public interface Node<K,V>
 {
-    void set(K key, V value, Duration ttl);
+    boolean set(K key, V value, Duration ttl);
     V get(K key);
     boolean delete(K key);
+    boolean compareAndSwap(K key, V value, long expectedCas, Duration ttl);
     void clear();
     String id();
 }

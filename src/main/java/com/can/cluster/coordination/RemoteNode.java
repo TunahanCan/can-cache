@@ -24,6 +24,7 @@ import java.time.Duration;
 public final class RemoteNode implements Node<String, String>
 {
     private static final byte CMD_SET = 'S';
+    private static final byte CMD_CAS = 'X';
     private static final byte CMD_GET = 'G';
     private static final byte CMD_DELETE = 'D';
     private static final byte CMD_CLEAR = 'C';
@@ -44,15 +45,13 @@ public final class RemoteNode implements Node<String, String>
     }
 
     @Override
-    public void set(String key, String value, Duration ttl) {
-        long expireAt = ttl == null || ttl.isZero() || ttl.isNegative()
-                ? 0L
-                : System.currentTimeMillis() + ttl.toMillis();
+    public boolean set(String key, String value, Duration ttl) {
+        long expireAt = expiryMillis(ttl);
 
         byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
         byte[] valueBytes = value.getBytes(StandardCharsets.UTF_8);
 
-        execute(socket -> {
+        return execute(socket -> {
             DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
             out.writeByte(CMD_SET);
             out.writeInt(keyBytes.length);
@@ -64,9 +63,13 @@ public final class RemoteNode implements Node<String, String>
 
             DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
             byte response = in.readByte();
-            if (response != RESP_OK) {
-                throw new IOException("unexpected response to set: " + (char) response);
+            if (response == RESP_TRUE) {
+                return true;
             }
+            if (response == RESP_FALSE) {
+                return false;
+            }
+            throw new IOException("unexpected response to set: " + (char) response);
         });
     }
 
@@ -120,6 +123,36 @@ public final class RemoteNode implements Node<String, String>
     }
 
     @Override
+    public boolean compareAndSwap(String key, String value, long expectedCas, Duration ttl) {
+        long expireAt = expiryMillis(ttl);
+
+        byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
+        byte[] valueBytes = value.getBytes(StandardCharsets.UTF_8);
+
+        return execute(socket -> {
+            DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+            out.writeByte(CMD_CAS);
+            out.writeInt(keyBytes.length);
+            out.writeInt(valueBytes.length);
+            out.writeLong(expireAt);
+            out.writeLong(expectedCas);
+            out.write(keyBytes);
+            out.write(valueBytes);
+            out.flush();
+
+            DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+            byte response = in.readByte();
+            if (response == RESP_TRUE) {
+                return true;
+            }
+            if (response == RESP_FALSE) {
+                return false;
+            }
+            throw new IOException("unexpected response to cas: " + (char) response);
+        });
+    }
+
+    @Override
     public void clear() {
         execute(socket -> {
             DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
@@ -154,6 +187,13 @@ public final class RemoteNode implements Node<String, String>
             call.execute(socket);
             return null;
         });
+    }
+
+    private long expiryMillis(Duration ttl) {
+        if (ttl == null || ttl.isZero() || ttl.isNegative()) {
+            return 0L;
+        }
+        return System.currentTimeMillis() + ttl.toMillis();
     }
 
     @FunctionalInterface

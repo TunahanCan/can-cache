@@ -22,8 +22,12 @@ public record ClusterClient<K, V>(ConsistentHashRing<Node<K, V>> ring, int repli
         return ring.getReplicas(keyCodec.encode(key), replicationFactor);
     }
 
-    public void set(K key, V value, Duration ttl) {
-        for (var n : replicas(key)) n.set(key, value, ttl);
+    public boolean set(K key, V value, Duration ttl) {
+        boolean success = true;
+        for (var n : replicas(key)) {
+            success &= n.set(key, value, ttl);
+        }
+        return success;
     }
 
     public V get(K key) {
@@ -38,6 +42,14 @@ public record ClusterClient<K, V>(ConsistentHashRing<Node<K, V>> ring, int repli
         boolean ok = false;
         for (var n : replicas(key)) ok |= n.delete(key);
         return ok;
+    }
+
+    public boolean compareAndSwap(K key, V value, long expectedCas, Duration ttl) {
+        boolean success = true;
+        for (var n : replicas(key)) {
+            success &= n.compareAndSwap(key, value, expectedCas, ttl);
+        }
+        return success;
     }
 
     public void clear() {
