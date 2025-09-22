@@ -1,5 +1,6 @@
 package com.can.cluster;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -56,5 +57,11 @@ public final class ConsistentHashRing<N>
     public synchronized List<N> nodes() {
         return new ArrayList<>(new LinkedHashSet<>(ring.values()));
     }
-    private static byte[] join(byte[] id, int i){ return (new String(id)+"#"+i).getBytes(); }
+    private static byte[] join(byte[] id, int i){
+        byte[] suffix = ("#" + i).getBytes(StandardCharsets.UTF_8);
+        byte[] combined = new byte[id.length + suffix.length];
+        System.arraycopy(id, 0, combined, 0, id.length);
+        System.arraycopy(suffix, 0, combined, id.length, suffix.length);
+        return combined;
+    }
 }

@@ -1,8 +1,10 @@
 package com.can.config;
 
 import com.can.cluster.ClusterClient;
+import com.can.cluster.ClusterState;
 import com.can.cluster.ConsistentHashRing;
 import com.can.cluster.HashFn;
+import com.can.cluster.HintedHandoffService;
 import com.can.cluster.Node;
 import com.can.cluster.coordination.CoordinationService;
 import com.can.codec.StringCodec;
@@ -143,10 +145,26 @@ public class AppConfig {
 
     @Produces
     @Singleton
-    public ClusterClient<String, String> clusterClient(
+    public ClusterState clusterState(Node<String, String> localNode, MetricsRegistry metrics)
+    {
+        return new ClusterState(localNode.id(), metrics);
+    }
+
+    @Produces
+    @Singleton
+    public HintedHandoffService hintedHandoffService(MetricsRegistry metrics)
+    {
+        return new HintedHandoffService(metrics);
+    }
+
+    @Produces
+    @Singleton
+    public ClusterClient clusterClient(
             ConsistentHashRing<Node<String, String>> ring,
-            CoordinationService coordinationService
+            CoordinationService coordinationService,
+            HintedHandoffService hintedHandoffService
     ) {
-        return new ClusterClient<>(ring, properties.cluster().replicationFactor(), StringCodec.UTF8);
+        return new ClusterClient(ring, properties.cluster().replicationFactor(), StringCodec.UTF8,
+                hintedHandoffService);
     }
 }

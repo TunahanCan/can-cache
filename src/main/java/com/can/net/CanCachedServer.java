@@ -49,7 +49,7 @@ public class CanCachedServer implements AutoCloseable
     private static final int MAX_ITEM_SIZE = 1_048_576; // 1 MB
     private static final int MAX_CAS_RETRIES = 16;
 
-    private final ClusterClient<String, String> clusterClient;
+    private final ClusterClient clusterClient;
     private final AppProperties.Network networkConfig;
     private final CacheEngine<String, String> localEngine;
 
@@ -74,7 +74,7 @@ public class CanCachedServer implements AutoCloseable
     private AutoCloseable removalSubscription;
 
     @Inject
-    public CanCachedServer(ClusterClient<String, String> clusterClient, AppProperties properties, CacheEngine<String, String> localEngine) {
+    public CanCachedServer(ClusterClient clusterClient, AppProperties properties, CacheEngine<String, String> localEngine) {
         this.clusterClient = Objects.requireNonNull(clusterClient, "clusterClient");
         this.networkConfig = Objects.requireNonNull(properties.network(), "networkConfig");
         this.localEngine = Objects.requireNonNull(localEngine, "localEngine");
