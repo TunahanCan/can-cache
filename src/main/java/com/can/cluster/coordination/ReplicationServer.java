@@ -37,7 +37,7 @@ public class ReplicationServer implements AutoCloseable
     private static final Logger LOG = Logger.getLogger(ReplicationServer.class);
 
     private final CacheEngine<String, String> engine;
-    private final AppProperties.Cluster.Replication config;
+    private final AppProperties.Replication config;
 
     private volatile boolean running;
     private ServerSocket serverSocket;

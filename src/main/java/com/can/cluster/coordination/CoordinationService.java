@@ -42,8 +42,8 @@ public class CoordinationService implements AutoCloseable
 
     private final ConsistentHashRing<Node<String, String>> ring;
     private final Node<String, String> localNode;
-    private final AppProperties.Cluster.Discovery discoveryConfig;
-    private final AppProperties.Cluster.Replication replicationConfig;
+    private final AppProperties.Discovery discoveryConfig;
+    private final AppProperties.Replication replicationConfig;
 
     private final Map<String, RemoteMember> members = new ConcurrentHashMap<>();
     private final Object membershipLock = new Object();

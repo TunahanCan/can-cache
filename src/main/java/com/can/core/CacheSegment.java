@@ -118,7 +118,7 @@ final class CacheSegment<K>
         }
     }
 
-    CacheSegment<K>.CasResult compareAndSwap(K key, java.util.function.Function<CacheValue, CasDecision> decisionFn) {
+    CacheSegment.CasResult compareAndSwap(K key, java.util.function.Function<CacheValue, CasDecision> decisionFn) {
         lock.lock();
         try {
             CacheValue existing = map.get(key);

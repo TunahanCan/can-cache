@@ -153,7 +153,7 @@ public final class CacheEngine<K,V> implements AutoCloseable
         CacheSegment<K> segment = seg(key);
         int idx = segIndex(key);
         long now = System.currentTimeMillis();
-        CacheSegment<K>.CasResult result = segment.compareAndSwap(key, existing -> {
+        CacheSegment.CasResult result = segment.compareAndSwap(key, existing -> {
             if (existing == null) {
                 return CacheSegment.CasDecision.fail();
             }
