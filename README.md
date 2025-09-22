@@ -75,15 +75,24 @@ flowchart LR
 - `ConsistentHashRing`, `HashFn` implementasyonu sayesinde sanal düğümlerle
   yükü dağıtır; düğüm ekleme/çıkarma işlemleri tüm kopyaları deterministik
   şekilde günceller.
-- `CoordinationService`, multicast dinleyicisi ile gelen `HELLO|nodeId|host|port`
-  paketlerini işler, `RemoteNode` örnekleri üretir, zaman aşımı yaşayan üyeleri
-  halkadan çıkarır ve loglar.
-- `RemoteNode`, her çağrıda kısa ömürlü bir soket açar; `'S'/'G'/'D'/'X'/'C'`
-  komutlarıyla `ReplicationServer` üzerindeki `CacheEngine`’i günceller veya
-  sorgular.
-- `ReplicationServer`, gelen komutları sanal thread havuzunda işler, TTL’si
-  geçmiş verileri otomatik olarak temizler ve `CacheEngine` üzerinde idempotent
-  işlemler uygular.
+- `CoordinationService`, multicast dinleyicisi ile gelen
+  `HELLO|nodeId|host|port|epoch` kalp atışlarını işleyerek üyeleri güncel tutar;
+  `RemoteNode` vekillerini `J` (join), `R` (replication) ve `H` (hint)
+  komutları üzerinden `ReplicationServer` ile el sıkıştırır. İlk temasta
+  bootstrap oturumları açıp tam durum aktarımını tetikler, ardından
+  fingerprint/digest karşılaştırmalarına dayalı anti-entropy döngüleri ile
+  ayrışmaları giderir ve periyodik ipucu tekrarları (hint replay) sayesinde
+  kopuk yazmaları toparlar.
+- `RemoteNode`, her çağrıda kısa ömürlü bir soket açar; bağlantıyı `J`
+  komutu ile tanıtır, `R` yanıtı alındığında veri akışını başlatır ve `H`
+  komutu üzerinden digest/ipucu eşlemesini sürdürür. Ardından `'S'/'G'/'D'/'X'/'C'`
+  veri komutlarını akış halinde gönderir, gelen fingerprint bilgileri ile
+  kendi hesaplamasını karşılaştırarak tutarlılığı doğrular.
+- `ReplicationServer`, `J`/`R`/`H` komutlarını işleyerek katılım doğrulama,
+  bootstrap akışını açma ve ipucu/digest senkronizasyonunu yönetir; veri
+  komutlarını sanal thread havuzunda stream olarak işler, TTL’si geçmiş
+  kayıtları otomatik temizler ve `CacheEngine` üzerinde idempotent işlemler
+  uygular.
 
 ### Çekirdek bellek motoru
 - `CacheEngine`, yapılandırmada verilen segment sayısı ve kapasiteyi kullanarak
