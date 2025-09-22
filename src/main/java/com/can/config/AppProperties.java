@@ -18,6 +18,7 @@ public interface AppProperties
     Rdb rdb();
     Cache cache();
     Cluster cluster();
+    Network network();
 
     interface Metrics {
         @WithDefault("5")
@@ -52,5 +53,19 @@ public interface AppProperties
 
         @WithDefault("1")
         int replicationFactor();
+    }
+
+    interface Network {
+        @WithDefault("0.0.0.0")
+        String host();
+
+        @WithDefault("11211")
+        int port();
+
+        @WithDefault("128")
+        int backlog();
+
+        @WithDefault("16")
+        int workerThreads();
     }
 }
