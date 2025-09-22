@@ -28,7 +28,7 @@ class CacheSegmentDetailedTest {
         @Test
         void rejectsInsertionWhenPolicyDisagrees() {
             RecordingPolicy<String> policy = new RecordingPolicy<>();
-            CacheSegment<String> segment = new CacheSegment<>(1, policy);
+            CacheSegment<String> segment = new CacheSegment<>(1, policy, null);
 
             policy.nextDecision(EvictionPolicy.AdmissionDecision.admit());
             assertTrue(segment.put("hot", value(1)));
@@ -47,7 +47,7 @@ class CacheSegmentDetailedTest {
         @Test
         void evictsVictimSelectedByPolicy() {
             RecordingPolicy<String> policy = new RecordingPolicy<>();
-            CacheSegment<String> segment = new CacheSegment<>(1, policy);
+            CacheSegment<String> segment = new CacheSegment<>(1, policy, null);
 
             policy.nextDecision(EvictionPolicy.AdmissionDecision.admit());
             assertTrue(segment.put("hot", value(1)));
@@ -69,7 +69,7 @@ class CacheSegmentDetailedTest {
         @Test
         void putForceOverridesCapacity() {
             RecordingPolicy<String> policy = new RecordingPolicy<>();
-            CacheSegment<String> segment = new CacheSegment<>(1, policy);
+            CacheSegment<String> segment = new CacheSegment<>(1, policy, null);
 
             policy.nextDecision(EvictionPolicy.AdmissionDecision.admit());
             segment.put("old", value(1));
@@ -87,7 +87,7 @@ class CacheSegmentDetailedTest {
         @Test
         void removeNotifiesPolicy() {
             RecordingPolicy<String> policy = new RecordingPolicy<>();
-            CacheSegment<String> segment = new CacheSegment<>(4, policy);
+            CacheSegment<String> segment = new CacheSegment<>(4, policy, null);
 
             policy.nextDecision(EvictionPolicy.AdmissionDecision.admit());
             segment.put("sample", value(7));
@@ -107,7 +107,7 @@ class CacheSegmentDetailedTest {
         @Test
         void forEachUsesSnapshotToAvoidConcurrentMutation() {
             RecordingPolicy<String> policy = new RecordingPolicy<>();
-            CacheSegment<String> segment = new CacheSegment<>(4, policy);
+            CacheSegment<String> segment = new CacheSegment<>(4, policy, null);
 
             policy.nextDecision(EvictionPolicy.AdmissionDecision.admit());
             segment.put("a", value(1));

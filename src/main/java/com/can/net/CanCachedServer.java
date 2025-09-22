@@ -2,6 +2,8 @@ package com.can.net;
 
 import com.can.cluster.ClusterClient;
 import com.can.config.AppProperties;
+import com.can.core.CacheEngine;
+import com.can.core.StoredValueCodec;
 import io.quarkus.runtime.Startup;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -18,13 +20,10 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -47,9 +46,11 @@ public class CanCachedServer implements AutoCloseable {
     private static final byte[] CRLF = new byte[]{'\r', '\n'};
     private static final long THIRTY_DAYS_SECONDS = 60L * 60L * 24L * 30L;
     private static final int MAX_ITEM_SIZE = 1_048_576; // 1 MB
+    private static final int MAX_CAS_RETRIES = 16;
 
     private final ClusterClient<String, String> clusterClient;
     private final AppProperties.Network networkConfig;
+    private final CacheEngine<String, String> localEngine;
 
     private final AtomicLong casCounter = new AtomicLong(1L);
     private final AtomicLong cmdGet = new AtomicLong();
@@ -69,11 +70,13 @@ public class CanCachedServer implements AutoCloseable {
     private ThreadPoolExecutor workers;
     private ServerSocket serverSocket;
     private Thread acceptThread;
+    private AutoCloseable removalSubscription;
 
     @Inject
-    public CanCachedServer(ClusterClient<String, String> clusterClient, AppProperties properties) {
+    public CanCachedServer(ClusterClient<String, String> clusterClient, AppProperties properties, CacheEngine<String, String> localEngine) {
         this.clusterClient = Objects.requireNonNull(clusterClient, "clusterClient");
         this.networkConfig = Objects.requireNonNull(properties.network(), "networkConfig");
+        this.localEngine = Objects.requireNonNull(localEngine, "localEngine");
     }
 
     @PostConstruct
@@ -101,6 +104,7 @@ public class CanCachedServer implements AutoCloseable {
         acceptThread.setDaemon(true);
         acceptThread.start();
         LOG.infof("Memcached-compatible server listening on %s:%d", networkConfig.host(), serverSocket.getLocalPort());
+        removalSubscription = localEngine.onRemoval(key -> decrementCurrItems());
     }
 
     private void acceptLoop() {
@@ -249,22 +253,24 @@ public class CanCachedServer implements AutoCloseable {
         Duration ttl = parseExpiration(exptime);
         cmdSet.incrementAndGet();
 
-        StoredValue existing = getEntry(key);
+        StoredValueCodec.StoredValue existing = getEntry(key);
         if (existing != null && existing.expired(System.currentTimeMillis())) {
             existing = null;
         }
 
         if (Duration.ZERO.equals(ttl)) {
-            if (existing != null) {
-                if (clusterClient.delete(key)) {
-                    decrementCurrItems();
-                }
+            if (existing != null && clusterClient.delete(key)) {
+                decrementCurrItems();
             }
             if (!noreply) {
                 writeLine(out, "STORED");
                 out.flush();
             }
             return true;
+        }
+
+        if (isCas) {
+            return handleCasCommand(key, value, flags, ttl, casUnique, noreply, existing, out);
         }
 
         switch (command) {
@@ -276,8 +282,14 @@ public class CanCachedServer implements AutoCloseable {
                     }
                     return true;
                 }
-                StoredValue entry = new StoredValue(value, flags, nextCas(), computeExpireAt(ttl));
-                storeEntry(key, entry, ttl);
+                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(value, flags, nextCas(), computeExpireAt(ttl));
+                if (!storeEntry(key, entry, ttl)) {
+                    if (!noreply) {
+                        writeLine(out, "NOT_STORED");
+                        out.flush();
+                    }
+                    return true;
+                }
                 incrementItems();
             }
             case "replace" -> {
@@ -288,8 +300,14 @@ public class CanCachedServer implements AutoCloseable {
                     }
                     return true;
                 }
-                StoredValue entry = new StoredValue(value, flags, nextCas(), computeExpireAt(ttl));
-                storeEntry(key, entry, ttl);
+                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(value, flags, nextCas(), computeExpireAt(ttl));
+                if (!storeEntry(key, entry, ttl)) {
+                    if (!noreply) {
+                        writeLine(out, "NOT_STORED");
+                        out.flush();
+                    }
+                    return true;
+                }
             }
             case "append" -> {
                 if (existing == null) {
@@ -299,19 +317,35 @@ public class CanCachedServer implements AutoCloseable {
                     }
                     return true;
                 }
-                if ((long) existing.value.length + value.length > MAX_ITEM_SIZE) {
+                if ((long) existing.value().length + value.length > MAX_ITEM_SIZE) {
                     if (!noreply) {
                         writeLine(out, "SERVER_ERROR object too large");
                         out.flush();
                     }
                     return true;
                 }
-                byte[] combined = new byte[existing.value.length + value.length];
-                System.arraycopy(existing.value, 0, combined, 0, existing.value.length);
-                System.arraycopy(value, 0, combined, existing.value.length, value.length);
-                StoredValue entry = new StoredValue(combined, existing.flags, nextCas(), existing.expireAt);
-                Duration ttlForExisting = ttlFromExpireAt(existing.expireAt);
-                storeEntry(key, entry, ttlForExisting);
+                CasUpdateStatus status = appendOrPrepend(key, existing, value, false);
+                if (status == CasUpdateStatus.NOT_FOUND) {
+                    if (!noreply) {
+                        writeLine(out, "NOT_STORED");
+                        out.flush();
+                    }
+                    return true;
+                }
+                if (status == CasUpdateStatus.TOO_LARGE) {
+                    if (!noreply) {
+                        writeLine(out, "SERVER_ERROR object too large");
+                        out.flush();
+                    }
+                    return true;
+                }
+                if (status == CasUpdateStatus.CONFLICT) {
+                    if (!noreply) {
+                        writeLine(out, "SERVER_ERROR cas conflict");
+                        out.flush();
+                    }
+                    return true;
+                }
             }
             case "prepend" -> {
                 if (existing == null) {
@@ -321,42 +355,45 @@ public class CanCachedServer implements AutoCloseable {
                     }
                     return true;
                 }
-                if ((long) existing.value.length + value.length > MAX_ITEM_SIZE) {
+                if ((long) existing.value().length + value.length > MAX_ITEM_SIZE) {
                     if (!noreply) {
                         writeLine(out, "SERVER_ERROR object too large");
                         out.flush();
                     }
                     return true;
                 }
-                byte[] combined = new byte[existing.value.length + value.length];
-                System.arraycopy(value, 0, combined, 0, value.length);
-                System.arraycopy(existing.value, 0, combined, value.length, existing.value.length);
-                StoredValue entry = new StoredValue(combined, existing.flags, nextCas(), existing.expireAt);
-                Duration ttlForExisting = ttlFromExpireAt(existing.expireAt);
-                storeEntry(key, entry, ttlForExisting);
-            }
-            case "cas" -> {
-                if (existing == null) {
+                CasUpdateStatus status = appendOrPrepend(key, existing, value, true);
+                if (status == CasUpdateStatus.NOT_FOUND) {
                     if (!noreply) {
-                        writeLine(out, "NOT_FOUND");
+                        writeLine(out, "NOT_STORED");
                         out.flush();
                     }
                     return true;
                 }
-                if (existing.cas != casUnique) {
+                if (status == CasUpdateStatus.TOO_LARGE) {
                     if (!noreply) {
-                        writeLine(out, "EXISTS");
+                        writeLine(out, "SERVER_ERROR object too large");
                         out.flush();
                     }
                     return true;
                 }
-                StoredValue entry = new StoredValue(value, flags, nextCas(), computeExpireAt(ttl));
-                storeEntry(key, entry, ttl);
+                if (status == CasUpdateStatus.CONFLICT) {
+                    if (!noreply) {
+                        writeLine(out, "SERVER_ERROR cas conflict");
+                        out.flush();
+                    }
+                    return true;
+                }
             }
             default -> {
-                // set
-                StoredValue entry = new StoredValue(value, flags, nextCas(), computeExpireAt(ttl));
-                storeEntry(key, entry, ttl);
+                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(value, flags, nextCas(), computeExpireAt(ttl));
+                if (!storeEntry(key, entry, ttl)) {
+                    if (!noreply) {
+                        writeLine(out, "NOT_STORED");
+                        out.flush();
+                    }
+                    return true;
+                }
                 if (existing == null) {
                     incrementItems();
                 }
@@ -370,6 +407,74 @@ public class CanCachedServer implements AutoCloseable {
         return true;
     }
 
+    private boolean handleCasCommand(String key, byte[] value, int flags, Duration ttl, long casUnique, boolean noreply, StoredValueCodec.StoredValue existing, BufferedOutputStream out) throws IOException {
+        if (existing == null) {
+            if (!noreply) {
+                writeLine(out, "NOT_FOUND");
+                out.flush();
+            }
+            return true;
+        }
+        if (existing.cas() != casUnique) {
+            if (!noreply) {
+                writeLine(out, "EXISTS");
+                out.flush();
+            }
+            return true;
+        }
+        long expireAt = computeExpireAt(ttl);
+        StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(value, flags, nextCas(), expireAt);
+        Duration effectiveTtl = ttl;
+        if (effectiveTtl == null) {
+            effectiveTtl = ttlFromExpireAt(expireAt);
+        }
+        boolean stored = clusterClient.compareAndSwap(key, StoredValueCodec.encode(entry), casUnique, effectiveTtl);
+        if (!stored) {
+            StoredValueCodec.StoredValue latest = getEntry(key);
+            if (!noreply) {
+                if (latest == null) {
+                    writeLine(out, "NOT_FOUND");
+                } else {
+                    writeLine(out, "EXISTS");
+                }
+                out.flush();
+            }
+            return true;
+        }
+        if (!noreply) {
+            writeLine(out, "STORED");
+            out.flush();
+        }
+        return true;
+    }
+
+    private CasUpdateStatus appendOrPrepend(String key, StoredValueCodec.StoredValue snapshot, byte[] addition, boolean prepend) {
+        StoredValueCodec.StoredValue current = snapshot;
+        for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
+            if (current == null) {
+                return CasUpdateStatus.NOT_FOUND;
+            }
+            if ((long) current.value().length + addition.length > MAX_ITEM_SIZE) {
+                return CasUpdateStatus.TOO_LARGE;
+            }
+            byte[] combined = new byte[current.value().length + addition.length];
+            if (prepend) {
+                System.arraycopy(addition, 0, combined, 0, addition.length);
+                System.arraycopy(current.value(), 0, combined, addition.length, current.value().length);
+            } else {
+                System.arraycopy(current.value(), 0, combined, 0, current.value().length);
+                System.arraycopy(addition, 0, combined, current.value().length, addition.length);
+            }
+            StoredValueCodec.StoredValue candidate = new StoredValueCodec.StoredValue(combined, current.flags(), nextCas(), current.expireAt());
+            Duration ttl = ttlFromExpireAt(current.expireAt());
+            if (clusterClient.compareAndSwap(key, StoredValueCodec.encode(candidate), current.cas(), ttl)) {
+                return CasUpdateStatus.SUCCESS;
+            }
+            current = getEntry(key);
+        }
+        return CasUpdateStatus.CONFLICT;
+    }
+
     private void handleGet(String[] parts, BufferedOutputStream out, boolean includeCas) throws IOException {
         if (parts.length < 2) {
             writeLine(out, "CLIENT_ERROR bad command line format");
@@ -380,17 +485,17 @@ public class CanCachedServer implements AutoCloseable {
         long now = System.currentTimeMillis();
         for (int i = 1; i < parts.length; i++) {
             String key = parts[i];
-            StoredValue entry = getEntry(key);
+            StoredValueCodec.StoredValue entry = getEntry(key);
             if (entry == null || entry.expired(now)) {
                 getMisses.incrementAndGet();
                 continue;
             }
             getHits.incrementAndGet();
             String header = includeCas
-                    ? String.format(Locale.ROOT, "VALUE %s %d %d %d", key, entry.flags, entry.value.length, entry.cas)
-                    : String.format(Locale.ROOT, "VALUE %s %d %d", key, entry.flags, entry.value.length);
+                    ? String.format(Locale.ROOT, "VALUE %s %d %d %d", key, entry.flags(), entry.value().length, entry.cas())
+                    : String.format(Locale.ROOT, "VALUE %s %d %d", key, entry.flags(), entry.value().length);
             writeLine(out, header);
-            out.write(entry.value);
+            out.write(entry.value());
             out.write(CRLF);
         }
         writeLine(out, "END");
@@ -445,37 +550,49 @@ public class CanCachedServer implements AutoCloseable {
         }
 
         String key = parts[1];
-        StoredValue existing = getEntry(key);
-        if (existing == null) {
-            if (!noreply) {
-                writeLine(out, "NOT_FOUND");
-                out.flush();
+        StoredValueCodec.StoredValue current = getEntry(key);
+        for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
+            if (current == null) {
+                if (!noreply) {
+                    writeLine(out, "NOT_FOUND");
+                    out.flush();
+                }
+                return true;
             }
-            return true;
+            String currentValue = new String(current.value(), StandardCharsets.US_ASCII);
+            if (!currentValue.chars().allMatch(Character::isDigit)) {
+                writeLine(out, "CLIENT_ERROR cannot increment or decrement non-numeric value");
+                out.flush();
+                return true;
+            }
+            BigInteger numeric = new BigInteger(currentValue);
+            BigInteger updated = "incr".equals(command) ? numeric.add(delta) : numeric.subtract(delta);
+            if (updated.signum() < 0) {
+                updated = BigInteger.ZERO;
+            }
+            byte[] newValue = updated.toString().getBytes(StandardCharsets.US_ASCII);
+            if (newValue.length > MAX_ITEM_SIZE) {
+                writeLine(out, "SERVER_ERROR object too large");
+                out.flush();
+                return true;
+            }
+            StoredValueCodec.StoredValue candidate = new StoredValueCodec.StoredValue(newValue, current.flags(), nextCas(), current.expireAt());
+            Duration ttl = ttlFromExpireAt(current.expireAt());
+            if (clusterClient.compareAndSwap(key, StoredValueCodec.encode(candidate), current.cas(), ttl)) {
+                if (!noreply) {
+                    writeLine(out, updated.toString());
+                    out.flush();
+                }
+                return true;
+            }
+            current = getEntry(key);
         }
-        String currentValue = new String(existing.value, StandardCharsets.US_ASCII);
-        if (!currentValue.chars().allMatch(Character::isDigit)) {
-            writeLine(out, "CLIENT_ERROR cannot increment or decrement non-numeric value");
-            out.flush();
-            return true;
-        }
-        BigInteger current = new BigInteger(currentValue);
-        BigInteger updated = "incr".equals(command) ? current.add(delta) : current.subtract(delta);
-        if (updated.signum() < 0) {
-            updated = BigInteger.ZERO;
-        }
-        byte[] newValue = updated.toString().getBytes(StandardCharsets.US_ASCII);
-        StoredValue entry = new StoredValue(newValue, existing.flags, nextCas(), existing.expireAt);
-        Duration ttl = ttlFromExpireAt(existing.expireAt);
-        storeEntry(key, entry, ttl);
-
         if (!noreply) {
-            writeLine(out, updated.toString());
+            writeLine(out, "SERVER_ERROR cas conflict");
             out.flush();
         }
         return true;
     }
-
     private boolean handleTouch(String[] parts, BufferedOutputStream out) throws IOException {
         if (parts.length < 3) {
             writeLine(out, "CLIENT_ERROR bad command line format");
@@ -496,14 +613,6 @@ public class CanCachedServer implements AutoCloseable {
             out.flush();
             return true;
         }
-        StoredValue existing = getEntry(parts[1]);
-        if (existing == null) {
-            if (!noreply) {
-                writeLine(out, "NOT_FOUND");
-                out.flush();
-            }
-            return true;
-        }
         Duration ttl = parseExpiration(exptime);
         if (Duration.ZERO.equals(ttl)) {
             if (clusterClient.delete(parts[1])) {
@@ -515,17 +624,37 @@ public class CanCachedServer implements AutoCloseable {
             }
             return true;
         }
-        long expireAt = computeExpireAt(ttl);
-        StoredValue entry = new StoredValue(existing.value, existing.flags, existing.cas, expireAt);
-        storeEntry(parts[1], entry, ttl);
-        cmdTouch.incrementAndGet();
+        StoredValueCodec.StoredValue current = getEntry(parts[1]);
+        for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
+            if (current == null) {
+                if (!noreply) {
+                    writeLine(out, "NOT_FOUND");
+                    out.flush();
+                }
+                return true;
+            }
+            long expireAt = computeExpireAt(ttl);
+            StoredValueCodec.StoredValue candidate = new StoredValueCodec.StoredValue(current.value(), current.flags(), current.cas(), expireAt);
+            Duration effectiveTtl = ttl;
+            if (effectiveTtl == null) {
+                effectiveTtl = ttlFromExpireAt(expireAt);
+            }
+            if (clusterClient.compareAndSwap(parts[1], StoredValueCodec.encode(candidate), current.cas(), effectiveTtl)) {
+                cmdTouch.incrementAndGet();
+                if (!noreply) {
+                    writeLine(out, "TOUCHED");
+                    out.flush();
+                }
+                return true;
+            }
+            current = getEntry(parts[1]);
+        }
         if (!noreply) {
-            writeLine(out, "TOUCHED");
+            writeLine(out, "SERVER_ERROR cas conflict");
             out.flush();
         }
         return true;
     }
-
     private boolean handleFlushAll(String[] parts, BufferedOutputStream out) throws IOException {
         boolean noreply = false;
         long delaySeconds = 0L;
@@ -621,63 +750,34 @@ public class CanCachedServer implements AutoCloseable {
         }
     }
 
-    private StoredValue getEntry(String key) {
+    private StoredValueCodec.StoredValue getEntry(String key) {
         String encoded = clusterClient.get(key);
         if (encoded == null) {
             return null;
         }
-        try {
-            byte[] data = Base64.getDecoder().decode(encoded);
-            if (data.length < 20) {
-                return legacyValue(encoded);
+        StoredValueCodec.StoredValue entry = StoredValueCodec.decode(encoded);
+        long now = System.currentTimeMillis();
+        if (entry.expired(now)) {
+            if (clusterClient.delete(key)) {
+                decrementCurrItems();
             }
-            ByteBuffer buffer = ByteBuffer.wrap(data).order(ByteOrder.BIG_ENDIAN);
-            long cas = buffer.getLong();
-            int flags = buffer.getInt();
-            long expireAt = buffer.getLong();
-            byte[] value = new byte[data.length - 20];
-            buffer.get(value);
-            StoredValue entry = new StoredValue(value, flags, cas, expireAt);
-            if (entry.expired(System.currentTimeMillis())) {
-                if (clusterClient.delete(key)) {
-                    decrementCurrItems();
-                }
-                return null;
-            }
-            return entry;
-        } catch (IllegalArgumentException e) {
-            return legacyValue(encoded);
+            return null;
         }
+        return entry;
     }
-
-    private StoredValue legacyValue(String raw) {
-        byte[] value = raw.getBytes(StandardCharsets.UTF_8);
-        return new StoredValue(value, 0, 0L, 0L);
-    }
-
-    private void storeEntry(String key, StoredValue entry, Duration ttl) {
+    private boolean storeEntry(String key, StoredValueCodec.StoredValue entry, Duration ttl) {
         Duration effectiveTtl = ttl;
         if (effectiveTtl == null) {
-            effectiveTtl = ttlFromExpireAt(entry.expireAt);
+            effectiveTtl = ttlFromExpireAt(entry.expireAt());
         }
         if (effectiveTtl != null && effectiveTtl.isZero()) {
             if (clusterClient.delete(key)) {
                 decrementCurrItems();
             }
-            return;
+            return true;
         }
-        clusterClient.set(key, encode(entry), effectiveTtl);
+        return clusterClient.set(key, StoredValueCodec.encode(entry), effectiveTtl);
     }
-
-    private String encode(StoredValue entry) {
-        ByteBuffer buffer = ByteBuffer.allocate(20 + entry.value.length).order(ByteOrder.BIG_ENDIAN);
-        buffer.putLong(entry.cas);
-        buffer.putInt(entry.flags);
-        buffer.putLong(entry.expireAt);
-        buffer.put(entry.value);
-        return Base64.getEncoder().encodeToString(buffer.array());
-    }
-
     private long nextCas() {
         return casCounter.updateAndGet(prev -> prev == Long.MAX_VALUE ? 1L : prev + 1L);
     }
@@ -704,6 +804,13 @@ public class CanCachedServer implements AutoCloseable {
             return Duration.ZERO;
         }
         return Duration.ofMillis(remaining);
+    }
+
+    private enum CasUpdateStatus {
+        SUCCESS,
+        NOT_FOUND,
+        CONFLICT,
+        TOO_LARGE
     }
 
     private void incrementItems() {
@@ -773,6 +880,12 @@ public class CanCachedServer implements AutoCloseable {
     @Override
     public void close() {
         running = false;
+        if (removalSubscription != null) {
+            try {
+                removalSubscription.close();
+            } catch (Exception ignored) {
+            }
+        }
         if (serverSocket != null && !serverSocket.isClosed()) {
             try {
                 serverSocket.close();
@@ -794,24 +907,6 @@ public class CanCachedServer implements AutoCloseable {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-        }
-    }
-
-    private static final class StoredValue {
-        private final byte[] value;
-        private final int flags;
-        private final long cas;
-        private final long expireAt;
-
-        private StoredValue(byte[] value, int flags, long cas, long expireAt) {
-            this.value = value;
-            this.flags = flags;
-            this.cas = cas;
-            this.expireAt = expireAt;
-        }
-
-        private boolean expired(long now) {
-            return expireAt > 0 && expireAt != Long.MAX_VALUE && now >= expireAt;
         }
     }
 

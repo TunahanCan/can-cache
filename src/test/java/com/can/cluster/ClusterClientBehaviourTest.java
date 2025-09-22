@@ -81,9 +81,10 @@ class ClusterClientBehaviourTest {
         }
 
         @Override
-        public void set(String key, String value, Duration ttl) {
+        public boolean set(String key, String value, Duration ttl) {
             setKeys.add(key);
             this.value = value;
+            return true;
         }
 
         @Override
@@ -94,6 +95,12 @@ class ClusterClientBehaviourTest {
         @Override
         public boolean delete(String key) {
             return deleteResult;
+        }
+
+        @Override
+        public boolean compareAndSwap(String key, String value, long expectedCas, Duration ttl) {
+            this.value = value;
+            return true;
         }
 
         @Override

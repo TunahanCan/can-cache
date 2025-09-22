@@ -8,6 +8,7 @@ import com.can.pubsub.Broker;
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.DelayQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -35,6 +36,7 @@ public final class CacheEngine<K,V> implements AutoCloseable
 
     private final Counter hits, misses, evictions;
     private final Timer tGet, tSet, tDel;
+    private final CopyOnWriteArrayList<RemovalListener<K>> removalListeners = new CopyOnWriteArrayList<>();
 
     @SuppressWarnings("unchecked")
     private CacheEngine(int segments, int maxCapacity, long cleanerPollMillis,
@@ -44,7 +46,7 @@ public final class CacheEngine<K,V> implements AutoCloseable
         this.segments = segments;
         this.table = new CacheSegment[segments];
         int per = Math.max(1, maxCapacity / segments);
-        for (int i=0;i<segments;i++) table[i] = new CacheSegment<>(per, evictionPolicy.create(per));
+        for (int i=0;i<segments;i++) table[i] = new CacheSegment<>(per, evictionPolicy.create(per), this::notifyRemoval);
 
         this.cleanerPollMillis = cleanerPollMillis;
         this.keyCodec = keyCodec; this.valCodec = valCodec;
@@ -104,11 +106,29 @@ public final class CacheEngine<K,V> implements AutoCloseable
         }, cleanerPollMillis, cleanerPollMillis, TimeUnit.MILLISECONDS);
     }
 
-    public void set(K key, V value){
-        set(key, value, null);
+    private void notifyRemoval(K key) {
+        if (broker != null) {
+            broker.publish("keyspace:del", keyCodec.encode(key));
+        }
+        for (RemovalListener<K> listener : removalListeners) {
+            try {
+                listener.onRemoval(key);
+            } catch (RuntimeException ignored) {
+            }
+        }
     }
 
-    public void set(K key, V value, Duration ttl)
+    public AutoCloseable onRemoval(RemovalListener<K> listener) {
+        Objects.requireNonNull(listener);
+        removalListeners.add(listener);
+        return () -> removalListeners.remove(listener);
+    }
+
+    public boolean set(K key, V value){
+        return set(key, value, null);
+    }
+
+    public boolean set(K key, V value, Duration ttl)
     {
         long t0 = System.nanoTime();
         Objects.requireNonNull(key);
@@ -118,11 +138,65 @@ public final class CacheEngine<K,V> implements AutoCloseable
         boolean stored = seg(key).put(key, new CacheValue(valCodec.encode(value), expireAt));
         if (!stored) {
             if (tSet != null) tSet.record(System.nanoTime() - t0);
-            return;
+            return false;
         }
         if (expireAt > 0) ttlQueue.offer(new ExpiringKey(key, idx, expireAt));
         if (broker != null) broker.publish("keyspace:set", keyCodec.encode(key));
         if (tSet != null) tSet.record(System.nanoTime() - t0);
+        return true;
+    }
+
+    public boolean compareAndSwap(K key, V value, long expectedCas, Duration ttl) {
+        long t0 = System.nanoTime();
+        Objects.requireNonNull(key);
+        Objects.requireNonNull(value);
+        CacheSegment<K> segment = seg(key);
+        int idx = segIndex(key);
+        long now = System.currentTimeMillis();
+        CacheSegment<K>.CasResult result = segment.compareAndSwap(key, existing -> {
+            if (existing == null) {
+                return CacheSegment.CasDecision.fail();
+            }
+            if (existing.expired(now)) {
+                return CacheSegment.CasDecision.expired();
+            }
+            @SuppressWarnings("unchecked")
+            String encoded = (String) valCodec.decode(existing.value);
+            StoredValueCodec.StoredValue stored = StoredValueCodec.decode(encoded);
+            if (stored.cas() != expectedCas) {
+                return CacheSegment.CasDecision.fail();
+            }
+            long expireAt = existing.expireAtMillis;
+            if (ttl != null) {
+                expireAt = computeExpireAt(ttl, now);
+            }
+            return CacheSegment.CasDecision.success(new CacheValue(valCodec.encode(value), expireAt));
+        });
+        boolean success = result.success();
+        if (success) {
+            CacheValue newValue = result.newValue();
+            if (newValue != null && newValue.expireAtMillis > 0) {
+                ttlQueue.offer(new ExpiringKey(key, idx, newValue.expireAtMillis));
+            }
+            if (broker != null) {
+                broker.publish("keyspace:set", keyCodec.encode(key));
+            }
+        }
+        if (tSet != null) {
+            tSet.record(System.nanoTime() - t0);
+        }
+        return success;
+    }
+
+    private long computeExpireAt(Duration ttl, long now) {
+        if (ttl == null || ttl.isZero() || ttl.isNegative()) {
+            return 0L;
+        }
+        long expireAt = now + ttl.toMillis();
+        if (expireAt <= 0L) {
+            return Long.MAX_VALUE;
+        }
+        return expireAt;
     }
 
     public V get(K key)
@@ -207,6 +281,11 @@ public final class CacheEngine<K,V> implements AutoCloseable
     @Override
     public void close(){
         cleaner.shutdownNow();
+    }
+
+    @FunctionalInterface
+    public interface RemovalListener<K> {
+        void onRemoval(K key);
     }
 
     @FunctionalInterface

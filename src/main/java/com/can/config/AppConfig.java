@@ -106,8 +106,8 @@ public class AppConfig {
         final String resolvedId = nodeId;
         return new Node<>() {
             @Override
-            public void set(String k, String v, Duration ttl) {
-                engine.set(k, v, ttl);
+            public boolean set(String k, String v, Duration ttl) {
+                return engine.set(k, v, ttl);
             }
 
             @Override
@@ -118,6 +118,11 @@ public class AppConfig {
             @Override
             public boolean delete(String k) {
                 return engine.delete(k);
+            }
+
+            @Override
+            public boolean compareAndSwap(String k, String v, long expectedCas, Duration ttl) {
+                return engine.compareAndSwap(k, v, expectedCas, ttl);
             }
 
             @Override
