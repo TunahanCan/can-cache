@@ -1,5 +1,6 @@
 package com.can.cluster.coordination;
 
+import com.can.cluster.ClusterState;
 import com.can.config.AppProperties;
 import com.can.core.CacheEngine;
 import io.quarkus.runtime.Startup;
@@ -21,6 +22,7 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -38,6 +40,7 @@ public class ReplicationServer implements AutoCloseable
 
     private final CacheEngine<String, String> engine;
     private final AppProperties.Replication config;
+    private final ClusterState clusterState;
 
     private volatile boolean running;
     private ServerSocket serverSocket;
@@ -45,8 +48,9 @@ public class ReplicationServer implements AutoCloseable
     private Thread acceptThread;
 
     @Inject
-    public ReplicationServer(CacheEngine<String, String> engine, AppProperties properties) {
+    public ReplicationServer(CacheEngine<String, String> engine, ClusterState clusterState, AppProperties properties) {
         this.engine = engine;
+        this.clusterState = clusterState;
         this.config = properties.cluster().replication();
     }
 
@@ -108,6 +112,9 @@ public class ReplicationServer implements AutoCloseable
                     case 'D' -> handleDelete(in, out);
                     case 'C' -> handleClear(out);
                     case 'X' -> handleCas(in, out);
+                    case 'J' -> handleJoin(in, out);
+                    case 'R' -> handleStream(out);
+                    case 'H' -> handleDigest(out);
                     default -> {
                         LOG.warnf("Unknown replication command %d from %s", command & 0xff, socket.getRemoteSocketAddress());
                         return;
@@ -222,6 +229,60 @@ public class ReplicationServer implements AutoCloseable
         out.flush();
     }
 
+    private void handleJoin(DataInputStream in, DataOutputStream out) throws IOException
+    {
+        int joinerIdLength = in.readInt();
+        byte[] joinerIdBytes = in.readNBytes(joinerIdLength);
+        if (joinerIdBytes.length != joinerIdLength) {
+            throw new EOFException("Incomplete join request");
+        }
+        long joinerEpoch = in.readLong();
+        clusterState.observeEpoch(joinerEpoch);
+
+        String joinerId = new String(joinerIdBytes, StandardCharsets.UTF_8);
+        if (Objects.equals(joinerId, clusterState.localNodeId())) {
+            out.writeByte('R');
+            out.flush();
+            return;
+        }
+
+        byte[] idBytes = clusterState.localNodeIdBytes();
+        out.writeByte('A');
+        out.writeInt(idBytes.length);
+        out.write(idBytes);
+        out.writeLong(clusterState.currentEpoch());
+        out.flush();
+    }
+
+    private void handleStream(DataOutputStream out) throws IOException
+    {
+        try {
+            engine.forEachEntry((key, value, expireAt) -> {
+                try {
+                    byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
+                    out.writeByte(1);
+                    out.writeInt(keyBytes.length);
+                    out.writeInt(value.length);
+                    out.writeLong(expireAt);
+                    out.write(keyBytes);
+                    out.write(value);
+                } catch (IOException e) {
+                    throw new StreamWriteException(e);
+                }
+            });
+        } catch (StreamWriteException e) {
+            throw e.unwrap();
+        }
+        out.writeByte(0);
+        out.flush();
+    }
+
+    private void handleDigest(DataOutputStream out) throws IOException
+    {
+        out.writeLong(engine.fingerprint());
+        out.flush();
+    }
+
     @PreDestroy
     @Override
     public void close() {
@@ -237,6 +298,18 @@ public class ReplicationServer implements AutoCloseable
         }
         if (workers != null) {
             workers.shutdownNow();
+        }
+    }
+    private static final class StreamWriteException extends RuntimeException
+    {
+        private final IOException cause;
+
+        StreamWriteException(IOException cause) {
+            this.cause = cause;
+        }
+
+        IOException unwrap() {
+            return cause;
         }
     }
 }

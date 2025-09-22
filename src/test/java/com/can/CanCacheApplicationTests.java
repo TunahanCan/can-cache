@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class CanCacheApplicationTests {
 
     @Inject
-    ClusterClient<String, String> cluster;
+    ClusterClient cluster;
 
     @Nested
     class ContainerWiring {

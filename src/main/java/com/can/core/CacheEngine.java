@@ -7,6 +7,7 @@ import com.can.metric.Timer;
 import com.can.pubsub.Broker;
 
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.DelayQueue;
@@ -250,6 +251,17 @@ public final class CacheEngine<K,V> implements AutoCloseable
                 }
             });
         }
+    }
+
+    public long fingerprint()
+    {
+        final long[] hash = {1125899906842597L};
+        forEachEntry((key, value, expireAt) -> {
+            long entryHash = 31L * key.hashCode() + Arrays.hashCode(value);
+            entryHash = 31L * entryHash + Long.hashCode(expireAt);
+            hash[0] = 31L * hash[0] + entryHash;
+        });
+        return hash[0];
     }
 
     // Replay entry from persistence layer

@@ -1,6 +1,7 @@
 package com.can.cluster;
 
 import com.can.codec.StringCodec;
+import com.can.metric.MetricsRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,8 @@ class ClusterClientTest
     private ConsistentHashRing<Node<String, String>> ring;
     private TestNode node1;
     private TestNode node2;
-    private ClusterClient<String, String> client;
+    private ClusterClient client;
+    private HintedHandoffService hintedHandoff;
 
     @BeforeEach
     void setup()
@@ -27,7 +29,8 @@ class ClusterClientTest
         node2 = new TestNode("node2");
         ring.addNode(node1, node1.id().getBytes());
         ring.addNode(node2, node2.id().getBytes());
-        client = new ClusterClient<>(ring, 2, StringCodec.UTF8);
+        hintedHandoff = new HintedHandoffService(new MetricsRegistry());
+        client = new ClusterClient(ring, 2, StringCodec.UTF8, hintedHandoff);
     }
 
     @Nested

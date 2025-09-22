@@ -1,15 +1,23 @@
 package com.can.cluster.coordination;
 
+import com.can.cluster.ClusterState;
 import com.can.cluster.ConsistentHashRing;
+import com.can.cluster.HintedHandoffService;
 import com.can.cluster.Node;
 import com.can.config.AppProperties;
+import com.can.core.CacheEngine;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jboss.logging.Logger;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -17,8 +25,13 @@ import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
 import java.net.NetworkInterface;
 import java.net.SocketException;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,11 +52,17 @@ public class CoordinationService implements AutoCloseable
 {
     private static final Logger LOG = Logger.getLogger(CoordinationService.class);
     private static final int MAX_PACKET_SIZE = 1024;
+    private static final long HINT_REPLAY_INTERVAL_MILLIS = 5_000L;
+    private static final long REPAIR_INTERVAL_MILLIS = 30_000L;
 
     private final ConsistentHashRing<Node<String, String>> ring;
     private final Node<String, String> localNode;
+    private final ClusterState clusterState;
+    private final HintedHandoffService hintedHandoffService;
+    private final CacheEngine<String, String> localEngine;
     private final AppProperties.Discovery discoveryConfig;
     private final AppProperties.Replication replicationConfig;
+    private final int replicationFactor;
 
     private final Map<String, RemoteMember> members = new ConcurrentHashMap<>();
     private final Object membershipLock = new Object();
@@ -54,18 +73,26 @@ public class CoordinationService implements AutoCloseable
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> heartbeatTask;
     private ScheduledFuture<?> reapTask;
+    private ScheduledFuture<?> repairTask;
     private Thread listenerThread;
     private volatile boolean running;
 
     @Inject
     public CoordinationService(ConsistentHashRing<Node<String, String>> ring,
                                Node<String, String> localNode,
+                               ClusterState clusterState,
+                               HintedHandoffService hintedHandoffService,
+                               CacheEngine<String, String> localEngine,
                                AppProperties properties) {
         this.ring = ring;
         this.localNode = localNode;
+        this.clusterState = clusterState;
+        this.hintedHandoffService = hintedHandoffService;
+        this.localEngine = localEngine;
         var cluster = properties.cluster();
         this.discoveryConfig = cluster.discovery();
         this.replicationConfig = cluster.replication();
+        this.replicationFactor = Math.max(1, cluster.replicationFactor());
     }
 
     @PostConstruct
@@ -88,6 +115,8 @@ public class CoordinationService implements AutoCloseable
         long reapInterval = Math.max(heartbeat, discoveryConfig.failureTimeoutMillis() / 2);
         heartbeatTask = scheduler.scheduleAtFixedRate(this::broadcastHeartbeat, 0L, heartbeat, TimeUnit.MILLISECONDS);
         reapTask = scheduler.scheduleAtFixedRate(this::pruneDeadMembers, reapInterval, reapInterval, TimeUnit.MILLISECONDS);
+        long repairInterval = Math.max(reapInterval, REPAIR_INTERVAL_MILLIS);
+        repairTask = scheduler.scheduleAtFixedRate(this::runAntiEntropy, repairInterval, repairInterval, TimeUnit.MILLISECONDS);
 
         LOG.infof("Coordination service started for node %s, announcing %s:%d", localNode.id(),
                 advertisedHost(), replicationConfig.port());
@@ -146,7 +175,7 @@ public class CoordinationService implements AutoCloseable
     private void handlePacket(byte[] data, int length) {
         String message = new String(data, 0, length, StandardCharsets.UTF_8);
         String[] parts = message.split("\\|");
-        if (parts.length != 4 || !Objects.equals(parts[0], "HELLO")) {
+        if (parts.length < 4 || !Objects.equals(parts[0], "HELLO")) {
             return;
         }
 
@@ -164,30 +193,238 @@ public class CoordinationService implements AutoCloseable
             return;
         }
 
+        long remoteEpoch = 0L;
+        if (parts.length >= 5) {
+            try {
+                remoteEpoch = Long.parseLong(parts[4]);
+            } catch (NumberFormatException ignored) {
+                remoteEpoch = 0L;
+            }
+        }
+
         long now = System.currentTimeMillis();
         byte[] idBytes = nodeId.getBytes(StandardCharsets.UTF_8);
 
         synchronized (membershipLock) {
             RemoteMember existing = members.get(nodeId);
             if (existing == null) {
+                JoinHandshakeResult join = performJoinHandshake(nodeId, host, port);
+                if (join == null || !join.accepted()) {
+                    return;
+                }
+                long previousEpoch = clusterState.currentEpoch();
+                boolean shouldBootstrap = join.epoch() >= previousEpoch;
+                clusterState.bumpEpoch();
+                clusterState.observeEpoch(join.epoch());
+
                 RemoteNode remoteNode = new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis());
-                members.put(nodeId, new RemoteMember(remoteNode, idBytes, host, port, now));
+                RemoteMember member = new RemoteMember(remoteNode, idBytes, host, port, now, join.epoch());
+                members.put(nodeId, member);
                 ring.addNode(remoteNode, idBytes);
                 LOG.infof("Discovered new cluster member %s at %s:%d", nodeId, host, port);
+
+                if (shouldBootstrap) {
+                    bootstrapFrom(member, false);
+                }
+                hintedHandoffService.replay(nodeId, remoteNode);
             } else if (!existing.matches(host, port)) {
                 ring.removeNode(existing.node(), existing.idBytes());
+                existing.resetBootstrap();
+                JoinHandshakeResult join = performJoinHandshake(nodeId, host, port);
+                if (join == null || !join.accepted()) {
+                    return;
+                }
+                long previousEpoch = clusterState.currentEpoch();
+                boolean shouldBootstrap = join.epoch() >= previousEpoch;
+                clusterState.bumpEpoch();
+                clusterState.observeEpoch(join.epoch());
+
                 RemoteNode remoteNode = new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis());
-                members.put(nodeId, new RemoteMember(remoteNode, idBytes, host, port, now));
+                existing.replace(remoteNode, idBytes, host, port, now, join.epoch());
                 ring.addNode(remoteNode, idBytes);
                 LOG.infof("Cluster member %s moved to %s:%d", nodeId, host, port);
+
+                if (shouldBootstrap) {
+                    bootstrapFrom(existing, false);
+                }
+                hintedHandoffService.replay(nodeId, remoteNode);
             } else {
-                existing.updateLastSeen(now);
+                existing.updateLastSeen(now, remoteEpoch);
+                clusterState.observeEpoch(remoteEpoch);
+                if (existing.shouldReplayHints(now, HINT_REPLAY_INTERVAL_MILLIS)) {
+                    hintedHandoffService.replay(nodeId, existing.node());
+                }
+            }
+        }
+    }
+
+    private JoinHandshakeResult performJoinHandshake(String nodeId, String host, int port) {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(host, port), replicationConfig.connectTimeoutMillis());
+            socket.setTcpNoDelay(true);
+            DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+            DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+
+            byte[] idBytes = clusterState.localNodeIdBytes();
+            out.writeByte('J');
+            out.writeInt(idBytes.length);
+            out.write(idBytes);
+            out.writeLong(clusterState.currentEpoch());
+            out.flush();
+
+            byte response = in.readByte();
+            if (response != 'A') {
+                LOG.debugf("Join handshake rejected by %s:%d", host, port);
+                return new JoinHandshakeResult(0L, false);
+            }
+
+            int remoteIdLength = in.readInt();
+            byte[] remoteIdBytes = in.readNBytes(remoteIdLength);
+            if (remoteIdBytes.length != remoteIdLength) {
+                throw new EOFException("Incomplete join response payload");
+            }
+            long remoteEpoch = in.readLong();
+            String remoteId = new String(remoteIdBytes, StandardCharsets.UTF_8);
+            if (!Objects.equals(remoteId, nodeId)) {
+                LOG.warnf("Join handshake id mismatch: expected %s but remote reported %s", nodeId, remoteId);
+                return new JoinHandshakeResult(0L, false);
+            }
+            return new JoinHandshakeResult(remoteEpoch, true);
+        } catch (IOException e) {
+            LOG.warnf(e, "Failed to perform join handshake with %s:%d", host, port);
+            return null;
+        }
+    }
+
+    private void bootstrapFrom(RemoteMember member, boolean force)
+    {
+        if (!force && !member.tryStartBootstrap()) {
+            return;
+        }
+
+        boolean success = false;
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(member.host(), member.port()), replicationConfig.connectTimeoutMillis());
+            socket.setTcpNoDelay(true);
+
+            DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+            DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+
+            out.writeByte('R');
+            out.flush();
+
+            long now = System.currentTimeMillis();
+            while (true) {
+                byte marker;
+                try {
+                    marker = in.readByte();
+                } catch (EOFException eof) {
+                    break;
+                }
+                if (marker == 0) {
+                    break;
+                }
+                if (marker != 1) {
+                    throw new IOException("Unexpected stream marker: " + marker);
+                }
+
+                int keyLen = in.readInt();
+                int valueLen = in.readInt();
+                long expireAt = in.readLong();
+
+                byte[] keyBytes = in.readNBytes(keyLen);
+                byte[] valueBytes = in.readNBytes(valueLen);
+                if (keyBytes.length != keyLen || valueBytes.length != valueLen) {
+                    throw new EOFException("Incomplete stream payload");
+                }
+
+                if (expireAt > 0L && expireAt <= now) {
+                    continue;
+                }
+
+                String key = new String(keyBytes, StandardCharsets.UTF_8);
+                String value = new String(valueBytes, StandardCharsets.UTF_8);
+
+                Duration ttl = null;
+                if (expireAt > 0L) {
+                    long ttlMillis = expireAt - now;
+                    if (ttlMillis <= 0L) {
+                        continue;
+                    }
+                    ttl = Duration.ofMillis(ttlMillis);
+                }
+                localNode.set(key, value, ttl);
+            }
+            success = true;
+        } catch (IOException e) {
+            LOG.warnf(e, "Failed to synchronise data from %s", member.hostPort());
+        } finally {
+            if (!force) {
+                member.completeBootstrap(success);
+            }
+        }
+    }
+
+    private long requestDigest(RemoteMember member) throws IOException
+    {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(member.host(), member.port()), replicationConfig.connectTimeoutMillis());
+            socket.setTcpNoDelay(true);
+            DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+            DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+            out.writeByte('H');
+            out.flush();
+            return in.readLong();
+        }
+    }
+
+    private long computeExpectedDigestFor(String nodeId)
+    {
+        final long[] digest = {1125899906842597L};
+        localEngine.forEachEntry((key, value, expireAt) -> {
+            List<Node<String, String>> replicas = ring.getReplicas(key.getBytes(StandardCharsets.UTF_8), replicationFactor);
+            for (Node<String, String> replica : replicas) {
+                if (Objects.equals(replica.id(), nodeId)) {
+                    long entryHash = 31L * key.hashCode() + Arrays.hashCode(value);
+                    entryHash = 31L * entryHash + Long.hashCode(expireAt);
+                    digest[0] = 31L * digest[0] + entryHash;
+                    break;
+                }
+            }
+        });
+        return digest[0];
+    }
+
+    private void runAntiEntropy()
+    {
+        if (!running) {
+            return;
+        }
+        List<RemoteMember> snapshot;
+        synchronized (membershipLock) {
+            if (members.isEmpty()) {
+                return;
+            }
+            snapshot = new ArrayList<>(members.values());
+        }
+
+        for (RemoteMember member : snapshot) {
+            try {
+                long remoteDigest = requestDigest(member);
+                long expectedDigest = computeExpectedDigestFor(member.node().id());
+                if (remoteDigest != expectedDigest) {
+                    LOG.debugf("Digest mismatch detected with %s, triggering repair", member.node().id());
+                    bootstrapFrom(member, true);
+                }
+            } catch (IOException e) {
+                LOG.debugf(e, "Anti-entropy probe failed for %s", member.node().id());
             }
         }
     }
 
     private void broadcastHeartbeat() {
-        String payload = String.format("HELLO|%s|%s|%d", localNode.id(), advertisedHost(), replicationConfig.port());
+        String payload = String.format("HELLO|%s|%s|%d|%d", localNode.id(), advertisedHost(), replicationConfig.port(),
+                clusterState.currentEpoch());
         byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
         DatagramPacket packet = new DatagramPacket(bytes, bytes.length, groupAddress, discoveryConfig.multicastPort());
         try {
@@ -207,6 +444,7 @@ public class CoordinationService implements AutoCloseable
                 if (now - member.lastSeen() > timeout) {
                     ring.removeNode(member.node(), member.idBytes());
                     LOG.warnf("Cluster member %s (%s:%d) timed out", entry.getKey(), member.host(), member.port());
+                    clusterState.bumpEpoch();
                     return true;
                 }
                 return false;
@@ -233,6 +471,9 @@ public class CoordinationService implements AutoCloseable
         if (reapTask != null) {
             reapTask.cancel(true);
         }
+        if (repairTask != null) {
+            repairTask.cancel(true);
+        }
         if (scheduler != null) {
             scheduler.shutdownNow();
         }
@@ -257,18 +498,23 @@ public class CoordinationService implements AutoCloseable
 
     private static final class RemoteMember
     {
-        private final RemoteNode node;
-        private final byte[] idBytes;
-        private final String host;
-        private final int port;
+        private volatile RemoteNode node;
+        private volatile byte[] idBytes;
+        private volatile String host;
+        private volatile int port;
         private volatile long lastSeen;
+        private volatile long epoch;
+        private volatile long lastHintReplay;
+        private boolean bootstrapped;
+        private boolean bootstrapInProgress;
 
-        private RemoteMember(RemoteNode node, byte[] idBytes, String host, int port, long lastSeen) {
+        private RemoteMember(RemoteNode node, byte[] idBytes, String host, int port, long lastSeen, long epoch) {
             this.node = node;
             this.idBytes = idBytes;
             this.host = host;
             this.port = port;
             this.lastSeen = lastSeen;
+            this.epoch = epoch;
         }
 
         private RemoteNode node() {
@@ -287,16 +533,69 @@ public class CoordinationService implements AutoCloseable
             return port;
         }
 
+        private String hostPort() {
+            return host + ":" + port;
+        }
+
         private long lastSeen() {
             return lastSeen;
         }
 
-        private void updateLastSeen(long value) {
+        private void updateLastSeen(long value, long epoch) {
             this.lastSeen = value;
+            this.epoch = epoch;
         }
 
         private boolean matches(String host, int port) {
             return Objects.equals(this.host, host) && this.port == port;
         }
+
+        private boolean tryStartBootstrap() {
+            synchronized (this) {
+                if (bootstrapped || bootstrapInProgress) {
+                    return false;
+                }
+                bootstrapInProgress = true;
+                return true;
+            }
+        }
+
+        private void completeBootstrap(boolean success) {
+            synchronized (this) {
+                bootstrapInProgress = false;
+                if (success) {
+                    bootstrapped = true;
+                }
+            }
+        }
+
+        private void resetBootstrap() {
+            synchronized (this) {
+                bootstrapped = false;
+                bootstrapInProgress = false;
+            }
+        }
+
+        private boolean shouldReplayHints(long now, long interval) {
+            if (interval <= 0) {
+                return true;
+            }
+            if (now - lastHintReplay >= interval) {
+                lastHintReplay = now;
+                return true;
+            }
+            return false;
+        }
+
+        private void replace(RemoteNode node, byte[] idBytes, String host, int port, long lastSeen, long epoch) {
+            this.node = node;
+            this.idBytes = idBytes;
+            this.host = host;
+            this.port = port;
+            this.lastSeen = lastSeen;
+            this.epoch = epoch;
+        }
     }
+
+    private record JoinHandshakeResult(long epoch, boolean accepted) {}
 }
