@@ -26,6 +26,7 @@ public final class RemoteNode implements Node<String, String>
     private static final byte CMD_SET = 'S';
     private static final byte CMD_GET = 'G';
     private static final byte CMD_DELETE = 'D';
+    private static final byte CMD_CLEAR = 'C';
     private static final byte RESP_OK = 'O';
     private static final byte RESP_HIT = 'H';
     private static final byte RESP_MISS = 'M';
@@ -115,6 +116,21 @@ public final class RemoteNode implements Node<String, String>
                 return false;
             }
             throw new IOException("unexpected response to delete: " + (char) response);
+        });
+    }
+
+    @Override
+    public void clear() {
+        execute(socket -> {
+            DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+            out.writeByte(CMD_CLEAR);
+            out.flush();
+
+            DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+            byte response = in.readByte();
+            if (response != RESP_OK) {
+                throw new IOException("unexpected response to clear: " + (char) response);
+            }
         });
     }
 

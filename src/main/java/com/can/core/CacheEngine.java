@@ -152,6 +152,13 @@ public final class CacheEngine<K,V> implements AutoCloseable
         return ok;
     }
 
+    public void clear() {
+        for (CacheSegment<K> segment : table) {
+            segment.clear();
+        }
+        ttlQueue.clear();
+    }
+
     public boolean exists(K key){
         CacheValue cv = seg(key).get(key);
         return cv != null && !cv.expired(System.currentTimeMillis());

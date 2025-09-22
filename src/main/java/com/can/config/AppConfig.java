@@ -156,6 +156,11 @@ public class AppConfig {
             }
 
             @Override
+            public void clear() {
+                engine.clear();
+            }
+
+            @Override
             public String id() {
                 return resolvedId;
             }

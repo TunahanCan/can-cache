@@ -1,10 +1,10 @@
 # can-cache
 
-can-cache, Quarkus üzerinde çalışan, memcached metin protokolü ile uyumlu, çok düğümlü ve bellek içi bir anahtar-değer mağazasıdır. Sistem; tutarlı hash halkası tabanlı yönlendirme, çoklu kopya replikasyonu, TTL ve tahliye politikaları, RDB benzeri anlık görüntü alma, metrik raporlama ve script/publish-subscribe eklentileriyle zenginleştirilmiştir.【F:src/main/java/com/can/CanCacheApplication.java†L7-L24】【F:src/main/java/com/can/net/MemcachedServer.java†L31-L252】【F:src/main/java/com/can/cluster/ClusterClient.java†L7-L41】【F:src/main/java/com/can/core/CacheEngine.java†L16-L212】
+can-cache, Quarkus üzerinde çalışan, memcached metin protokolü ile uyumlu, çok düğümlü ve bellek içi bir anahtar-değer mağazasıdır. Sistem; tutarlı hash halkası tabanlı yönlendirme, çoklu kopya replikasyonu, TTL ve tahliye politikaları, RDB benzeri anlık görüntü alma, metrik raporlama ve script/publish-subscribe eklentileriyle zenginleştirilmiştir.【F:src/main/java/com/can/CanCacheApplication.java†L7-L24】【F:src/main/java/com/can/net/CanCachedServer.java†L31-L421】【F:src/main/java/com/can/cluster/ClusterClient.java†L7-L45】【F:src/main/java/com/can/core/CacheEngine.java†L16-L216】
 
 ## Öne çıkan yetenekler
 
-- **Memcached uyumlu TCP sunucu:** `set/get/delete/version/quit` gibi komutları metin protokolüyle kabul eder, TTL yorumlamasını memcached semantiğine göre yapar ve isteğe bağlı `noreply` desteği sunar.【F:src/main/java/com/can/net/MemcachedServer.java†L126-L252】
+- **Memcached uyumlu TCP sunucu:** `set/add/replace/append/prepend/cas/get/gets/delete/incr/decr/touch/flush_all/stats/version/quit` komutlarını metin protokolüyle kabul eder, TTL yorumlamasını memcached semantiğine göre yapar, CAS belirteçleri üretir ve isteğe bağlı `noreply` desteği sunar.【F:src/main/java/com/can/net/CanCachedServer.java†L97-L338】
 - **Tutarlı hash ve çoklu kopya:** Sanal düğüm destekli halka yapı, her anahtar için deterministik düğüm seçimi ve belirlenen replikasyon faktörü kadar kopya üretir.【F:src/main/java/com/can/cluster/ConsistentHashRing.java†L10-L55】【F:src/main/java/com/can/cluster/ClusterClient.java†L13-L40】
 - **Otomatik keşif ve replikasyon:** Multicast kalp atışlarıyla düğüm keşfi, TCP tabanlı replikasyon protokolü ve uzak düğüm proxy’leri sayesinde veriler kümede eşlenir.【F:src/main/java/com/can/cluster/coordination/CoordinationService.java†L30-L299】【F:src/main/java/com/can/cluster/coordination/RemoteNode.java†L16-L151】【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L27-L199】
 - **TTL, tahliye ve metrik entegrasyonu:** Segmentlere bölünmüş yapı, DelayQueue tabanlı TTL temizliği, LRU/TinyLFU politikaları ve sayaç/zamanlayıcı metrikleri sağlar.【F:src/main/java/com/can/core/CacheEngine.java†L25-L212】【F:src/main/java/com/can/core/CacheSegment.java†L10-L123】【F:src/main/java/com/can/core/LruEvictionPolicy.java†L5-L20】【F:src/main/java/com/can/core/TinyLfuEvictionPolicy.java†L5-L128】【F:src/main/java/com/can/core/ExpiringKey.java†L6-L22】
@@ -18,7 +18,7 @@ flowchart LR
     subgraph Client
         C[Memcached istemcisi]
     end
-    C -- TCP komutları --> S[MemcachedServer]
+    C -- TCP komutları --> S[CanCachedServer]
     S -- yönlendir --> CC[ClusterClient]
     CC -- hash --> R[ConsistentHashRing]
     R -- düğüm seçimi --> LN[(Yerel Node)]
@@ -31,10 +31,10 @@ flowchart LR
     CE -- olay --> Pub[Broker/StreamLog]
 ```
 
-- **Ağ katmanı** `MemcachedServer` bileşeniyle başlar; bağlantıları kabul edip satır satır komut ayrıştırarak `ClusterClient`’a delegasyon yapar.【F:src/main/java/com/can/net/MemcachedServer.java†L58-L152】
+- **Ağ katmanı** `CanCachedServer` bileşeniyle başlar; bağlantıları kabul edip satır satır komut ayrıştırarak `ClusterClient`’a delegasyon yapar.【F:src/main/java/com/can/net/CanCachedServer.java†L64-L206】
 - **Tutarlı hash halkası** `ConsistentHashRing`, sanal düğümlere göre deterministik sıra oluşturur; `ClusterClient` seçilen replikalara sırasıyla yazıp okur.【F:src/main/java/com/can/cluster/ConsistentHashRing.java†L22-L55】【F:src/main/java/com/can/cluster/ClusterClient.java†L21-L40】
 - **Yerel düğüm** `AppConfig` içinde üretilen, `CacheEngine`’i saran hafif bir `Node` implementasyonudur; aynı factory ayrıca halka, metrikler, broker ve snapshot bileşenlerini CDI ile sağlar.【F:src/main/java/com/can/config/AppConfig.java†L43-L172】
-- **Uzak düğümler** `CoordinationService` tarafından keşfedilir ve `RemoteNode` proxy’leri olarak halka eklenir; proxy’ler TCP üzerinden `ReplicationServer` ile konuşur.【F:src/main/java/com/can/cluster/coordination/CoordinationService.java†L71-L187】【F:src/main/java/com/can/cluster/coordination/RemoteNode.java†L24-L151】【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L71-L180】
+- **Uzak düğümler** `CoordinationService` tarafından keşfedilir ve `RemoteNode` proxy’leri olarak halka eklenir; proxy’ler TCP üzerinden `ReplicationServer` ile konuşur.【F:src/main/java/com/can/cluster/coordination/CoordinationService.java†L71-L187】【F:src/main/java/com/can/cluster/coordination/RemoteNode.java†L24-L166】【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L71-L184】
 - **Çekirdek motor** `CacheEngine`, segment başına tahliye politikasını ve TTL kuyruğunu yönetir, broker ve metriklerle entegredir.【F:src/main/java/com/can/core/CacheEngine.java†L25-L212】
 - **Kalıcılık katmanı** `SnapshotScheduler` tarafından belirli aralıklarla tetiklenen `SnapshotFile.write()` çağrılarıyla RDB dosyasını atomik olarak günceller.【F:src/main/java/com/can/rdb/SnapshotScheduler.java†L35-L57】【F:src/main/java/com/can/rdb/SnapshotFile.java†L27-L58】
 
@@ -43,7 +43,7 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     participant Cli as Memcached istemcisi
-    participant Srv as MemcachedServer
+    participant Srv as CanCachedServer
     participant CC as ClusterClient
     participant Ring as HashRing
     participant Loc as Yerel Node
@@ -65,7 +65,7 @@ sequenceDiagram
     Srv-->>Cli: STORED
 ```
 
-Bu akışta yerel düğüm `CacheEngine`’e doğrudan yazarken, uzak kopyalar `RemoteNode` aracılığıyla `ReplicationServer`’a tek baytlık komut protokolü gönderir; sunucu TTL süresini hesaplar, gerekirse silme veya yeniden yazma yapar.【F:src/main/java/com/can/cluster/ClusterClient.java†L25-L40】【F:src/main/java/com/can/cluster/coordination/RemoteNode.java†L26-L118】【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L103-L180】 `MemcachedServer` gelen TTL değerini memcached kurallarına göre saniye veya epoch olarak yorumlar ve `Duration.ZERO` sonucunda girişin silinmesini sağlar.【F:src/main/java/com/can/net/MemcachedServer.java†L153-L267】
+Bu akışta yerel düğüm `CacheEngine`’e doğrudan yazarken, uzak kopyalar `RemoteNode` aracılığıyla `ReplicationServer`’a tek baytlık komut protokolü gönderir; sunucu TTL süresini hesaplar, gerekirse silme veya yeniden yazma yapar.【F:src/main/java/com/can/cluster/ClusterClient.java†L25-L45】【F:src/main/java/com/can/cluster/coordination/RemoteNode.java†L26-L166】【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L103-L184】 `CanCachedServer` gelen TTL değerini memcached kurallarına göre saniye veya epoch olarak yorumlar, CAS belirteci üretir ve `Duration.ZERO` sonucunda girişin silinmesini sağlar.【F:src/main/java/com/can/net/CanCachedServer.java†L230-L336】
 
 ## Bellek yönetimi ve TTL temizliği
 

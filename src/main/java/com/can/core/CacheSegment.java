@@ -121,4 +121,19 @@ final class CacheSegment<K>
         }
         snapshot.forEach(consumer);
     }
+
+    void clear() {
+        lock.lock();
+        try {
+            if (map.isEmpty()) {
+                return;
+            }
+            for (K key : map.keySet()) {
+                policy.onRemove(key);
+            }
+            map.clear();
+        } finally {
+            lock.unlock();
+        }
+    }
 }
