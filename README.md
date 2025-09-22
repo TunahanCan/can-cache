@@ -218,6 +218,21 @@ flowchart TD
 Proje yalnızca Quarkus Arc (CDI) ve JUnit 5 (test) bağımlılıklarını kullanır; ek
 framework’ler olmadan saf TCP ve koleksiyon API’leri ile çalışır.【F:pom.xml†L23-L43】
 
+## Entegrasyon testlerini çalıştırma
+
+Uygulamanın Memcached metin protokolünü uçtan uca doğrulayan bir entegrasyon
+testi paketi bulunmaktadır. Testler, uygulamayı Docker imajı olarak derler,
+`docker compose` ile ayağa kaldırır ve memcached komutlarının tüm kritik
+senaryolarını Java ile yazılmış bir JUnit koşucu üzerinden dener.
+
+```
+./scripts/run-integration-tests.sh
+```
+
+Komut, gerekli Docker imajlarını derledikten sonra test konteynerini çalıştırır
+ve başarısızlık durumunda uygun çıkış kodunu döndürür. CI/CD süreçlerine dahil
+ederken aynı komut çağrılabilir.
+
 ## Proje girişi
 
 Quarkus uygulaması `CanCacheApplication` üzerinden başlar ve `Quarkus.run`

@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  can-cache:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: can-cache:integration
+    ports:
+      - "11211:11211"
+  integration-tests:
+    build:
+      context: integration-tests
+    depends_on:
+      - can-cache
+    environment:
+      CAN_CACHE_HOST: can-cache
+      CAN_CACHE_PORT: "11211"
+    command: ["mvn", "-B", "test"]
