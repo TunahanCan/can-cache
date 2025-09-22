@@ -53,6 +53,41 @@ public interface AppProperties
 
         @WithDefault("1")
         int replicationFactor();
+
+        Discovery discovery();
+
+        Replication replication();
+    }
+
+    interface Discovery {
+        @WithDefault("230.0.0.1")
+        String multicastGroup();
+
+        @WithDefault("45565")
+        int multicastPort();
+
+        @WithDefault("5000")
+        long heartbeatIntervalMillis();
+
+        @WithDefault("15000")
+        long failureTimeoutMillis();
+
+        @WithDefault("")
+        String nodeId();
+    }
+
+    interface Replication {
+        @WithDefault("0.0.0.0")
+        String bindHost();
+
+        @WithDefault("127.0.0.1")
+        String advertiseHost();
+
+        @WithDefault("18080")
+        int port();
+
+        @WithDefault("5000")
+        int connectTimeoutMillis();
     }
 
     interface Network {
