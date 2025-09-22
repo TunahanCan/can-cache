@@ -3,6 +3,8 @@ package com.can.config;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
+import java.util.Optional;
+
 /**
  * Uygulama yapılandırma değerlerini tip güvenli bir şekilde okumak için kullanılan
  * konfigürasyon arayüzüdür. Alt arayüzler metrik raporlama sıklığı, RDB anlık
@@ -72,8 +74,7 @@ public interface AppProperties
         @WithDefault("15000")
         long failureTimeoutMillis();
 
-        @WithDefault("")
-        String nodeId();
+        Optional<String> nodeId();
     }
 
     interface Replication {
