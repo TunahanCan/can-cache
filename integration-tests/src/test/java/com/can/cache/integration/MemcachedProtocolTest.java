@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
 
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,11 +18,21 @@ import org.junit.jupiter.api.Test;
 
 class cancachedProtocolTest {
 
+    private static CanCacheServiceLauncher serviceLauncher;
+
     private MemcacheTextClient client;
 
     @BeforeAll
     static void waitForService() throws Exception {
+        serviceLauncher = CanCacheServiceLauncher.ensureStarted();
         MemcacheTextClient.waitForService(Duration.ofSeconds(30));
+    }
+
+    @AfterAll
+    static void shutdownService() throws Exception {
+        if (serviceLauncher != null) {
+            serviceLauncher.close();
+        }
     }
 
     @BeforeEach
