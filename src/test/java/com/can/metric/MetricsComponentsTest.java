@@ -86,13 +86,13 @@ class MetricsComponentsTest {
             originalOut = System.out;
             System.setOut(new PrintStream(baos));
 
-            reporter = new MetricsReporter(registry);
+            reporter = new MetricsReporter(registry, 1);
             reporter.start(1);
 
             Thread.sleep(1_200); // en az bir dump çağrısı gerçekleşsin
 
             String output = baos.toString();
-            assertTrue(output.contains("=== metrics ==="));
+            assertTrue(output.contains("=== METRICS ===="));
             assertTrue(output.contains("counter c = 2"));
             assertTrue(output.contains("timer t"));
         }

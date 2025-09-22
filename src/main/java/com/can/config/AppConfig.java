@@ -9,9 +9,7 @@ import com.can.codec.StringCodec;
 import com.can.core.CacheEngine;
 import com.can.core.EvictionPolicyType;
 import com.can.metric.MetricsRegistry;
-import com.can.metric.MetricsReporter;
 import com.can.rdb.SnapshotFile;
-import com.can.rdb.SnapshotScheduler;
 import com.can.pubsub.Broker;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Disposes;
@@ -48,30 +46,11 @@ public class AppConfig {
 
     @Produces
     @Singleton
-    public MetricsReporter metricsReporter(MetricsRegistry registry) {
-        long interval = properties.metrics().reportIntervalSeconds();
-        MetricsReporter reporter = new MetricsReporter(registry);
-        reporter.start(interval);
-        return reporter;
-    }
-
-    void disposeMetricsReporter(@Disposes MetricsReporter reporter) {
-        reporter.close();
-    }
-
-    @Produces
-    @Singleton
-    public Broker broker() {
-        return new Broker();
-    }
-
-    void disposeBroker(@Disposes Broker broker) {
-        broker.close();
-    }
-
-    @Produces
-    @Singleton
-    public CacheEngine<String, String> cacheEngine(MetricsRegistry metrics, Broker broker, SnapshotFile<String, String> snapshotFile) {
+    public CacheEngine<String, String> cacheEngine(
+            MetricsRegistry metrics,
+            Broker broker,
+            SnapshotFile<String, String> snapshotFile
+    ) {
         var cacheProps = properties.cache();
         CacheEngine<String, String> engine =
                 CacheEngine.<String, String>builder(StringCodec.UTF8, StringCodec.UTF8)
@@ -99,20 +78,6 @@ public class AppConfig {
                 new File(rdbProps.path()),
                 StringCodec.UTF8
         );
-    }
-
-    @Produces
-    @Singleton
-    public SnapshotScheduler<String, String> snapshotScheduler(CacheEngine<String, String> engine,
-                                                               SnapshotFile<String, String> snapshotFile) {
-        long interval = properties.rdb().snapshotIntervalSeconds();
-        SnapshotScheduler<String, String> scheduler = new SnapshotScheduler<>(engine, snapshotFile, interval);
-        scheduler.start();
-        return scheduler;
-    }
-
-    void disposeSnapshotScheduler(@Disposes SnapshotScheduler<String, String> scheduler) {
-        scheduler.close();
     }
 
     @Produces
