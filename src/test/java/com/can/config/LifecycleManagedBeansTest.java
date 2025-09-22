@@ -17,7 +17,7 @@ class LifecycleManagedBeansTest {
     MetricsReporter reporter;
 
     @Inject
-    SnapshotScheduler<String, String> scheduler;
+    SnapshotScheduler scheduler;
 
     @Inject
     Broker broker;
