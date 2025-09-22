@@ -52,5 +52,9 @@ public final class ConsistentHashRing<N>
         out.addAll(unique);
         return out;
     }
+
+    public synchronized List<N> nodes() {
+        return new ArrayList<>(new LinkedHashSet<>(ring.values()));
+    }
     private static byte[] join(byte[] id, int i){ return (new String(id)+"#"+i).getBytes(); }
 }

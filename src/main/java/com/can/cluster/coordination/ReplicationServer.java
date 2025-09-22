@@ -104,6 +104,7 @@ public class ReplicationServer implements AutoCloseable
                     case 'S' -> handleSet(in, out);
                     case 'G' -> handleGet(in, out);
                     case 'D' -> handleDelete(in, out);
+                    case 'C' -> handleClear(out);
                     default -> {
                         LOG.warnf("Unknown replication command %d from %s", command & 0xff, socket.getRemoteSocketAddress());
                         return;
@@ -176,6 +177,12 @@ public class ReplicationServer implements AutoCloseable
         String key = new String(keyBytes, StandardCharsets.UTF_8);
         boolean removed = engine.delete(key);
         out.writeByte(removed ? 'T' : 'F');
+        out.flush();
+    }
+
+    private void handleClear(DataOutputStream out) throws IOException {
+        engine.clear();
+        out.writeByte('O');
         out.flush();
     }
 

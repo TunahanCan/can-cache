@@ -39,4 +39,10 @@ public record ClusterClient<K, V>(ConsistentHashRing<Node<K, V>> ring, int repli
         for (var n : replicas(key)) ok |= n.delete(key);
         return ok;
     }
+
+    public void clear() {
+        for (var node : ring.nodes()) {
+            node.clear();
+        }
+    }
 }
