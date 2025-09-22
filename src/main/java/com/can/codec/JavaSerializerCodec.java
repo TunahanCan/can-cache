@@ -20,7 +20,8 @@ public final class JavaSerializerCodec<T extends Serializable> implements Codec<
             return baos.toByteArray();
         } catch (IOException e) { throw new RuntimeException(e); }
     }
-    @SuppressWarnings("unchecked")
+
+
     @Override
     public T decode(byte[] bytes) {
         if (bytes == null || bytes.length == 0) return null;

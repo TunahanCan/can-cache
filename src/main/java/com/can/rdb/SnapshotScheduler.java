@@ -23,7 +23,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Startup
 @Singleton
-public class SnapshotScheduler implements AutoCloseable {
+public class SnapshotScheduler implements AutoCloseable
+{
 
     private static final Logger LOG = Logger.getLogger(SnapshotScheduler.class);
 

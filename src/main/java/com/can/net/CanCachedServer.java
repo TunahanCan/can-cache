@@ -40,7 +40,8 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Startup
 @Singleton
-public class CanCachedServer implements AutoCloseable {
+public class CanCachedServer implements AutoCloseable
+{
 
     private static final Logger LOG = Logger.getLogger(CanCachedServer.class);
     private static final byte[] CRLF = new byte[]{'\r', '\n'};
@@ -152,9 +153,9 @@ public class CanCachedServer implements AutoCloseable {
         }
     }
 
-    private boolean processCommand(String line, BufferedInputStream in, BufferedOutputStream out) throws IOException {
+    private boolean processCommand(String line, BufferedInputStream in, BufferedOutputStream out) throws IOException
+    {
         maybeApplyDelayedFlush();
-
         String[] parts = line.trim().split("\\s+");
         if (parts.length == 0) {
             return true;
@@ -739,7 +740,8 @@ public class CanCachedServer implements AutoCloseable {
         writeLine(out, "STAT " + name + " " + value);
     }
 
-    private void maybeApplyDelayedFlush() {
+    private void maybeApplyDelayedFlush()
+    {
         long deadline = flushDeadlineMillis.get();
         if (deadline <= 0L) {
             return;
@@ -750,7 +752,8 @@ public class CanCachedServer implements AutoCloseable {
         }
     }
 
-    private StoredValueCodec.StoredValue getEntry(String key) {
+    private StoredValueCodec.StoredValue getEntry(String key)
+    {
         String encoded = clusterClient.get(key);
         if (encoded == null) {
             return null;
@@ -765,7 +768,9 @@ public class CanCachedServer implements AutoCloseable {
         }
         return entry;
     }
-    private boolean storeEntry(String key, StoredValueCodec.StoredValue entry, Duration ttl) {
+
+    private boolean storeEntry(String key, StoredValueCodec.StoredValue entry, Duration ttl)
+    {
         Duration effectiveTtl = ttl;
         if (effectiveTtl == null) {
             effectiveTtl = ttlFromExpireAt(entry.expireAt());
@@ -778,11 +783,13 @@ public class CanCachedServer implements AutoCloseable {
         }
         return clusterClient.set(key, StoredValueCodec.encode(entry), effectiveTtl);
     }
+
     private long nextCas() {
         return casCounter.updateAndGet(prev -> prev == Long.MAX_VALUE ? 1L : prev + 1L);
     }
 
-    private long computeExpireAt(Duration ttl) {
+    private long computeExpireAt(Duration ttl)
+    {
         if (ttl == null || ttl.isZero() || ttl.isNegative()) {
             return 0L;
         }
@@ -795,7 +802,8 @@ public class CanCachedServer implements AutoCloseable {
         return expireAt;
     }
 
-    private Duration ttlFromExpireAt(long expireAt) {
+    private Duration ttlFromExpireAt(long expireAt)
+    {
         if (expireAt <= 0L || expireAt == Long.MAX_VALUE) {
             return null;
         }
@@ -806,14 +814,16 @@ public class CanCachedServer implements AutoCloseable {
         return Duration.ofMillis(remaining);
     }
 
-    private enum CasUpdateStatus {
+    private enum CasUpdateStatus
+    {
         SUCCESS,
         NOT_FOUND,
         CONFLICT,
         TOO_LARGE
     }
 
-    private void incrementItems() {
+    private void incrementItems()
+    {
         currItems.incrementAndGet();
         totalItems.incrementAndGet();
     }
@@ -822,7 +832,8 @@ public class CanCachedServer implements AutoCloseable {
         currItems.updateAndGet(prev -> Math.max(0L, prev - 1L));
     }
 
-    private Duration parseExpiration(long exptime) {
+    private Duration parseExpiration(long exptime)
+    {
         if (exptime < 0) {
             return Duration.ZERO;
         }
@@ -853,7 +864,7 @@ public class CanCachedServer implements AutoCloseable {
             }
             sb.append((char) ch);
         }
-        return sb.length() == 0 ? null : sb.toString();
+        return sb.isEmpty() ? null : sb.toString();
     }
 
     private void writeLine(BufferedOutputStream out, String line) throws IOException {
@@ -910,7 +921,8 @@ public class CanCachedServer implements AutoCloseable {
         }
     }
 
-    private static final class NamedThreadFactory implements ThreadFactory {
+    private static final class NamedThreadFactory implements ThreadFactory
+    {
         private final String prefix;
         private final AtomicInteger counter = new AtomicInteger(1);
 

@@ -8,7 +8,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * kayıt yapısıdır. İhtiyaç duyulan metrikler talep edildiği anda oluşturulur
  * ve uygulamanın diğer bileşenleri tarafından paylaşılır.
  */
-public final class MetricsRegistry {
+public final class MetricsRegistry
+{
     private final Map<String, Counter> counters = new ConcurrentHashMap<>();
     private final Map<String, Timer> timers = new ConcurrentHashMap<>();
 

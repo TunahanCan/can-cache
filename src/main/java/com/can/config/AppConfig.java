@@ -72,7 +72,8 @@ public class AppConfig {
 
     @Produces
     @Singleton
-    public SnapshotFile<String, String> snapshotFile() {
+    public SnapshotFile<String, String> snapshotFile()
+    {
         var rdbProps = properties.rdb();
         return new SnapshotFile<>(
                 new File(rdbProps.path()),
@@ -82,14 +83,16 @@ public class AppConfig {
 
     @Produces
     @Singleton
-    public ConsistentHashRing<Node<String, String>> ring() {
+    public ConsistentHashRing<Node<String, String>> ring()
+    {
         HashFn hash = Arrays::hashCode;
         return new ConsistentHashRing<>(hash, properties.cluster().virtualNodes());
     }
 
     @Produces
     @Singleton
-    public Node<String, String> localNode(CacheEngine<String, String> engine) {
+    public Node<String, String> localNode(CacheEngine<String, String> engine)
+    {
         var discovery = properties.cluster().discovery();
         var replication = properties.cluster().replication();
         String nodeId = discovery.nodeId()

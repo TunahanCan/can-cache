@@ -19,8 +19,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Startup
 @Singleton
-public class MetricsReporter implements AutoCloseable {
-
+public class MetricsReporter implements AutoCloseable
+{
     private final MetricsRegistry registry;
     private final long intervalSeconds;
     private final AtomicBoolean running = new AtomicBoolean(false);

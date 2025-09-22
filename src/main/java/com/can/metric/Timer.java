@@ -7,7 +7,8 @@ import java.util.concurrent.atomic.LongAdder;
  * metrik zamanlayıcısıdır. Sanal reservoir kullanarak p50/p95 değerlerini
  * kestirir ve toplam çağrı sayısı ile minimum/maksimum süreleri saklar.
  */
-public final class Timer {
+public final class Timer
+{
     private final String name;
     private final LongAdder count = new LongAdder();
     private final LongAdder totalNs = new LongAdder();

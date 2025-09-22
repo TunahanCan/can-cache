@@ -5,7 +5,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiConsumer;
-import java.util.function.Function;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -106,7 +105,7 @@ final class CacheSegment<K>
         lock.lock();
         try {
             CacheValue existing = map.get(key);
-            if (existing == null || existing.expireAtMillis != expireAtMillis) {
+            if (existing == null || existing.expireAtMillis() != expireAtMillis) {
                 return false;
             }
             map.remove(key);
@@ -167,50 +166,23 @@ final class CacheSegment<K>
         }
     }
 
-    static final class CasResult {
-        private final boolean success;
-        private final CacheValue newValue;
-
-        CasResult(boolean success, CacheValue newValue) {
-            this.success = success;
-            this.newValue = newValue;
-        }
-
-        boolean success() {
-            return success;
-        }
-
-        CacheValue newValue() {
-            return newValue;
-        }
+    record CasResult(boolean success, CacheValue newValue) {
     }
 
-    static final class CasDecision {
-        final boolean success;
-        final CacheValue newValue;
-        final boolean removeExisting;
-        final boolean notifyRemoval;
-        final boolean recordAccess;
-
-        CasDecision(boolean success, CacheValue newValue, boolean removeExisting, boolean notifyRemoval, boolean recordAccess) {
-            this.success = success;
-            this.newValue = newValue;
-            this.removeExisting = removeExisting;
-            this.notifyRemoval = notifyRemoval;
-            this.recordAccess = recordAccess;
-        }
-
+    record CasDecision(boolean success, CacheValue newValue, boolean removeExisting, boolean notifyRemoval,
+                       boolean recordAccess)
+    {
         static CasDecision success(CacheValue newValue) {
-            return new CasDecision(true, newValue, false, false, true);
-        }
+                return new CasDecision(true, newValue, false, false, true);
+            }
 
-        static CasDecision fail() {
-            return new CasDecision(false, null, false, false, false);
-        }
+            static CasDecision fail() {
+                return new CasDecision(false, null, false, false, false);
+            }
 
-        static CasDecision expired() {
-            return new CasDecision(false, null, true, true, false);
-        }
+            static CasDecision expired() {
+                return new CasDecision(false, null, true, true, false);
+            }
     }
 
     void clear() {

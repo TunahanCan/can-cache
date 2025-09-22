@@ -224,7 +224,8 @@ public class CoordinationService implements AutoCloseable
 
     @PreDestroy
     @Override
-    public void close() {
+    public void close()
+    {
         running = false;
         if (heartbeatTask != null) {
             heartbeatTask.cancel(true);
@@ -254,7 +255,8 @@ public class CoordinationService implements AutoCloseable
         }
     }
 
-    private static final class RemoteMember {
+    private static final class RemoteMember
+    {
         private final RemoteNode node;
         private final byte[] idBytes;
         private final String host;

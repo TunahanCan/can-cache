@@ -10,8 +10,8 @@ import io.quarkus.runtime.annotations.QuarkusMain;
  * süreçler için çıkış kodunu yönetir.
  */
 @QuarkusMain
-public class CanCacheApplication implements QuarkusApplication {
-
+public class CanCacheApplication implements QuarkusApplication
+{
     @Override
     public int run(String... args)
     {

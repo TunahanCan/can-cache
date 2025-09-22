@@ -161,12 +161,12 @@ public final class CacheEngine<K,V> implements AutoCloseable
                 return CacheSegment.CasDecision.expired();
             }
             @SuppressWarnings("unchecked")
-            String encoded = (String) valCodec.decode(existing.value);
+            String encoded = (String) valCodec.decode(existing.value());
             StoredValueCodec.StoredValue stored = StoredValueCodec.decode(encoded);
             if (stored.cas() != expectedCas) {
                 return CacheSegment.CasDecision.fail();
             }
-            long expireAt = existing.expireAtMillis;
+            long expireAt = existing.expireAtMillis();
             if (ttl != null) {
                 expireAt = computeExpireAt(ttl, now);
             }
@@ -175,8 +175,8 @@ public final class CacheEngine<K,V> implements AutoCloseable
         boolean success = result.success();
         if (success) {
             CacheValue newValue = result.newValue();
-            if (newValue != null && newValue.expireAtMillis > 0) {
-                ttlQueue.offer(new ExpiringKey(key, idx, newValue.expireAtMillis));
+            if (newValue != null && newValue.expireAtMillis() > 0) {
+                ttlQueue.offer(new ExpiringKey(key, idx, newValue.expireAtMillis()));
             }
             if (broker != null) {
                 broker.publish("keyspace:set", keyCodec.encode(key));
@@ -209,7 +209,7 @@ public final class CacheEngine<K,V> implements AutoCloseable
                 delete(key);
                 if (misses != null) misses.inc();
             } else {
-                out = valCodec.decode(cv.value);
+                out = valCodec.decode(cv.value());
                 if (hits != null) hits.inc();
             }
         } else if (misses != null) misses.inc();
@@ -246,7 +246,7 @@ public final class CacheEngine<K,V> implements AutoCloseable
         for (CacheSegment<K> segment : table) {
             segment.forEach((key, value) -> {
                 if (!value.expired(now)) {
-                    consumer.accept(key, value.value, value.expireAtMillis);
+                    consumer.accept(key, value.value(), value.expireAtMillis());
                 }
             });
         }
@@ -288,10 +288,10 @@ public final class CacheEngine<K,V> implements AutoCloseable
         void onRemoval(K key);
     }
 
-    @FunctionalInterface
     /**
      * Persistans katmanına veri aktarımı yapılırken her anahtar için çağrılan fonksiyonel arayüzdür.
      */
+    @FunctionalInterface
     public interface EntryConsumer<K>
     {
         void accept(K key, byte[] value, long expireAtMillis);

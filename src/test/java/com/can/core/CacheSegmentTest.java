@@ -112,8 +112,8 @@ class CacheSegmentTest
             assertTrue(result.success());
             CacheValue stored = segment.get("a");
             assertNotNull(stored);
-            assertArrayEquals(new byte[]{2}, stored.value);
-            assertEquals(5L, stored.expireAtMillis);
+            assertArrayEquals(new byte[]{2}, stored.value());
+            assertEquals(5L, stored.expireAtMillis());
             assertTrue(policy.recordedKeys.contains("a"));
         }
 
@@ -169,7 +169,7 @@ class CacheSegmentTest
 
             List<String> seen = new ArrayList<>();
             segment.forEach((key, value) -> {
-                seen.add(key + value.value[0]);
+                seen.add(key + value.value()[0]);
                 segment.put("c", new CacheValue(new byte[]{3}, 0));
             });
 

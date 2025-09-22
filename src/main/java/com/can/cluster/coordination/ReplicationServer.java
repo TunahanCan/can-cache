@@ -68,8 +68,10 @@ public class ReplicationServer implements AutoCloseable
                 config.bindHost(), serverSocket.getLocalPort(), config.advertiseHost(), config.port());
     }
 
-    private void acceptLoop() {
-        while (running) {
+    private void acceptLoop()
+    {
+        while (running)
+        {
             try {
                 Socket socket = serverSocket.accept();
                 socket.setTcpNoDelay(true);
@@ -147,7 +149,8 @@ public class ReplicationServer implements AutoCloseable
         out.flush();
     }
 
-    private void handleGet(DataInputStream in, DataOutputStream out) throws IOException {
+    private void handleGet(DataInputStream in, DataOutputStream out) throws IOException
+    {
         int keyLen = in.readInt();
         byte[] keyBytes = in.readNBytes(keyLen);
         if (keyBytes.length != keyLen) {
@@ -173,9 +176,7 @@ public class ReplicationServer implements AutoCloseable
     private void handleDelete(DataInputStream in, DataOutputStream out) throws IOException {
         int keyLen = in.readInt();
         byte[] keyBytes = in.readNBytes(keyLen);
-        if (keyBytes.length != keyLen) {
-            throw new EOFException("Incomplete delete payload");
-        }
+        if (keyBytes.length != keyLen) throw new EOFException("Incomplete delete payload");
 
         String key = new String(keyBytes, StandardCharsets.UTF_8);
         boolean removed = engine.delete(key);
@@ -183,7 +184,8 @@ public class ReplicationServer implements AutoCloseable
         out.flush();
     }
 
-    private void handleClear(DataOutputStream out) throws IOException {
+    private void handleClear(DataOutputStream out) throws IOException
+    {
         engine.clear();
         out.writeByte('O');
         out.flush();
