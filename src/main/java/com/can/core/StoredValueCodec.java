@@ -7,7 +7,7 @@ import java.util.Base64;
 import java.util.Objects;
 
 /**
- * Memcached text protokolü için değerleri CAS, bayrak ve TTL bilgileriyle birlikte
+ * cancached text protokolü için değerleri CAS, bayrak ve TTL bilgileriyle birlikte
  * tek bir Base64 kodlu dize halinde serileştiren yardımcı sınıf. Ağ katmanı ile
  * önbellek motoru aynı kodu paylaşarak değerleri güvenli bir şekilde dekode edip
  * düzenleyebilir.

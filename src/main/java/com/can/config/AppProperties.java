@@ -12,6 +12,7 @@ import java.util.Optional;
  * belirleyen parametreler gibi alanları gruplayarak {@code application.properties}
  * içindeki "app" önekiyle başlayan değerleri CDI bileşenlerine sağlar.
  */
+
 @ConfigMapping(prefix = "app")
 public interface AppProperties
 {

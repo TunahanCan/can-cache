@@ -1,6 +1,6 @@
 # can-cache
 
-**can-cache**, Quarkus 3 üzerinde çalışan, Memcached metin protokolü ile %100 uyumlu
+**can-cache**, Quarkus 3 üzerinde çalışan, cancached metin protokolü ile %100 uyumlu
 bir bellek içi anahtar–değer sunucusudur. Tek JVM olarak başlayabilir, tutarlı
 hash tabanlı yönlendirme ile yatayda ölçeklenir ve replikasyon sayesinde veri
 kayıplarını en aza indirir. Sistem; TTL yönetimi, CAS desteği, gecikmeye duyarlı
@@ -10,7 +10,7 @@ kurgulanmıştır.
 
 ## Öne çıkan yetenekler
 
-- **Memcached uyumluluğu:** `set/add/replace/append/prepend/cas/get/gets/delete`
+- **cancached uyumluluğu:** `set/add/replace/append/prepend/cas/get/gets/delete`
   `incr/decr/touch/flush_all/stats/version/quit` komutlarını metin protokolü ile
   işler. 1 MB üzerindeki yükleri engeller, 30 gün üzeri TTL değerlerini epoch
   olarak yorumlar ve CAS sayaçlarını atomik olarak üretir.
@@ -39,7 +39,7 @@ kurgulanmıştır.
 ```mermaid
 flowchart LR
     subgraph Client
-        MC[Memcached istemcisi]
+        MC[cancached istemcisi]
     end
     MC -- TCP komutları --> S[CanCachedServer]
     S -- yönlendirme --> CC[ClusterClient]
@@ -56,12 +56,12 @@ flowchart LR
 
 ### Komut işleme ve protokol katmanı
 - `CanCachedServer`, Quarkus ayaklandığında konfigüre edilen portu dinler,
-  satır bazlı ayrıştırma yapar ve memcached protokolünün kenar durumlarını bire
+  satır bazlı ayrıştırma yapar ve cancached protokolünün kenar durumlarını bire
   bir uygular (CAS çakışması, `noreply`, `flush_all` gecikmesi vb.).
 - Değerler `StoredValueCodec` sayesinde CAS, bayrak ve TTL bilgileriyle tek bir
   Base64 dizesine çevrilir; böylece ağ katmanı ile `CacheEngine` aynı formatı
   paylaşır.
-- Sunucu istatistikleri (`cmd_get`, `get_hits`, `curr_items` vb.) memcached
+- Sunucu istatistikleri (`cmd_get`, `get_hits`, `curr_items` vb.) cancached
   referansını taklit edecek şekilde tutulur ve `stats` komutu ile raporlanır.
 
 ### Kümeleme ve replikasyon
@@ -108,7 +108,7 @@ flowchart LR
    ```bash
    ./mvnw quarkus:dev
    ```
-   Varsayılan Memcached uç noktası `0.0.0.0:11211` olarak açılır.
+   Varsayılan cancached uç noktası `0.0.0.0:11211` olarak açılır.
 3. **Paketleme ve çalıştırma:**
    ```bash
    ./mvnw package
@@ -149,14 +149,14 @@ flowchart LR
 | `app.cluster.discovery.node-id` | Opsiyonel sabit düğüm kimliği. | boş |
 | `app.cluster.replication.bind-host/advertise-host/port` | Replikasyon sunucusu adres bilgileri. | 0.0.0.0 / 127.0.0.1 / 18080 |
 | `app.cluster.replication.connect-timeout-millis` | Uzak düğüme bağlanma zaman aşımı. | 5000 |
-| `app.network.host/port/backlog/worker-threads` | Memcached TCP sunucusu ayarları. | 0.0.0.0 / 11211 / 128 / 16 |
+| `app.network.host/port/backlog/worker-threads` | cancached TCP sunucusu ayarları. | 0.0.0.0 / 11211 / 128 / 16 |
 | `app.metrics.report-interval-seconds` | Metrik raporlama periyodu; 0 devre dışı. | 5 |
 
 ## Dizin rehberi
 
 | Dizin | İçerik |
 | --- | --- |
-| `src/main/java/com/can/net` | Memcached TCP sunucusu ve protokol ayrıştırıcıları. |
+| `src/main/java/com/can/net` | cancached TCP sunucusu ve protokol ayrıştırıcıları. |
 | `src/main/java/com/can/cluster` | Tutarlı hash halkası, küme istemcisi ve node arayüzleri. |
 | `src/main/java/com/can/cluster/coordination` | Multicast koordinasyonu, uzak node vekilleri ve replikasyon sunucusu. |
 | `src/main/java/com/can/core` | Önbellek motoru, segmentler, TTL kuyruğu ve tahliye politikaları. |
@@ -165,7 +165,7 @@ flowchart LR
 | `src/main/java/com/can/metric` | Sayaç, zamanlayıcı ve konsol raporlayıcısı. |
 | `src/main/java/com/can/pubsub` | Uygulama içi yayınla-abone ol altyapısı. |
 | `src/main/java/com/can/config` | CDI yapılandırması ve tip güvenli konfigürasyon arayüzleri. |
-| `integration-tests/` | Docker Compose ile çalışan uçtan uca Memcached uyumluluk testleri. |
+| `integration-tests/` | Docker Compose ile çalışan uçtan uca cancached uyumluluk testleri. |
 | `performance-tests/` | JMeter planları ve NFR dokümanları. |
 
 ## Geliştirme notları
@@ -184,7 +184,7 @@ flowchart LR
 ## Test ve doğrulama
 
 - `./mvnw test` komutu birim testlerini (varsa) çalıştırır.
-- `./scripts/run-integration-tests.sh` Memcached uyumluluğunu Docker Compose
+- `./scripts/run-integration-tests.sh` cancached uyumluluğunu Docker Compose
   üzerinden uçtan uca doğrular.
 - Performans regresyonları için `performance-tests/jmeter` altındaki JMeter
   senaryoları kullanılabilir.

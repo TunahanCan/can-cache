@@ -15,7 +15,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-class MemcachedProtocolTest {
+class cancachedProtocolTest {
 
     private MemcacheTextClient client;
 
@@ -91,7 +91,7 @@ class MemcachedProtocolTest {
     }
 
     @Test
-    void incrAndDecrFollowMemcachedSemantics() throws IOException {
+    void incrAndDecrFollowcancachedSemantics() throws IOException {
         assertEquals("STORED", client.set("counter", "10", 0, 0));
         assertEquals(15L, client.incr("counter", 5));
         assertEquals(12L, client.decr("counter", 3));

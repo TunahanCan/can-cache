@@ -1,13 +1,13 @@
 # JMeter Load Test Suite for Can Cache
 
 This directory contains non-functional performance tests for the Can Cache
-Memcached-compatible TCP service. The scenarios are grouped by target load
+cancached-compatible TCP service. The scenarios are grouped by target load
 profile and can be executed with the Apache JMeter command line interface.
 
 ## Prerequisites
 
 * Apache JMeter 5.6 or newer with the bundled Groovy runtime.
-* A running Can Cache instance that listens on the Memcached port (default
+* A running Can Cache instance that listens on the cancached port (default
   `127.0.0.1:11211`). Start the application with `./mvnw quarkus:dev` or use the
   packaged JAR as described in the project README.
 * Optional: a writable `results/` directory to store `.jtl` output files. The
@@ -32,7 +32,7 @@ Commonly used override properties:
 | Property | Description | Default |
 | --- | --- | --- |
 | `targetHost` | Hostname or IP of the Can Cache node. | `127.0.0.1` |
-| `targetPort` | TCP port of the Memcached endpoint. | `11211` |
+| `targetPort` | TCP port of the cancached endpoint. | `11211` |
 | `ttlSeconds` | TTL assigned to the `set` command. | `60` |
 | `connectTimeoutMillis` | Socket connect timeout in milliseconds. | `1000` |
 | `readTimeoutMillis` | Socket read timeout in milliseconds. | `3000` |
@@ -41,7 +41,7 @@ Commonly used override properties:
 | `durationSeconds` | Total runtime of the thread group (plan-specific default). | varies |
 | `resultFile` | Output `.jtl` path for aggregated metrics. | varies |
 
-All plans rely on a Groovy JSR223 sampler that performs a full Memcached
+All plans rely on a Groovy JSR223 sampler that performs a full cancached
 round-trip (set, get, delete) and validates responses. The thread groups run for
 fixed durations with no loop limits to make the execution time deterministic.
 Adjust thread counts, payload sizes, or timers in each plan to tune the pressure

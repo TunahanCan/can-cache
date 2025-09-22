@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Memcached text protokolünü taklit eden basit bir TCP sunucusudur. Quarkus uygulaması
+ * cancached text protokolünü taklit eden basit bir TCP sunucusudur. Quarkus uygulaması
  * ayağa kalktığında belirtilen port üzerinden bağlantıları kabul eder ve gelen komutları
  * {@link ClusterClient} aracılığıyla küme içindeki düğümlere yönlendirir.
  */
@@ -89,7 +89,7 @@ public class CanCachedServer implements AutoCloseable
                 0L,
                 TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(),
-                new NamedThreadFactory("memcached-worker-"));
+                new NamedThreadFactory("cancached-worker-"));
 
         try {
             serverSocket = new ServerSocket();
@@ -97,14 +97,14 @@ public class CanCachedServer implements AutoCloseable
                     Math.max(1, networkConfig.backlog()));
         } catch (IOException e) {
             workers.shutdownNow();
-            throw new IllegalStateException("Failed to bind memcached port", e);
+            throw new IllegalStateException("Failed to bind cancached port", e);
         }
 
         running = true;
-        acceptThread = new Thread(this::acceptLoop, "memcached-acceptor");
+        acceptThread = new Thread(this::acceptLoop, "cancached-acceptor");
         acceptThread.setDaemon(true);
         acceptThread.start();
-        LOG.infof("Memcached-compatible server listening on %s:%d", networkConfig.host(), serverSocket.getLocalPort());
+        LOG.infof("cancached-compatible server listening on %s:%d", networkConfig.host(), serverSocket.getLocalPort());
         removalSubscription = localEngine.onRemoval(key -> decrementCurrItems());
     }
 

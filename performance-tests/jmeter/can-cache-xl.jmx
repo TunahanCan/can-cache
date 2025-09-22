@@ -17,7 +17,7 @@
           <elementProp name="targetPort" elementType="Argument">
             <stringProp name="Argument.name">targetPort</stringProp>
             <stringProp name="Argument.value">${__P(targetPort,11211)}</stringProp>
-            <stringProp name="Argument.desc">Memcached TCP port</stringProp>
+            <stringProp name="Argument.desc">cancached TCP port</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
           <elementProp name="ttlSeconds" elementType="Argument">
@@ -83,8 +83,8 @@
         <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
       </ThreadGroup>
       <hashTree>
-        <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="Memcached Round Trip" enabled="true">
-          <stringProp name="cacheKey">groovy-memcached-roundtrip</stringProp>
+        <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="cancached Round Trip" enabled="true">
+          <stringProp name="cacheKey">groovy-cancached-roundtrip</stringProp>
           <stringProp name="filename"/>
           <stringProp name="parameters"/>
           <stringProp name="scriptLanguage">groovy</stringProp>
@@ -167,7 +167,7 @@ try {
     SampleResult.setResponseData(("SET:${setResp};GET:${header};DEL:${deleteResp}").getBytes("UTF-8"))
     SampleResult.setSuccessful(true)
 } catch (Exception ex) {
-    log.error("Memcached round trip failed", ex)
+    log.error("cancached round trip failed", ex)
     SampleResult.setSuccessful(false)
     SampleResult.setResponseCode("500")
     SampleResult.setResponseMessage(ex.getMessage())

@@ -13,7 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Minimal memcached text protocol client implemented in Java so that the
+ * Minimal cancached text protocol client implemented in Java so that the
  * integration tests can exercise the can-cache service end to end without
  * relying on external libraries.
  */
