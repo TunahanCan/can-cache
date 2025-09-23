@@ -38,6 +38,15 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
     private final Map<String, Entry> entries = new HashMap<>();
     private final AtomicLong casCounter = new AtomicLong(1L);
     private final AtomicLong cmdGet = new AtomicLong();
+    private final AtomicLong cmdSet = new AtomicLong();
+    private final AtomicLong cmdTouch = new AtomicLong();
+    private final AtomicLong cmdFlush = new AtomicLong();
+    private final AtomicLong getHits = new AtomicLong();
+    private final AtomicLong getMisses = new AtomicLong();
+    private final AtomicLong totalItems = new AtomicLong();
+    private final AtomicLong currConnections = new AtomicLong();
+    private final AtomicLong totalConnections = new AtomicLong();
+    private final AtomicLong flushDeadlineMillis = new AtomicLong();
 
     private ServerSocket serverSocket;
     private Thread acceptThread;
@@ -70,6 +79,8 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
             try {
                 Socket client = serverSocket.accept();
                 client.setTcpNoDelay(true);
+                currConnections.incrementAndGet();
+                totalConnections.incrementAndGet();
                 workers.execute(() -> handleClient(client));
             } catch (IOException e) {
                 if (running) {
@@ -99,10 +110,13 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
             }
         } catch (IOException ignored) {
             // Connection errors are expected when clients disconnect abruptly.
+        } finally {
+            currConnections.updateAndGet(prev -> Math.max(0L, prev - 1L));
         }
     }
 
     private boolean processCommand(String line, BufferedInputStream in, BufferedOutputStream out) throws IOException {
+        maybeApplyDelayedFlush();
         String[] parts = line.trim().split("\\s+");
         if (parts.length == 0) {
             return true;
@@ -121,13 +135,13 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
             case "delete" -> handleDelete(parts, out);
             case "incr", "decr" -> handleIncrDecr(command, parts, out);
             case "touch" -> handleTouch(parts, out);
-            case "flush_all" -> handleFlushAll(out);
+            case "flush_all" -> handleFlushAll(parts, out);
             case "stats" -> {
                 handleStats(out);
                 yield true;
             }
             case "version" -> {
-                writeLine(out, "VERSION embedded-can-cache");
+                writeLine(out, "VERSION " + versionString());
                 out.flush();
                 yield true;
             }
@@ -151,28 +165,58 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
 
         String key = parts[1];
         int flags = parseInt(parts[2]);
-        int exptime = parseInt(parts[3]);
+        long exptime = parseLong(parts[3]);
         int lengthIndex = 4;
         int bytes = parseInt(parts[lengthIndex]);
         boolean noreply = false;
         long casToken = 0L;
         if (isCas) {
             casToken = parseLong(parts[5]);
-            if (parts.length > 6 && "noreply".equalsIgnoreCase(parts[6])) {
-                noreply = true;
+            if (parts.length > 6) {
+                if (parts.length == 7 && "noreply".equalsIgnoreCase(parts[6])) {
+                    noreply = true;
+                } else {
+                    writeLine(out, "CLIENT_ERROR invalid arguments");
+                    out.flush();
+                    return true;
+                }
             }
-        } else if (parts.length > 5 && "noreply".equalsIgnoreCase(parts[5])) {
-            noreply = true;
+        } else if (parts.length > 5) {
+            if (parts.length == 6 && "noreply".equalsIgnoreCase(parts[5])) {
+                noreply = true;
+            } else {
+                writeLine(out, "CLIENT_ERROR invalid arguments");
+                out.flush();
+                return true;
+            }
         }
 
         String value = new String(readBlock(in, bytes), StandardCharsets.UTF_8);
+        cmdSet.incrementAndGet();
+        long now = currentTimeMillis();
+        Expiration expiration = resolveExpiration(exptime, now);
+        if (expiration.deleteImmediately()) {
+            synchronized (mutex) {
+                Entry existing = getLiveEntry(key, now);
+                if (existing != null) {
+                    entries.remove(key);
+                    currentItems = Math.max(0, currentItems - 1);
+                }
+            }
+            if (!noreply) {
+                writeLine(out, "STORED");
+                out.flush();
+            }
+            return true;
+        }
+
         String response = switch (command) {
-            case "set" -> storeSet(key, value, flags, exptime);
-            case "add" -> storeAdd(key, value, flags, exptime);
-            case "replace" -> storeReplace(key, value, flags, exptime);
+            case "set" -> storeSet(key, value, flags, expiration, now);
+            case "add" -> storeAdd(key, value, flags, expiration, now);
+            case "replace" -> storeReplace(key, value, flags, expiration, now);
             case "append" -> storeAppend(key, value);
             case "prepend" -> storePrepend(key, value);
-            case "cas" -> storeCas(key, value, flags, exptime, casToken);
+            case "cas" -> storeCas(key, value, flags, expiration, now, casToken);
             default -> "ERROR";
         };
 
@@ -190,7 +234,7 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
             return;
         }
         int keyCount = parts.length - 1;
-        cmdGet.addAndGet(keyCount);
+        cmdGet.incrementAndGet();
         long now = currentTimeMillis();
         Entry[] results = new Entry[keyCount];
         String[] keys = new String[keyCount];
@@ -198,6 +242,11 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
             for (int i = 1; i < parts.length; i++) {
                 String key = parts[i];
                 Entry entry = getLiveEntry(key, now);
+                if (entry == null) {
+                    getMisses.incrementAndGet();
+                } else {
+                    getHits.incrementAndGet();
+                }
                 results[i - 1] = entry;
                 keys[i - 1] = key;
             }
@@ -228,6 +277,20 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
             out.flush();
             return true;
         }
+        boolean noreply = false;
+        if (parts.length == 3) {
+            if ("noreply".equalsIgnoreCase(parts[2])) {
+                noreply = true;
+            } else {
+                writeLine(out, "CLIENT_ERROR invalid arguments");
+                out.flush();
+                return true;
+            }
+        } else if (parts.length > 3) {
+            writeLine(out, "CLIENT_ERROR invalid arguments");
+            out.flush();
+            return true;
+        }
         String key = parts[1];
         long now = currentTimeMillis();
         boolean removed;
@@ -241,14 +304,30 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
                 removed = true;
             }
         }
-        writeLine(out, removed ? "DELETED" : "NOT_FOUND");
-        out.flush();
+        if (!noreply) {
+            writeLine(out, removed ? "DELETED" : "NOT_FOUND");
+            out.flush();
+        }
         return true;
     }
 
     private boolean handleIncrDecr(String command, String[] parts, BufferedOutputStream out) throws IOException {
         if (parts.length < 3) {
             writeLine(out, "CLIENT_ERROR bad command line format");
+            out.flush();
+            return true;
+        }
+        boolean noreply = false;
+        if (parts.length == 4) {
+            if ("noreply".equalsIgnoreCase(parts[3])) {
+                noreply = true;
+            } else {
+                writeLine(out, "CLIENT_ERROR invalid arguments");
+                out.flush();
+                return true;
+            }
+        } else if (parts.length > 4) {
+            writeLine(out, "CLIENT_ERROR invalid arguments");
             out.flush();
             return true;
         }
@@ -268,8 +347,10 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
                 response = entry.value;
             }
         }
-        writeLine(out, response);
-        out.flush();
+        if (!noreply) {
+            writeLine(out, response);
+            out.flush();
+        }
         return true;
     }
 
@@ -279,69 +360,223 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
             out.flush();
             return true;
         }
+        boolean noreply = false;
+        if (parts.length == 4) {
+            if ("noreply".equalsIgnoreCase(parts[3])) {
+                noreply = true;
+            } else {
+                writeLine(out, "CLIENT_ERROR invalid arguments");
+                out.flush();
+                return true;
+            }
+        } else if (parts.length > 4) {
+            writeLine(out, "CLIENT_ERROR invalid arguments");
+            out.flush();
+            return true;
+        }
         String key = parts[1];
-        int exptime = parseInt(parts[2]);
+        long exptime = parseLong(parts[2]);
         long now = currentTimeMillis();
+        Expiration expiration = resolveExpiration(exptime, now);
+        if (expiration.deleteImmediately()) {
+            synchronized (mutex) {
+                Entry entry = getLiveEntry(key, now);
+                if (entry != null) {
+                    entries.remove(key);
+                    currentItems = Math.max(0, currentItems - 1);
+                }
+            }
+            if (!noreply) {
+                writeLine(out, "NOT_FOUND");
+                out.flush();
+            }
+            return true;
+        }
         boolean touched;
         synchronized (mutex) {
             Entry entry = getLiveEntry(key, now);
             if (entry == null) {
                 touched = false;
             } else {
-                entry.expireAtMillis = computeExpireAt(exptime, now);
+                entry.expireAtMillis = expiration.expireAtMillis();
                 entry.cas = casCounter.getAndIncrement();
                 touched = true;
             }
         }
-        writeLine(out, touched ? "TOUCHED" : "NOT_FOUND");
-        out.flush();
+        if (touched) {
+            cmdTouch.incrementAndGet();
+        }
+        if (!noreply) {
+            writeLine(out, touched ? "TOUCHED" : "NOT_FOUND");
+            out.flush();
+        }
         return true;
     }
 
-    private boolean handleFlushAll(BufferedOutputStream out) throws IOException {
-        synchronized (mutex) {
-            entries.clear();
-            currentItems = 0;
+    private boolean handleFlushAll(String[] parts, BufferedOutputStream out) throws IOException {
+        boolean noreply = false;
+        long delaySeconds = 0L;
+        if (parts.length == 2) {
+            if ("noreply".equalsIgnoreCase(parts[1])) {
+                noreply = true;
+            } else {
+                Long parsed = parseNonNegativeLong(parts[1]);
+                if (parsed == null) {
+                    writeLine(out, "CLIENT_ERROR numeric value expected");
+                    out.flush();
+                    return true;
+                }
+                delaySeconds = parsed;
+            }
+        } else if (parts.length == 3) {
+            Long parsed = parseNonNegativeLong(parts[1]);
+            if (parsed == null) {
+                writeLine(out, "CLIENT_ERROR numeric value expected");
+                out.flush();
+                return true;
+            }
+            delaySeconds = parsed;
+            if (!"noreply".equalsIgnoreCase(parts[2])) {
+                writeLine(out, "CLIENT_ERROR invalid arguments");
+                out.flush();
+                return true;
+            }
+            noreply = true;
+        } else if (parts.length > 3) {
+            writeLine(out, "CLIENT_ERROR invalid arguments");
+            out.flush();
+            return true;
         }
-        writeLine(out, "OK");
-        out.flush();
+
+        cmdFlush.incrementAndGet();
+        if (delaySeconds <= 0L) {
+            synchronized (mutex) {
+                entries.clear();
+                currentItems = 0;
+            }
+            flushDeadlineMillis.set(0L);
+        } else {
+            long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(delaySeconds);
+            flushDeadlineMillis.set(deadline);
+        }
+
+        if (!noreply) {
+            writeLine(out, "OK");
+            out.flush();
+        }
         return true;
+    }
+
+    private Long parseNonNegativeLong(String value) {
+        try {
+            long parsed = Long.parseLong(value);
+            if (parsed < 0L) {
+                return null;
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private void maybeApplyDelayedFlush() {
+        long deadline = flushDeadlineMillis.get();
+        if (deadline <= 0L) {
+            return;
+        }
+        if (System.currentTimeMillis() >= deadline && flushDeadlineMillis.compareAndSet(deadline, 0L)) {
+            synchronized (mutex) {
+                entries.clear();
+                currentItems = 0;
+            }
+        }
+    }
+
+    private Expiration resolveExpiration(long exptime, long now) {
+        if (exptime < 0L) {
+            return Expiration.immediate();
+        }
+        if (exptime == 0L) {
+            return Expiration.persistent();
+        }
+        long seconds = exptime;
+        if (seconds > THIRTY_DAYS_SECONDS) {
+            long absoluteMillis = multiplySeconds(seconds);
+            if (absoluteMillis <= now) {
+                return Expiration.immediate();
+            }
+            return Expiration.of(absoluteMillis);
+        }
+        long deltaMillis = multiplySeconds(seconds);
+        long candidate = addWithSaturation(now, deltaMillis);
+        return Expiration.of(candidate);
+    }
+
+    private long multiplySeconds(long seconds) {
+        if (seconds >= Long.MAX_VALUE / 1000L) {
+            return Long.MAX_VALUE;
+        }
+        return seconds * 1000L;
+    }
+
+    private long addWithSaturation(long lhs, long rhs) {
+        long result = lhs + rhs;
+        if (((lhs ^ result) & (rhs ^ result)) < 0L) {
+            return Long.MAX_VALUE;
+        }
+        if (result <= 0L) {
+            return Long.MAX_VALUE;
+        }
+        return result;
     }
 
     private void handleStats(BufferedOutputStream out) throws IOException {
         long now = currentTimeMillis();
         int items;
-        long getCount = cmdGet.get();
         synchronized (mutex) {
             purgeExpired(now);
             items = currentItems;
         }
-        writeLine(out, "STAT curr_items " + items);
-        writeLine(out, "STAT cmd_get " + getCount);
+        writeLine(out, "STAT pid " + ProcessHandle.current().pid());
         writeLine(out, "STAT uptime " + Duration.ofMillis(now - startTimeMillis).toSeconds());
+        writeLine(out, "STAT time " + TimeUnit.MILLISECONDS.toSeconds(now));
+        writeLine(out, "STAT version " + versionString());
+        writeLine(out, "STAT curr_connections " + currConnections.get());
+        writeLine(out, "STAT total_connections " + totalConnections.get());
+        writeLine(out, "STAT cmd_get " + cmdGet.get());
+        writeLine(out, "STAT cmd_set " + cmdSet.get());
+        writeLine(out, "STAT cmd_touch " + cmdTouch.get());
+        writeLine(out, "STAT cmd_flush " + cmdFlush.get());
+        writeLine(out, "STAT get_hits " + getHits.get());
+        writeLine(out, "STAT get_misses " + getMisses.get());
+        writeLine(out, "STAT curr_items " + items);
+        writeLine(out, "STAT total_items " + totalItems.get());
         writeLine(out, "END");
         out.flush();
     }
 
-    private String storeSet(String key, String value, int flags, int exptime) {
-        long now = currentTimeMillis();
+    private String versionString() {
+        return "embedded-can-cache";
+    }
+
+    private String storeSet(String key, String value, int flags, Expiration expiration, long now) {
         synchronized (mutex) {
             Entry existing = getLiveEntry(key, now);
             if (existing == null) {
-                currentItems++;
                 existing = new Entry();
                 entries.put(key, existing);
+                currentItems++;
+                totalItems.incrementAndGet();
             }
             existing.flags = flags;
             existing.value = value;
-            existing.expireAtMillis = computeExpireAt(exptime, now);
+            existing.expireAtMillis = expiration.expireAtMillis();
             existing.cas = casCounter.getAndIncrement();
         }
         return "STORED";
     }
 
-    private String storeAdd(String key, String value, int flags, int exptime) {
-        long now = currentTimeMillis();
+    private String storeAdd(String key, String value, int flags, Expiration expiration, long now) {
         synchronized (mutex) {
             Entry existing = getLiveEntry(key, now);
             if (existing != null) {
@@ -350,16 +585,16 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
             Entry entry = new Entry();
             entry.flags = flags;
             entry.value = value;
-            entry.expireAtMillis = computeExpireAt(exptime, now);
+            entry.expireAtMillis = expiration.expireAtMillis();
             entry.cas = casCounter.getAndIncrement();
             entries.put(key, entry);
             currentItems++;
+            totalItems.incrementAndGet();
         }
         return "STORED";
     }
 
-    private String storeReplace(String key, String value, int flags, int exptime) {
-        long now = currentTimeMillis();
+    private String storeReplace(String key, String value, int flags, Expiration expiration, long now) {
         synchronized (mutex) {
             Entry existing = getLiveEntry(key, now);
             if (existing == null) {
@@ -367,7 +602,7 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
             }
             existing.flags = flags;
             existing.value = value;
-            existing.expireAtMillis = computeExpireAt(exptime, now);
+            existing.expireAtMillis = expiration.expireAtMillis();
             existing.cas = casCounter.getAndIncrement();
         }
         return "STORED";
@@ -399,8 +634,7 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
         return "STORED";
     }
 
-    private String storeCas(String key, String value, int flags, int exptime, long casToken) {
-        long now = currentTimeMillis();
+    private String storeCas(String key, String value, int flags, Expiration expiration, long now, long casToken) {
         synchronized (mutex) {
             Entry existing = getLiveEntry(key, now);
             if (existing == null) {
@@ -411,7 +645,7 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
             }
             existing.flags = flags;
             existing.value = value;
-            existing.expireAtMillis = computeExpireAt(exptime, now);
+            existing.expireAtMillis = expiration.expireAtMillis();
             existing.cas = casCounter.getAndIncrement();
         }
         return "STORED";
@@ -436,18 +670,6 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
                 currentItems = Math.max(0, currentItems - 1);
             }
         }
-    }
-
-    private long computeExpireAt(int exptime, long nowMillis) {
-        if (exptime <= 0) {
-            return 0L;
-        }
-        long seconds = Integer.toUnsignedLong(exptime);
-        if (seconds > THIRTY_DAYS_SECONDS) {
-            return seconds * 1000L;
-        }
-        long candidate = nowMillis + seconds * 1000L;
-        return candidate < 0L ? Long.MAX_VALUE : candidate;
     }
 
     private static byte[] readBlock(BufferedInputStream in, int length) throws IOException {
@@ -524,6 +746,20 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
             workers.awaitTermination(1, TimeUnit.SECONDS);
         } catch (InterruptedException ignored) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    private record Expiration(long expireAtMillis, boolean deleteImmediately) {
+        static Expiration immediate() {
+            return new Expiration(0L, true);
+        }
+
+        static Expiration persistent() {
+            return new Expiration(0L, false);
+        }
+
+        static Expiration of(long expireAtMillis) {
+            return new Expiration(expireAtMillis, false);
         }
     }
 

@@ -227,7 +227,25 @@ public class MemcacheTextClient implements AutoCloseable {
     }
 
     public String flushAll() throws IOException {
-        sendLine("flush_all");
+        return flushAll(0L, false);
+    }
+
+    public String flushAll(long delaySeconds) throws IOException {
+        return flushAll(delaySeconds, false);
+    }
+
+    public String flushAll(long delaySeconds, boolean noreply) throws IOException {
+        StringBuilder builder = new StringBuilder("flush_all");
+        if (delaySeconds > 0L) {
+            builder.append(' ').append(delaySeconds);
+        }
+        if (noreply) {
+            builder.append(" noreply");
+        }
+        sendLine(builder.toString());
+        if (noreply) {
+            return "";
+        }
         return readLine();
     }
 

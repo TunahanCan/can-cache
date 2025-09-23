@@ -145,11 +145,57 @@ class cancachedProtocolTest {
 
     @Test
     void statsAndVersionCommands() throws IOException {
+        Map<String, String> baseline = client.stats();
+        long initialSet = statAsLong(baseline, "cmd_set");
+        long initialGet = statAsLong(baseline, "cmd_get");
+        long initialHits = statAsLong(baseline, "get_hits");
+        long initialMisses = statAsLong(baseline, "get_misses");
+        long initialTouch = statAsLong(baseline, "cmd_touch");
+        long initialFlush = statAsLong(baseline, "cmd_flush");
+        long initialTotalItems = statAsLong(baseline, "total_items");
+
+        assertEquals("STORED", client.set("stats-key", "value", 0, 0));
+        assertTrue(client.get("stats-key").containsKey("stats-key"));
+        assertTrue(client.get("missing").isEmpty());
+        assertEquals("TOUCHED", client.touch("stats-key", 5));
+        assertEquals("OK", client.flushAll());
+
         Map<String, String> stats = client.stats();
-        assertTrue(stats.containsKey("curr_items"));
-        assertTrue(stats.containsKey("cmd_get"));
+        assertTrue(stats.containsKey("pid"));
+        assertTrue(stats.containsKey("time"));
+        assertTrue(stats.containsKey("version"));
+        assertTrue(stats.containsKey("curr_connections"));
+        assertTrue(stats.containsKey("total_connections"));
+        assertEquals(initialSet + 1, statAsLong(stats, "cmd_set"));
+        assertEquals(initialGet + 2, statAsLong(stats, "cmd_get"));
+        assertEquals(initialHits + 1, statAsLong(stats, "get_hits"));
+        assertEquals(initialMisses + 1, statAsLong(stats, "get_misses"));
+        assertEquals(initialTouch + 1, statAsLong(stats, "cmd_touch"));
+        assertEquals(initialFlush + 1, statAsLong(stats, "cmd_flush"));
+        assertEquals(initialTotalItems + 1, statAsLong(stats, "total_items"));
+        assertEquals(0L, statAsLong(stats, "curr_items"));
 
         String version = client.version();
-        assertTrue(version.startsWith("VERSION"));
+        assertTrue(version.startsWith("VERSION "));
+    }
+
+    @Test
+    void flushAllHonorsDelayBeforeClearing() throws Exception {
+        assertEquals("STORED", client.set("delayed", "value", 0, 0));
+        assertEquals("OK", client.flushAll(1));
+
+        Map<String, MemcacheTextClient.ValueRecord> beforeDeadline = client.get("delayed");
+        assertEquals("value", beforeDeadline.get("delayed").value());
+
+        Thread.sleep(1200);
+
+        Map<String, MemcacheTextClient.ValueRecord> afterDeadline = client.get("delayed");
+        assertTrue(afterDeadline.isEmpty());
+    }
+
+    private long statAsLong(Map<String, String> stats, String key) {
+        String value = stats.get(key);
+        assertNotNull(value, "Missing stat for " + key);
+        return Long.parseLong(value);
     }
 }
