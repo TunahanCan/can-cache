@@ -13,11 +13,14 @@ import com.can.core.EvictionPolicyType;
 import com.can.metric.MetricsRegistry;
 import com.can.rdb.SnapshotFile;
 import com.can.pubsub.Broker;
+import io.quarkus.arc.DefaultBean;
+import io.vertx.core.Vertx;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Disposes;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import java.io.File;
 import java.time.Duration;
@@ -34,10 +37,27 @@ import java.util.Arrays;
 public class AppConfig {
 
     private final AppProperties properties;
+    private final AtomicBoolean ownsVertx = new AtomicBoolean(false);
 
     @Inject
     public AppConfig(AppProperties properties) {
         this.properties = properties;
+    }
+
+    @Produces
+    @Singleton
+    @DefaultBean
+    public Vertx vertx()
+    {
+        ownsVertx.set(true);
+        return Vertx.vertx();
+    }
+
+    void disposeVertx(@Disposes Vertx vertx)
+    {
+        if (ownsVertx.get()) {
+            vertx.close().toCompletionStage().toCompletableFuture().join();
+        }
     }
 
     @Produces
