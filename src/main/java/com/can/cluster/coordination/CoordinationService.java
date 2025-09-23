@@ -228,7 +228,7 @@ public class CoordinationService implements AutoCloseable
                 clusterState.bumpEpoch();
                 clusterState.observeEpoch(join.epoch());
 
-                RemoteNode remoteNode = new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis());
+                RemoteNode remoteNode = new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis(), vertx);
                 RemoteMember member = new RemoteMember(remoteNode, idBytes, host, port, now, join.epoch());
                 members.put(nodeId, member);
                 ring.addNode(remoteNode, idBytes);
@@ -239,7 +239,8 @@ public class CoordinationService implements AutoCloseable
                 }
                 hintedHandoffService.replay(nodeId, remoteNode);
             } else if (!existing.matches(host, port)) {
-                ring.removeNode(existing.node(), existing.idBytes());
+                RemoteNode previousNode = existing.node();
+                ring.removeNode(previousNode, existing.idBytes());
                 existing.resetBootstrap();
                 JoinHandshakeResult join = performJoinHandshake(nodeId, host, port);
                 if (join == null || !join.accepted()) {
@@ -250,7 +251,7 @@ public class CoordinationService implements AutoCloseable
                 clusterState.bumpEpoch();
                 clusterState.observeEpoch(join.epoch());
 
-                RemoteNode remoteNode = new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis());
+                RemoteNode remoteNode = new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis(), vertx);
                 existing.replace(remoteNode, idBytes, host, port, now, join.epoch());
                 ring.addNode(remoteNode, idBytes);
                 LOG.infof("Cluster member %s moved to %s:%d", nodeId, host, port);
@@ -259,6 +260,9 @@ public class CoordinationService implements AutoCloseable
                     bootstrapFrom(existing, false);
                 }
                 hintedHandoffService.replay(nodeId, remoteNode);
+                if (previousNode != null) {
+                    closeRemoteNode(previousNode);
+                }
             } else {
                 existing.updateLastSeen(now, remoteEpoch);
                 clusterState.observeEpoch(remoteEpoch);
@@ -454,6 +458,7 @@ public class CoordinationService implements AutoCloseable
                 RemoteMember member = entry.getValue();
                 if (now - member.lastSeen() > timeout) {
                     ring.removeNode(member.node(), member.idBytes());
+                    closeRemoteNode(member.node());
                     LOG.warnf("Cluster member %s (%s:%d) timed out", entry.getKey(), member.host(), member.port());
                     clusterState.bumpEpoch();
                     return true;
@@ -493,8 +498,23 @@ public class CoordinationService implements AutoCloseable
         }
 
         synchronized (membershipLock) {
-            members.values().forEach(member -> ring.removeNode(member.node(), member.idBytes()));
+            members.values().forEach(member -> {
+                ring.removeNode(member.node(), member.idBytes());
+                closeRemoteNode(member.node());
+            });
             members.clear();
+        }
+    }
+
+    private void closeRemoteNode(RemoteNode node)
+    {
+        if (node == null) {
+            return;
+        }
+        try {
+            node.close();
+        } catch (Exception e) {
+            LOG.debugf(e, "Failed to close remote node %s", node.id());
         }
     }
 
