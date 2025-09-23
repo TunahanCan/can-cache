@@ -15,12 +15,13 @@ import com.can.rdb.SnapshotFile;
 import com.can.pubsub.Broker;
 import io.quarkus.arc.DefaultBean;
 import io.vertx.core.Vertx;
-import io.vertx.core.WorkerExecutor;
+import io.vertx.core.VertxOptions;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Disposes;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import java.io.File;
@@ -52,13 +53,51 @@ public class AppConfig {
     public Vertx vertx()
     {
         ownsVertx.set(true);
-        return Vertx.vertx();
+        var network = properties.network();
+
+        VertxOptions options = new VertxOptions();
+
+        int eventLoopThreads = network.eventLoopThreads();
+        if (eventLoopThreads <= 0) {
+            eventLoopThreads = VertxOptions.DEFAULT_EVENT_LOOP_POOL_SIZE;
+        }
+        options.setEventLoopPoolSize(eventLoopThreads);
+
+        int workerThreads = Math.max(1, network.workerThreads());
+        options.setWorkerPoolSize(workerThreads);
+
+        if (shouldPreferNativeTransport()) {
+            options.setPreferNativeTransport(true);
+        }
+
+        return Vertx.vertx(options);
     }
 
     void disposeVertx(@Disposes Vertx vertx)
     {
         if (ownsVertx.get()) {
             vertx.close().toCompletionStage().toCompletableFuture().join();
+        }
+    }
+
+    private boolean shouldPreferNativeTransport()
+    {
+        String osName = System.getProperty("os.name", "");
+        if (osName == null || !osName.toLowerCase(Locale.ROOT).contains("linux")) {
+            return false;
+        }
+
+        return isNativeTransportAvailable("io.netty.channel.epoll.Epoll")
+                || isNativeTransportAvailable("io.netty.incubator.channel.uring.IOUring");
+    }
+
+    private boolean isNativeTransportAvailable(String className)
+    {
+        try {
+            Class<?> clazz = Class.forName(className);
+            return (boolean) clazz.getMethod("isAvailable").invoke(null);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return false;
         }
     }
 
