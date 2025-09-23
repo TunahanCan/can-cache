@@ -22,6 +22,7 @@ public interface AppProperties
     Cache cache();
     Cluster cluster();
     Network network();
+    Memcache memcache();
 
     interface Metrics {
         @WithDefault("5")
@@ -60,6 +61,7 @@ public interface AppProperties
         Discovery discovery();
 
         Replication replication();
+        Coordination coordination();
     }
 
     interface Discovery {
@@ -104,5 +106,21 @@ public interface AppProperties
 
         @WithDefault("16")
         int workerThreads();
+    }
+
+    interface Coordination {
+        @WithDefault("5000")
+        long hintReplayIntervalMillis();
+
+        @WithDefault("30000")
+        long antiEntropyIntervalMillis();
+    }
+
+    interface Memcache {
+        @WithDefault("1048576")
+        int maxItemSizeBytes();
+
+        @WithDefault("16")
+        int maxCasRetries();
     }
 }

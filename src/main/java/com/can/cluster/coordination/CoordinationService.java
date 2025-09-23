@@ -52,8 +52,6 @@ public class CoordinationService implements AutoCloseable
 {
     private static final Logger LOG = Logger.getLogger(CoordinationService.class);
     private static final int MAX_PACKET_SIZE = 1024;
-    private static final long HINT_REPLAY_INTERVAL_MILLIS = 5_000L;
-    private static final long REPAIR_INTERVAL_MILLIS = 30_000L;
 
     private final ConsistentHashRing<Node<String, String>> ring;
     private final Node<String, String> localNode;
@@ -63,6 +61,8 @@ public class CoordinationService implements AutoCloseable
     private final AppProperties.Discovery discoveryConfig;
     private final AppProperties.Replication replicationConfig;
     private final int replicationFactor;
+    private final long hintReplayIntervalMillis;
+    private final long antiEntropyIntervalMillis;
 
     private final Map<String, RemoteMember> members = new ConcurrentHashMap<>();
     private final Object membershipLock = new Object();
@@ -93,6 +93,9 @@ public class CoordinationService implements AutoCloseable
         this.discoveryConfig = cluster.discovery();
         this.replicationConfig = cluster.replication();
         this.replicationFactor = Math.max(1, cluster.replicationFactor());
+        var coordination = cluster.coordination();
+        this.hintReplayIntervalMillis = Math.max(0L, coordination.hintReplayIntervalMillis());
+        this.antiEntropyIntervalMillis = Math.max(0L, coordination.antiEntropyIntervalMillis());
     }
 
     @PostConstruct
@@ -115,7 +118,7 @@ public class CoordinationService implements AutoCloseable
         long reapInterval = Math.max(heartbeat, discoveryConfig.failureTimeoutMillis() / 2);
         heartbeatTask = scheduler.scheduleAtFixedRate(this::broadcastHeartbeat, 0L, heartbeat, TimeUnit.MILLISECONDS);
         reapTask = scheduler.scheduleAtFixedRate(this::pruneDeadMembers, reapInterval, reapInterval, TimeUnit.MILLISECONDS);
-        long repairInterval = Math.max(reapInterval, REPAIR_INTERVAL_MILLIS);
+        long repairInterval = Math.max(reapInterval, antiEntropyIntervalMillis);
         repairTask = scheduler.scheduleAtFixedRate(this::runAntiEntropy, repairInterval, repairInterval, TimeUnit.MILLISECONDS);
 
         LOG.infof("Coordination service started for node %s, announcing %s:%d", localNode.id(),
@@ -251,7 +254,7 @@ public class CoordinationService implements AutoCloseable
             } else {
                 existing.updateLastSeen(now, remoteEpoch);
                 clusterState.observeEpoch(remoteEpoch);
-                if (existing.shouldReplayHints(now, HINT_REPLAY_INTERVAL_MILLIS)) {
+                if (existing.shouldReplayHints(now, hintReplayIntervalMillis)) {
                     hintedHandoffService.replay(nodeId, existing.node());
                 }
             }
