@@ -335,7 +335,7 @@ public class MemcacheTextClient implements AutoCloseable {
         }
         try {
             return validatePort(Integer.parseInt(value.trim(), 10));
-        } catch (NumberFormatException | IllegalArgumentException ex) {
+        } catch (IllegalArgumentException ex) {
             return 11211;
         }
     }
