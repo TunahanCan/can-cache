@@ -1,4 +1,4 @@
-package com.can.core;
+package com.can.core.model;
 
 import java.util.concurrent.Delayed;
 import java.util.concurrent.TimeUnit;
@@ -7,7 +7,7 @@ import java.util.concurrent.TimeUnit;
  * Zamanı geldiğinde ilgili segmentten düşürülecek anahtarları temsil eden ve
  * {@link java.util.concurrent.DelayQueue} içinde kullanılan kayıt türüdür.
  */
-record ExpiringKey(Object key, int segmentIndex, long expireAtMillis) implements Delayed
+public record ExpiringKey(Object key, int segmentIndex, long expireAtMillis) implements Delayed
 {
     @Override
     public long getDelay(TimeUnit unit) {

@@ -1,5 +1,6 @@
 package com.can.core;
 
+import com.can.core.model.ExpiringKey;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.TimeUnit;
