@@ -1,5 +1,7 @@
 package com.can.metric;
 
+import io.vertx.core.Vertx;
+import io.vertx.core.WorkerExecutor;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -68,20 +70,34 @@ class MetricsComponentsTest
         void reporter_starts_and_stops_safely() throws Exception
         {
             MetricsRegistry registry = new MetricsRegistry();
-            MetricsReporter reporter = new MetricsReporter(registry, 1);
-            reporter.start(1);
-            assertTrue(reporter.isRunning());
-            reporter.close();
-            assertFalse(reporter.isRunning());
+            Vertx vertx = Vertx.vertx();
+            WorkerExecutor worker = vertx.createSharedWorkerExecutor("test-metrics");
+            try {
+                MetricsReporter reporter = new MetricsReporter(registry, 1, vertx, worker);
+                reporter.start(1);
+                assertTrue(reporter.isRunning());
+                reporter.close();
+                assertFalse(reporter.isRunning());
+            } finally {
+                worker.close();
+                vertx.close().toCompletionStage().toCompletableFuture().join();
+            }
         }
 
         @Test
         void reporter_ignores_invalid_interval()
         {
             MetricsRegistry registry = new MetricsRegistry();
-            MetricsReporter reporter = new MetricsReporter(registry, 0);
-            reporter.start(0);
-            assertFalse(reporter.isRunning());
+            Vertx vertx = Vertx.vertx();
+            WorkerExecutor worker = vertx.createSharedWorkerExecutor("test-metrics");
+            try {
+                MetricsReporter reporter = new MetricsReporter(registry, 0, vertx, worker);
+                reporter.start(0);
+                assertFalse(reporter.isRunning());
+            } finally {
+                worker.close();
+                vertx.close().toCompletionStage().toCompletableFuture().join();
+            }
         }
     }
 }

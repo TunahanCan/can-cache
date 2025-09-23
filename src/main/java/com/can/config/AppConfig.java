@@ -15,6 +15,7 @@ import com.can.rdb.SnapshotFile;
 import com.can.pubsub.Broker;
 import io.quarkus.arc.DefaultBean;
 import io.vertx.core.Vertx;
+import io.vertx.core.WorkerExecutor;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Disposes;
 import jakarta.enterprise.inject.Produces;
@@ -25,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.io.File;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 
 /**
  * CDI tarafından yönetilen bu yapılandırma sınıfı, önbellek motoru, metrik
@@ -62,6 +64,19 @@ public class AppConfig {
 
     @Produces
     @Singleton
+    public WorkerExecutor workerExecutor(Vertx vertx)
+    {
+        int poolSize = Math.max(4, Runtime.getRuntime().availableProcessors());
+        return vertx.createSharedWorkerExecutor("can-cache-worker", poolSize, 1, TimeUnit.MINUTES);
+    }
+
+    void disposeWorkerExecutor(@Disposes WorkerExecutor workerExecutor)
+    {
+        workerExecutor.close();
+    }
+
+    @Produces
+    @Singleton
     public MetricsRegistry metricsRegistry() {
         return new MetricsRegistry();
     }
@@ -71,7 +86,9 @@ public class AppConfig {
     public CacheEngine<String, String> cacheEngine(
             MetricsRegistry metrics,
             Broker broker,
-            SnapshotFile<String, String> snapshotFile
+            SnapshotFile<String, String> snapshotFile,
+            Vertx vertx,
+            WorkerExecutor workerExecutor
     ) {
         var cacheProps = properties.cache();
         CacheEngine<String, String> engine =
@@ -82,6 +99,8 @@ public class AppConfig {
                 .evictionPolicy(EvictionPolicyType.fromConfig(cacheProps.evictionPolicy()))
                 .metrics(metrics)
                 .broker(broker)
+                .vertx(vertx)
+                .workerExecutor(workerExecutor)
                 .build();
 
         snapshotFile.load(engine);

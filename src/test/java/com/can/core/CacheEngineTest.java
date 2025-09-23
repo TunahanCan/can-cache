@@ -4,6 +4,8 @@ import com.can.codec.StringCodec;
 import com.can.metric.MetricsRegistry;
 import com.can.metric.Timer;
 import com.can.pubsub.Broker;
+import io.vertx.core.Vertx;
+import io.vertx.core.WorkerExecutor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -20,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class CacheEngineTest
 {
     private CacheEngine<String, String> engine;
+    private Vertx vertx;
+    private WorkerExecutor worker;
     private MetricsRegistry metrics;
     private RecordingBroker broker;
 
@@ -28,12 +32,16 @@ class CacheEngineTest
     {
         metrics = new MetricsRegistry();
         broker = new RecordingBroker();
+        vertx = Vertx.vertx();
+        worker = vertx.createSharedWorkerExecutor("cache-engine-test");
         engine = CacheEngine.<String, String>builder(StringCodec.UTF8, StringCodec.UTF8)
                 .segments(2)
                 .maxCapacity(8)
                 .cleanerPollMillis(5)
                 .metrics(metrics)
                 .broker(broker)
+                .vertx(vertx)
+                .workerExecutor(worker)
                 .build();
     }
 
@@ -41,6 +49,8 @@ class CacheEngineTest
     void cleanup()
     {
         engine.close();
+        worker.close();
+        vertx.close().toCompletionStage().toCompletableFuture().join();
     }
 
     @Nested
