@@ -2,93 +2,108 @@
 
 ## Mimari Dokümanı
 
-### 1. Sistem Bileşenlerine Genel Bakış
-- **Komut & Protokol Katmanı:** `CanCachedServer`, cancached metin protokolünü konuşan TCP sunucusudur. Her bağlantıyı `ThreadPoolExecutor` üzerinde sanal-thread dostu işleyicilere dağıtır, komutları satır bazında ayrıştırır ve `ClusterClient` ile kümeye yönlendirir. Gecikmeli `flush_all` zamanlamasını her komutta `maybeApplyDelayedFlush()` ile kontrol eder, bağlantı ve komut metriklerini yerel sayaçlarda tutar.【F:src/main/java/com/can/net/CanCachedServer.java†L28-L172】【F:src/main/java/com/can/net/CanCachedServer.java†L707-L742】
-- **Kümelenme Katmanı:** `ClusterClient`, `ConsistentHashRing` üzerinden anahtar başına replikaları seçer, çoğunluk quorum'u ile yazma/okuma yapar ve başarısız takipçiler için `HintedHandoffService`'e ipucu bırakır. `RemoteNode` TCP ile diğer JVM'lerdeki `ReplicationServer`'a tek baytlık komutlar gönderir; `CoordinationService` multicast kalp atışlarıyla üyeleri keşfedip halkayı günceller, bootstrap/digest protokolünü tetikler.【F:src/main/java/com/can/cluster/ClusterClient.java†L17-L162】【F:src/main/java/com/can/cluster/coordination/RemoteNode.java†L15-L156】【F:src/main/java/com/can/cluster/coordination/CoordinationService.java†L18-L311】
-- **Bellek Motoru:** `CacheEngine`, yapılandırılabilir segmentler (`CacheSegment`) ve seçilebilir tahliye politikaları (LRU/TinyLFU) ile verileri bellekte tutar. `DelayQueue<ExpiringKey>` TTL süresi dolan kayıtları temizler, metrikler ve `Broker` aracılığıyla olay yayınlar.【F:src/main/java/com/can/core/CacheEngine.java†L12-L146】【F:src/main/java/com/can/core/CacheSegment.java†L1-L118】【F:src/main/java/com/can/core/ExpiringKey.java†L1-L17】
-- **Kalıcılık & Gözlemlenebilirlik:** `SnapshotFile`/`SnapshotScheduler` RDB benzeri dosyaya periyodik snapshot alır; `MetricsRegistry` + `MetricsReporter` sayaç/zamanlayıcıları konsola döker; `Broker` anahtar alanı olaylarını fan-out eder.【F:src/main/java/com/can/rdb/SnapshotFile.java†L1-L85】【F:src/main/java/com/can/rdb/SnapshotScheduler.java†L1-L84】【F:src/main/java/com/can/metric/MetricsReporter.java†L1-L81】【F:src/main/java/com/can/pubsub/Broker.java†L1-L58】
+### 1. Başlangıç Seviyesi: Can-Cache'e Giriş
+Can-Cache, Memcached metin protokolüyle uyumlu çalışan, yatay olarak ölçeklenebilir ve hatalara dayanıklı bir dağıtık önbellek uygulamasıdır. Amaç; mevcut Memcached istemcilerini değiştirmeden modern Java (Quarkus) ekosisteminde çalışabilen, hem bellek içi performansı hem de kalıcılığı bir arada sunan bir altyapı sağlamaktır. Sistem; tek düğümlü senaryolardan, onlarca replikanın bulunduğu kümelere kadar aynı mimari ilkelerle çalışacak şekilde tasarlanmıştır.
+
+### 2. Başlangıç Seviyesi: Temel Bileşenler ve Veri Yolu
+Bu bölüm, bileşenler arasındaki ilişkiyi kavramak için yüksek seviyede bir resim sunar. İstemciler TCP üzerinden `CanCachedServer` ile konuşur. Sunucu, komutları ayrıştırdıktan sonra `ClusterClient` ile kümeye iletir. Okuma/yazma işlemleri hedef düğümlerin `CacheEngine` örneklerine ulaşır, TTL ve tahliye politikaları burada yürütülür. Opsiyonel snapshot ve metrik bileşenleri sistemi kalıcı ve gözlemlenebilir kılar.
 
 ```mermaid
 flowchart LR
     subgraph Client
-        CLI[cancached istemcisi]
+        CLI[cancached\nistemcisi]
     end
-    CLI -- metin protokolü --> S[CanCachedServer]
-    S -- quorum çağrısı --> CC[ClusterClient]
+    subgraph Server
+        S[CanCachedServer]
+        CC[ClusterClient]
+    end
+    subgraph Node
+        CE[CacheEngine]
+        Snap[SnapshotScheduler\nSnapshotFile]
+        Obs[MetricsRegistry\nBroker]
+    end
+    CLI -- metin protokolü --> S
+    S -- quorum çağrısı --> CC
     CC -- hash --> Ring[ConsistentHashRing]
-    Ring -- lider --> LN[Yerel Node\n(CacheEngine)]
-    Ring -- takipçi --> RN[(RemoteNode vekilleri)]
+    Ring -- lider --> CE
+    CC -- takipçilere --> RN[(RemoteNode vekilleri)]
     RN --> RS[ReplicationServer]
-    RS --> CE[CacheEngine]
-    CE --> TTL[DelayQueue\n+ Eviction]
-    CE --> Snap[SnapshotScheduler\nSnapshotFile]
-    CE --> Obs[MetricsRegistry & Broker]
+    RS --> CE
+    CE --> Snap
+    CE --> Obs
     CC --> HH[HintedHandoffService]
 ```
 
-### 2. Komut İşleme ve İş Kuralları
-#### 2.1 Depolama Komutları (`set/add/replace/append/prepend`)
-- Sunucu gelen satırı ayrıştırır, bayrak, TTL ve bayt sayısı doğrulamalarını yapar, 1 MB üzerindeki yükleri reddeder ve `noreply` semantiğini uygular.【F:src/main/java/com/can/net/CanCachedServer.java†L180-L266】
-- TTL değeri 0 ise kalıcı, negatifse silme anlamına gelir; 30 günü aşan değerler epoch saniyeleri olarak yorumlanıp bugüne göre farkı hesaplanır.【F:src/main/java/com/can/net/CanCachedServer.java†L824-L858】
-- Yeni değerler `StoredValueCodec` ile CAS, bayrak ve sona erme zamanını birlikte Base64 olarak kodlanıp `ClusterClient` üzerinden quorum yazması yapılır. `add` var olanı reddeder, `replace` yoksa hata döner, `append/prepend` CAS döngüsüyle 16 denemeye kadar birleştirir; tahliye limitine takılırsa `SERVER_ERROR` döner.【F:src/main/java/com/can/net/CanCachedServer.java†L268-L359】【F:src/main/java/com/can/core/StoredValueCodec.java†L13-L87】
-- Başarıyla eklenen yeni anahtarlar `curr_items` ve `total_items` sayaçlarını artırır, yerel kaldırmalar `onRemoval` aboneliğiyle sayaçtan düşürülür.【F:src/main/java/com/can/net/CanCachedServer.java†L335-L344】【F:src/main/java/com/can/net/CanCachedServer.java†L789-L804】
+### 3. Orta Seviye: Bileşenlerin Derinlemesine İncelemesi
 
-#### 2.2 CAS Komutu (`cas`)
-- İstemciden gelen `cas unique` değeri mevcut değerle uyuşmazsa `EXISTS` döner. Uyuşursa yeni kayıt yeni CAS numarasıyla encode edilip quorum CAS çağrısı yapılır; başarısız olursa güncel değer okunup `EXISTS/NOT_FOUND` yanıtı verilir.【F:src/main/java/com/can/net/CanCachedServer.java†L360-L412】
-- `ClusterClient.compareAndSwap`, liderden alınan istisnayı fırlatarak güçlü tutarlılık sağlar, takipçi başarısızlıklarını ipucu olarak kaydeder.【F:src/main/java/com/can/cluster/ClusterClient.java†L108-L150】
+#### 3.1 Komut & Protokol Katmanı
+- **Temel Rolü:** `CanCachedServer`, gelen her TCP bağlantısını kabul eder, satır bazında komutları ayrıştırır ve Memcached protokolündeki sözdizimini/yanıt formatlarını korur. Böylece istemciler herhangi bir kod değişimi yapmadan Can-Cache ile konuşabilir.
+- **İş Parçacığı Modeli:** Sunucu, konfigürasyonda verilen kadar işçi thread açar (`ThreadPoolExecutor`). Kabul edilen her soket, bu işçi havuzuna aktarılır. Kabul döngüsü ayrı bir daemon thread üzerinde çalışır. IO yoğun iş yükleri için Java sanal thread'leri kullanılmasa da thread havuzunun üstünde CPU bloklaması olmadan çalışacak şekilde tasarlanmıştır. Komut tarafında ise `ClusterClient` ve koordinasyon servisleri sanal thread'lerden faydalanır.
+- **Komut Ayrıştırma:** `processCommand` metodu, `split("\\s+")` ile komutu ve parametreleri ayırır. Depolama komutları (`set/add/replace/append/prepend/cas`) için gövdedeki byte sayısı okunur, ASCII sayısal doğrulamaları yapılır ve maksimum 1 MB sınırı enforce edilir. Belleğe alınmadan önce flush zamanlaması (`maybeApplyDelayedFlush`) kontrol edilerek gecikmeli flush talimatı varsa tetiklenir.
+- **Yanıt Semantiği:** Her komut Memcached'deki sabit yanıtları döner (`STORED`, `NOT_STORED`, `EXISTS`, `NOT_FOUND`, `ERROR`). `noreply` seçeneği, istemci gereksiz ağ yükü istemediğinde yanıt üretmemeyi sağlar. Bağlantı ve komut istatistikleri (`curr_connections`, `total_connections`, `cmd_get`, `cmd_set`) AtomicLong sayaçlarla tutulur.
+- **Hata Yönetimi:** Komut satırında yanlış format, sayı sınırı aşımı veya TTL hataları `CLIENT_ERROR` ile raporlanır. Beklenmeyen durumlarda `SERVER_ERROR` döner ve istemcinin tutarlı bir durum yakalaması sağlanır.
 
-#### 2.3 Okuma ve İstatistik Komutları
-- `get/gets` için anahtar listesi taranır, TTL süresi geçmiş kayıtlar `delete` ile temizlenir. `gets` CAS değerini de döner; `get_hits/misses` sayaçları güncellenir.【F:src/main/java/com/can/net/CanCachedServer.java†L413-L447】
-- `stats` sürecinde çalışma süresi, bağlantı sayaçları ve komut sayaçları raporlanır; `version` uygulama paket sürümünü verir.【F:src/main/java/com/can/net/CanCachedServer.java†L640-L707】
+#### 3.2 Kümelenme Katmanı
+- **Ana Görev:** `ClusterClient`, kümeyi temsil eden merkezi bileşendir. `ConsistentHashRing` üzerinden anahtarın lider ve takipçi düğümlerini seçer. Böylece yeni düğümler eklendiğinde anahtar dağılımı minimal yeniden dağıtımla gerçekleşir.
+- **Quorum Mantığı:** Yazmalarda ve okumalarda çoğunluk (majority) beklenir. Replikasyon faktörü `n` ise `(n/2)+1` yanıt alınmadan işlem başarılı sayılmaz. Liderden gelen hata doğrudan istemciye kabarcıklanır; takipçideki hatalar ise ipucuna dönüşebilir.
+- **Hinted Handoff:** Takipçi düğümler geçici olarak ulaşılamıyorsa `HintedHandoffService` kuyruğuna "ipucu" bırakılır. Servis, koordinasyon katmanından gelen üyelik güncellemelerini dinleyerek düğüm geri döndüğünde yazmaları tekrar oynatır. Kuyruk ve yeniden oynatma metrikleri (`enqueued`, `replayed`, `failures`) ile ölçülür.
+- **Uzak Çağrılar:** `RemoteNode`, TCP üzerinden `ReplicationServer` ile konuşur. Her çağrı kısa ömürlü soket bağlantısı açar ve tek baytlık komut kimlikleri (`'S'`, `'G'`, `'D'`, `'X'`, `'C'`, `'J'`, `'R'`, `'H'`) kullanır. Bu sayede metin protokolü yerine küçük binary paketlerle ağ yükü azaltılır.
 
-#### 2.4 Mutasyon Komutları
-- `delete` quorum silme çağrısı yapar ve başarılıysa sayaçtan düşer.【F:src/main/java/com/can/net/CanCachedServer.java†L448-L475】
-- `incr/decr` yalnızca ASCII sayısal yüklerde çalışır; negatif sonuç sıfıra sabitlenir ve CAS döngüsüyle yazılır.【F:src/main/java/com/can/net/CanCachedServer.java†L476-L566】
-- `touch` yeni TTL hesaplayarak CAS ile günceller; TTL sıfırsa değer silinir.【F:src/main/java/com/can/net/CanCachedServer.java†L567-L618】
-- `flush_all` anında tüm düğümleri temizler veya geleceğe dönük son tarih planlar; her komut girişinde `maybeApplyDelayedFlush` bu son tarihi kontrol eder.【F:src/main/java/com/can/net/CanCachedServer.java†L619-L707】【F:src/main/java/com/can/net/CanCachedServer.java†L158-L172】
+#### 3.3 Bellek Motoru ve Veri Yaşam Döngüsü
+- **Segment Mimarisi:** `CacheEngine`, anahtarları `hashCode`'a göre N adet `CacheSegment`'e dağıtır. Her segment `ReentrantLock` ile korunur ve `LinkedHashMap` benzeri LRU listesi içerir. Segment boyutları yapılandırılabilir; `TinyLFU` gibi alternatif tahliye stratejileri plugin mantığıyla seçilebilir.
+- **TTL Yönetimi:** `DelayQueue<ExpiringKey>`, süresi dolan kayıtları tutar. Arka planda sanal thread tabanlı `ScheduledExecutorService`, kuyruğu tarayıp, süresi dolan anahtarları ilgili segmentten siler. `touch` komutları ve CAS güncellemeleri TTL'i yeniden hesaplayarak kuyruğa tekrar yazar.
+- **Değer Kodlaması:** `StoredValueCodec`, bayraklar, CAS kimliği ve expireAt zaman damgasını Base64 formatında tek string'e paketler. Ağ katmanı (`CanCachedServer`) ve `CacheEngine` aynı formatı paylaştığından veri kopyalama ve dönüşüm maliyeti azalır.
+- **Metrikler & Olaylar:** `CacheEngine`, isteğe bağlı `MetricsRegistry` ile `cache_hits`, `cache_misses`, `cache_evictions` sayaçlarını günceller; `Broker` üzerinden `keyspace:set` ve `keyspace:del` olaylarını yayınlar. `onRemoval` abonelikleri sayesinde sunucu, yerel `curr_items` sayaçlarını güncel tutar.
 
-```mermaid
-sequenceDiagram
-    participant Client as Memcached İstemcisi
-    participant Server as CanCachedServer
-    participant CC as ClusterClient
-    participant N1 as Lider Node
-    participant N2 as Takipçi Node
-    participant HH as HintedHandoff
-    Client->>Server: set key flags ttl bytes\nvalue
-    Server->>Server: TTL & CAS hesapla, payload doğrula
-    Server->>CC: set(key, encodedValue, ttl)
-    CC->>N1: Node.set
-    CC->>N2: Node.set
-    N2-->>CC: Hata
-    CC->>HH: recordSet(nodeId,key,value,ttl)
-    N1-->>CC: true
-    CC-->>Server: quorum sağlandı
-    Server-->>Client: STORED (opsiyonel noreply)
-```
+#### 3.4 Kalıcılık ve Gözlemlenebilirlik
+- **Snapshot Altyapısı:** `SnapshotScheduler`, uygulama başlarken snapshot dosyasını okuyup `CacheEngine.replay` ile belleği doldurur. Belirlenen aralıklarla `SnapshotFile.write` çağrısı yaparak RDB benzeri dosyayı atomik olarak günceller. Hatalı kayıtlar atlanır, geri kalanlar en yeni değerlerle yazılır.
+- **Metrik Raporlama:** `MetricsReporter`, sanal thread zamanlayıcısı üzerinden periyodik olarak `MetricsRegistry` içerisindeki sayaç ve zamanlayıcıları okur, konsola insan okunabilir formatta döker. Bu çıktı; Prometheus benzeri bir toplayıcıya yönlendirilebilir.
+- **Yayın/Abonelik:** `Broker`, `CopyOnWriteArrayList` üzerinde abonelik listesi tutar. Her yayın tüm abonelere iletilir; abonelikler `AutoCloseable` döndürerek yaşam döngüsünde deterministik temizlik sağlar.
 
-### 3. Bellek Motoru ve Veri Yaşam Döngüsü
-- Her anahtar `segIndex` fonksiyonu ile belirlenen `CacheSegment`'e gider; segmentler `ReentrantLock` korumasında LRU erişim sıralı `LinkedHashMap` tutar. Tahliye politikası yeni girişleri kabul etmeden önce kurban seçer, gerekirse `notifyRemoval` ile abonelere haber verir.【F:src/main/java/com/can/core/CacheEngine.java†L61-L123】【F:src/main/java/com/can/core/CacheSegment.java†L1-L118】
-- `DelayQueue<ExpiringKey>` TTL süresi dolan kayıtları segment bazında çıkarır, isteğe bağlı TinyLFU stratejisi sıcak verileri korur. Temizlik görevi sanal thread zamanlayıcıyla periyodik çalışır.【F:src/main/java/com/can/core/CacheEngine.java†L32-L74】
-- `StoredValueCodec` değerleri CAS, bayrak ve expireAt ile tek Base64 dizisinde taşır; bu sayede ağ katmanı ve bellek motoru aynı gösterimi paylaşır, CAS çakışmalarında tutarlılık sağlanır.【F:src/main/java/com/can/core/StoredValueCodec.java†L13-L87】
-- `CacheEngine.get/delete/compareAndSwap` metrik sayaç ve zamanlayıcılarını günceller, `Broker` aracılığıyla `keyspace:del` olayını yayınlar. `fingerprint()` küme anti-entropy karşılaştırmaları için deterministik özet üretir.【F:src/main/java/com/can/core/CacheEngine.java†L126-L267】【F:src/main/java/com/can/core/CacheEngine.java†L224-L250】
+### 4. Orta Seviye: Komut İşleme ve İş Kuralları
+Bu bölüm, Memcached protokolündeki komutların Can-Cache içindeki karşılıklarını ve uygulanırken gözetilen kuralları anlatır.
 
-```mermaid
-stateDiagram-v2
-    [*] --> ActiveEntry
-    ActiveEntry --> DelayQueue : TTL planlandı
-    DelayQueue --> Expired : süre doldu
-    Expired --> SegmentCleanup : removeIfMatches
-    SegmentCleanup --> EvictionMetrics : counter++
-    SegmentCleanup --> RemovalListeners : keyspace:del publish
-    RemovalListeners --> [*]
-```
+#### 4.1 Depolama Komutları (`set`, `add`, `replace`, `append`, `prepend`)
+- **Başlangıç Mantığı:** Sunucu, komut satırından bayrak (flags), TTL (expire time) ve byte sayısını okur. Byte sayısı 1 MB üzerindeyse `CLIENT_ERROR` döner. `noreply` soneki varsa istemciye yanıt gönderilmez.
+- **TTL Yorumlaması:** TTL değeri `0` ise kayıt kalıcıdır; negatif değerler silme anlamına gelir. 30 günden büyük değerler "epoch saniyesi" olarak yorumlanır ve güncel zamana göre delta hesaplanır. Bu davranış Memcached uyumluluğu için kritik.
+- **Veri Kodlama:** Komut gövdesi okunduktan sonra `StoredValueCodec.encode`, yeni CAS değeri üreterek (global `AtomicLong casCounter`) bayraklar ve expireAt bilgisiyle birlikte Base64 string oluşturur. Bu string `ClusterClient` üzerinden quorum yazmasıyla kümeye gönderilir.
+- **Komut Bazlı Farklar:**
+  - `set`: Var olan veriyi üzerine yazar.
+  - `add`: Anahtar mevcutsa `NOT_STORED` döner.
+  - `replace`: Anahtar yoksa `NOT_STORED` döner.
+  - `append/prepend`: Mevcut değeri okur, CAS döngüsüyle yeni gövdeleri uç uca ekler. En fazla 16 deneme yapılır; bu sınır aşılırsa `SERVER_ERROR` raporlanır.
+- **Sayaç Yönetimi:** Yeni bir anahtar başarıyla eklendiğinde `curr_items` ve `total_items` sayaçları artar. Segment tahliyesi veya manuel `delete`, `onRemoval` aboneliğiyle `curr_items`'i azaltır.
 
-### 4. Kümelenme, Replikasyon ve Anti-Entropy
-- `ConsistentHashRing` sanal düğümlerle anahtar yükünü dengeler; `ClusterClient` replikasyon faktörüne göre lider+takipçileri seçer ve çoğunluk hesabı (`(n/2)+1`) ile yanıt arar.【F:src/main/java/com/can/cluster/ConsistentHashRing.java†L11-L68】【F:src/main/java/com/can/cluster/ClusterClient.java†L40-L79】
-- Hata toleransı için lider yazması başarısızsa istisna kabarcıklanır, takipçi hataları `HintedHandoffService`'e kuyruklanır. Kuyruklar periyodik olarak `CoordinationService` veya katılım sırasında `replay` edilir, metrikler `enqueued/replayed/failures` sayaçlarıyla izlenir.【F:src/main/java/com/can/cluster/ClusterClient.java†L80-L150】【F:src/main/java/com/can/cluster/HintedHandoffService.java†L15-L102】
-- `RemoteNode` her çağrıda kısa ömürlü soket açar, `'S'/'G'/'D'/'X'/'C'` komutlarıyla hedef `ReplicationServer`'ı sürer. Sunucu tarafı komutu `CacheEngine`'e uygular, `'J'` (join) el sıkışması ve `'R'` (stream) ile bootstrap sağlar, `'H'` (digest) ile anti-entropy tetikler.【F:src/main/java/com/can/cluster/coordination/RemoteNode.java†L21-L156】【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L17-L184】
-- `CoordinationService` multicast `HELLO` paketleriyle düğümleri keşfeder, join handshake sonucuna göre `ConsistentHashRing`'e ekler, epoch sürümünü `ClusterState` ile günceller ve digest farklılıklarında `bootstrapFrom` ile onarım yapar.【F:src/main/java/com/can/cluster/coordination/CoordinationService.java†L37-L311】【F:src/main/java/com/can/cluster/ClusterState.java†L7-L62】
+#### 4.2 CAS Komutu (`cas`)
+- İstemcinin gönderdiği `cas unique` değeri, mevcut değerin CAS kimliğiyle eşleşmezse `EXISTS` yanıtı verilir. Eşleşirse `compareAndSwap` quorum çağrısı yapılır.
+- `ClusterClient.compareAndSwap`, liderin sonucunu bekler; takipçi hataları ipucu olarak kuyruğa alınır. Başarısız CAS denemesinde güncel değer yeniden okunur ve istemciye uygun yanıt döner.
+
+#### 4.3 Okuma ve İstatistik Komutları
+- `get/gets`: Anahtar listesi için `ClusterClient.get` çağrısı yapılır. Süresi dolmuş kayıtlar tespit edilirse `delete` ile temizlenir. `gets` yanıtında CAS değeri de döner. `get_hits`/`get_misses` sayaçları güncellenir.
+- `stats`: Çalışma süresi (`uptime`), bağlantı sayaçları (`curr_connections`, `total_connections`) ve komut sayaçları (`cmd_get`, `cmd_set`, `cmd_touch`, `cmd_flush`) raporlanır.
+- `version`: Uygulama sürüm bilgisini döner.
+
+#### 4.4 Mutasyon Komutları
+- `delete`: Quorum silme çağrısı yapar. Başarılıysa `curr_items` azaltılır.
+- `incr/decr`: Yalnızca ASCII sayı içeren yüklerde çalışır. Negatif sonuç `0`'a sabitlenir. CAS döngüsü ile güncellenir. Büyük sayılar için `BigInteger` kullanılarak taşma engellenir.
+- `touch`: TTL'i yeniden hesaplayıp CAS ile günceller. TTL `0` ise kayıt silinir.
+- `flush_all`: Komut parametrelerine göre ya anında tüm düğümleri temizler ya da gelecekte bir tarih için flush planlar. Her yeni komutta `maybeApplyDelayedFlush` gecikmiş flush tarihinin gelip gelmediğini kontrol eder.
+
+### 5. İleri Seviye: Dağıtık Sistem Mekanizmaları
+
+#### 5.1 Consistent Hashing
+- `ConsistentHashRing`, her düğüm için birden fazla sanal düğüm üretir. Bu, yükün dengeli dağılmasını ve düğüm ekleme/çıkarma sırasında minimum yeniden dağıtım sağlanmasını garantiler. Halka yapısı, `TreeMap` benzeri bir veri yapısıyla uygulanır.
+
+#### 5.2 Quorum Okuma/Yazma
+- Replikasyon faktörü `n` olan bir kümeye yazı yapıldığında lider + takipçiler çağrılır. Çoğunluk yanıt vermeden işlem başarılı sayılmaz. Okumalarda da aynı mantık, "en güncel lider" prensibiyle çalışır; lider yanıtı alınamazsa ve çoğunluk sağlanamazsa `ERROR` döner.
+
+#### 5.3 Hinted Handoff
+- Yazma sırasında erişilemeyen takipçiler için ipuçları kuyruklanır. Kuyruk, düğüm kimliği, anahtar, değer, TTL ve operasyon türünü saklar. `HintedHandoffService`, sanal thread havuzu üzerinden periyodik olarak kuyruğu tüketir ve düğüm tekrar erişilebilir olduğunda yazmayı gerçekleştirir. Başarısız tekrarlar için geriye dönük metrikler tutulur.
+
+#### 5.4 Anti-Entropy ve Tutarlılık
+- `fingerprint()` fonksiyonu, her segment için deterministik özet üretir. Koordinasyon servisi digest isteği (`'H'`) ile düğümlerin özetlerini toplar, farklılık varsa bootstrap akışı (`'R'`) başlatılır. Bu mekanizma; uzun süreli ağ bölünmeleri sonrası veri tutarlılığını yeniden sağlar.
+
+### 6. İleri Seviye: Koordinasyon, Üyelik ve Replikasyon Akışı
 
 ```mermaid
 sequenceDiagram
@@ -98,11 +113,11 @@ sequenceDiagram
     participant RepB as ReplicationServer(B)
     participant EngineA as CacheEngine(A)
     CoordA->>Multicast: HELLO|nodeA|host|port|epoch
-    CoordB->>CoordB: heartbeat al, join gereksinimi
+    CoordB->>CoordB: Heartbeat al, üyelik güncelle
     CoordB->>RepB: performJoinHandshake('J')
     RepB-->>CoordB: 'A' + epoch bilgisi
     CoordB->>Ring: addNode(RemoteNode)
-    CoordB->>RemoteNode: bootstrapFrom('R' stream)
+    CoordB->>RemoteNode: bootstrapFrom('R' akışı)
     RemoteNode-->>EngineA: set(key,value,ttl)
     CoordB->>HintedHandoff: replay(nodeA)
     loop Periyodik
@@ -115,20 +130,29 @@ sequenceDiagram
     end
 ```
 
-### 5. Kalıcılık, Gözlemlenebilirlik ve Olaylar
-- `SnapshotScheduler` ilk açılışta ve yapılandırılan aralıkta `SnapshotFile.write` çağırarak atomik dosya güncellemesi yapar; okunurken hatalı satırlar atlanır ve `CacheEngine.replay` ile bellek doldurulur.【F:src/main/java/com/can/rdb/SnapshotScheduler.java†L17-L79】【F:src/main/java/com/can/rdb/SnapshotFile.java†L21-L80】
-- `MetricsReporter` metrik kayıt defterini sanal thread zamanlayıcı üzerinden tarayıp mikro saniye çözünürlüğünde rapor üretir; `MetricsRegistry` sayaç/zamanlayıcı örneklerini lazy oluşturur.【F:src/main/java/com/can/metric/MetricsReporter.java†L1-L81】【F:src/main/java/com/can/metric/MetricsRegistry.java†L1-L20】
-- `Broker` her yayını `CopyOnWriteArrayList` üzerinde abonelere dağıtır, abonelikler `AutoCloseable` döndürür ve yaşam döngüsü `@Startup` anotasyonu ile Quarkus tarafından yönetilir.【F:src/main/java/com/can/pubsub/Broker.java†L1-L58】
+- **Üyelik Keşfi:** Multicast `HELLO` paketleri, düğümlerin birbirini bulmasını sağlar. Paketler; node kimliği, adres, port ve epoch bilgisi içerir.
+- **Join Handshake:** Var olan düğümler `'J'` komutuyla yeni düğümün hazır olup olmadığını kontrol eder. Yanıt `A` (accept) ise yeni düğüm halka yapısına eklenir.
+- **Bootstrap Akışı:** `'R'` komutuyla lider düğüm, anahtarları ve TTL'leri yeni düğüme stream eder. Bu stream sırasında `CacheEngine.set` çağrıları doğrudan yapılır.
+- **Digest Denetimi:** Periyodik `'H'` istekleri; segment fingerprint'lerini karşılaştırarak farklılık tespit eder. Fark varsa zorunlu bootstrap (force) tetiklenir.
 
-### 6. Yapılandırma ve Çalıştırma Parametreleri
-- `AppProperties` yapılandırma haritası metrik periyodu, snapshot yolu/periyodu, segment sayısı, kapasite, tahliye politikası, sanal düğüm sayısı, replikasyon faktörü, multicast adresleri ve ağ portlarını tip güvenli sağlar.【F:src/main/java/com/can/config/AppProperties.java†L1-L95】
-- `AppConfig` bu değerleri okuyup `CacheEngine`, `SnapshotFile`, `ConsistentHashRing`, yerel `Node` adaptörü, `ClusterState` ve `ClusterClient` bean'lerini üretir; uygulama açıldığında snapshot yükler, kapanışta kaynakları kapatır.【F:src/main/java/com/can/config/AppConfig.java†L18-L123】
+### 7. Uzman Seviyesi: Performans, Kaynak Yönetimi ve Hata Senaryoları
+- **Sanal Thread Kullanımı:** Koordinasyon servisleri (`CoordinationService`, `ReplicationServer`) ve `CacheEngine` temizleyicisi sanal thread'lerle çalışır. Bu yaklaşım, bloklayıcı IO operasyonlarında binlerce eşzamanlı işi yönetmeyi kolaylaştırır.
+- **Backpressure ve Kuyruklar:** `ThreadPoolExecutor`'ün `LinkedBlockingQueue`'su bağlantı başına iş yükünü sıraya alır. Eğer komut üretimi tüketimden hızlıysa sunucu yeni bağlantıları kabul etmeye devam eder ancak işçi thread'ler sırayla komutları işler. Gerekirse `workerThreads` artırılarak kapasite genişletilir.
+- **Hata İzolasyonu:** Lider node hatası durumunda yazma başarısız olur ve istemciye hata döner; böylece sessiz veri kaybı engellenir. Takipçi hataları ipucuna dönüştürüldüğü için veri tutarlılığı nihayetinde sağlanır.
+- **Snapshot Tutarlılığı:** Snapshot alınırken `CacheEngine` segmentleri üzerinde `forEach` yapılarak mevcut değerler atomik biçimde dosyaya yazılır. Yazma sırasında geçici dosya (`.tmp`) kullanılır, işlem başarıyla bittiğinde atomik rename ile son dosya güncellenir.
+- **Gözlemlenebilirlik Entegrasyonları:** Metrik raporları ve yayınlanan olaylar, dış sistemlere (Prometheus, ELK, Kafka vb.) kolay entegrasyon için tasarlanmıştır. `Broker` üzerinden anahtar alanı değişikliklerini dinlemek, önbelleğe bağlı türev sistemler için temel oluşturur.
 
-### 7. Kritik Teknik Kavramlar
-- **Quorum Yazma/Okuma:** `ClusterClient` lider+takipçi çoğunluğunu bekleyerek hatalara dayanıklı hale gelir; lider hatasında istisna fırlatıp uygulamaya gerçek hata bildirir.【F:src/main/java/com/can/cluster/ClusterClient.java†L56-L115】
-- **Hinted Handoff:** Geçici ağ kesintilerinde yazma/kaldırma ipuçlarını kuyruklar, üyelik sinyalleriyle tekrar dener; başarısız tekrarlar için metrik tutar.【F:src/main/java/com/can/cluster/HintedHandoffService.java†L33-L102】
-- **TTL Semantiği:** Memcached uyumluluğu için 30 gün üzeri TTL'ler epoch saniye olarak yorumlanır, TTL sıfır veya negatifse kayıt silinir; `DelayQueue` temizlik ve `touch` komutu TTL uzatmayı yönetir.【F:src/main/java/com/can/net/CanCachedServer.java†L824-L858】【F:src/main/java/com/can/core/CacheEngine.java†L32-L74】
-- **CAS ve Çakışma Yönetimi:** Global `casCounter` ile benzersiz kimlik üretilir, `append/prepend/incr/decr/touch` gibi mutasyonlar optimistik CAS döngüsüyle tutarlılığı korur.【F:src/main/java/com/can/net/CanCachedServer.java†L200-L618】
-- **Virtual Thread Kullanımı:** Hem replikasyon hem koordinasyon hem de zamanlayıcı iş yükleri `Thread.ofVirtual()` ile başlatılır, böylece IO ağırlıklı işlemlerde yüksek eşzamanlılık sağlar.【F:src/main/java/com/can/cluster/coordination/CoordinationService.java†L80-L116】【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L43-L89】【F:src/main/java/com/can/core/CacheEngine.java†L51-L74】
+### 8. Yapılandırma ve Çalıştırma Parametreleri
+- **AppProperties:** YAML/Properties üzerinden gelen yapılandırmayı tip güvenli hale getirir. Ağ ayarları (host, port, backlog, workerThreads), segment sayısı, kapasite, tahliye politikası, snapshot yolları/periyotları, replikasyon faktörü, sanal düğüm sayısı, multicast adresleri gibi kritik parametreler burada tutulur.
+- **AppConfig:** Bu değerleri kullanarak `CacheEngine`, `SnapshotFile`, `SnapshotScheduler`, `ConsistentHashRing`, yerel `Node` adaptörü, `ClusterState` ve `ClusterClient` gibi bean'leri üretir. Uygulama başlatıldığında snapshot'ı yükler, kapatılırken thread havuzlarını ve soketleri temiz biçimde kapatır.
+- **Dağıtım Notları:**
+  - Kümeye yeni düğüm eklerken ağ katmanının multicast trafiğine izin verdiğinden emin olun.
+  - Snapshot dosyasının bulunduğu disk yolunun dayanıklı (örn. SSD) ve yeterli alan sunduğunu doğrulayın.
+  - Hinted handoff kuyruğu disk üzerinde kalıcı değildir; uzun süreli kesintilerde quorum sağlamak kritik önem taşır.
 
-Bu mimari doküman, can-cache'in temel iş kurallarını, dağıtık davranışını ve kalıcılık/izleme mekanizmalarını uçtan uca özetleyerek mühendislik ekibinin sistemi genişletirken başvurabileceği referans niteliğinde bir kaynak sunar.
+### 9. Sistemi Genişletme İçin Öneriler
+- Yeni komutlar eklerken `CanCachedServer` içindeki `processCommand` switch bloğuna ilgili komutu ekleyin ve Memcached yanıt semantiğini koruyun.
+- Bellek motoruna yeni tahliye politikaları eklemek için `EvictionPolicyType` arayüzünü uygulayın ve `CacheSegment` ile entegre edin.
+- Gözlemlenebilirlik ihtiyaçları arttığında `MetricsReporter` yerine Prometheus push/pull entegrasyonu eklemek mümkündür; `MetricsRegistry` zaten soyut bir katman sağlar.
+
+Bu mimari doküman, Can-Cache'in temel iş kurallarını, dağıtık davranışını ve kalıcılık/izleme mekanizmalarını, başlangıç seviyesinden uzman seviyesine kadar kademeli olarak anlatarak, sistemi geliştirecek ekipler için kapsamlı bir başvuru kaynağı sunar.
