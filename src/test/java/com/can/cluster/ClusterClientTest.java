@@ -86,6 +86,19 @@ class ClusterClientTest
             assertFalse(client.compareAndSwap("key", "new", expected, null));
             assertEquals("value", node1.get("key"));
         }
+
+        @Test
+        void compare_and_swap_does_not_enqueue_hint_on_logical_failure()
+        {
+            client.set("key", "value", null);
+            node2.forceCas("key", 999L);
+            long expected = node1.cas("key");
+
+            assertFalse(client.compareAndSwap("key", "new", expected, null));
+
+            assertEquals(0, hintedHandoff.pendingFor(node1.id()));
+            assertEquals(0, hintedHandoff.pendingFor(node2.id()));
+        }
     }
 
     @Nested

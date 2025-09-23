@@ -22,11 +22,18 @@ class CodecsTest
         }
 
         @Test
-        void encode_and_decode_handles_null()
+        void encode_and_decode_handles_empty_string()
         {
             StringCodec codec = StringCodec.UTF8;
             assertArrayEquals(new byte[0], codec.encode(null));
-            assertNull(codec.decode(new byte[0]));
+            assertEquals("", codec.decode(new byte[0]));
+        }
+
+        @Test
+        void decode_returns_null_when_input_is_null()
+        {
+            StringCodec codec = StringCodec.UTF8;
+            assertNull(codec.decode(null));
         }
     }
 

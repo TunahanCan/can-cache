@@ -4,8 +4,8 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Java {@link String} nesnelerini UTF-8 karakter setiyle kodlayıp çözen basit
- * codec implementasyonudur. Null değerleri boş diziye/boş referansa çevirerek
- * ağ ve disk operasyonlarında tutarlı davranış sergiler.
+ * codec implementasyonudur. Null değerleri boş diziye, boş dizileri ise boş
+ * string'e çevirerek ağ ve disk operasyonlarında tutarlı davranış sergiler.
  */
 public final class StringCodec implements Codec<String>
 {
@@ -19,6 +19,9 @@ public final class StringCodec implements Codec<String>
 
     @Override
     public String decode(byte[] bytes) {
-        return (bytes == null || bytes.length == 0) ? null : new String(bytes, StandardCharsets.UTF_8);
+        if (bytes == null) {
+            return null;
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 }

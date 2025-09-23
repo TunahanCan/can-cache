@@ -133,8 +133,8 @@ public final class CacheEngine<K,V> implements AutoCloseable
     {
         long t0 = System.nanoTime();
         Objects.requireNonNull(key);
-        long expireAt = (ttl == null || ttl.isZero() || ttl.isNegative()) ? 0L
-                : System.currentTimeMillis() + ttl.toMillis();
+        long now = System.currentTimeMillis();
+        long expireAt = computeExpireAt(ttl, now);
         int idx = segIndex(key);
         boolean stored = seg(key).put(key, new CacheValue(valCodec.encode(value), expireAt));
         if (!stored) {
