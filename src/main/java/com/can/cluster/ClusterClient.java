@@ -146,8 +146,6 @@ public final class ClusterClient
             }
             if (ok) {
                 successes++;
-            } else if (i > 0) {
-                hintedHandoffService.recordCas(node.id(), key, value, expectedCas, ttl);
             }
         }
 

@@ -82,6 +82,24 @@ class CacheEngineTest
             assertFalse(engine.exists("key"));
             assertTrue(metrics.counter("cache_misses").get() > 0);
         }
+
+        @Test
+        void set_allows_empty_string_values()
+        {
+            assertTrue(engine.set("key", ""));
+            assertEquals("", engine.get("key"));
+        }
+
+        @Test
+        void set_handles_large_ttl_without_overflow()
+        {
+            long now = System.currentTimeMillis();
+            Duration ttl = Duration.ofMillis(Long.MAX_VALUE - now + 1000);
+
+            assertTrue(engine.set("key", "value", ttl));
+            assertEquals("value", engine.get("key"));
+            assertTrue(engine.exists("key"));
+        }
     }
 
     @Nested
