@@ -7,6 +7,7 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetClientOptions;
 import io.vertx.core.net.NetSocket;
+import org.jboss.logging.Logger;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -14,6 +15,7 @@ import java.time.Duration;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -35,6 +37,8 @@ import java.util.function.Function;
  */
 public final class RemoteNode implements Node<String, String>, AutoCloseable
 {
+    private static final Logger LOG = Logger.getLogger(RemoteNode.class);
+
     private static final byte CMD_SET = 'S';
     private static final byte CMD_CAS = 'X';
     private static final byte CMD_GET = 'G';
@@ -49,8 +53,9 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
     private final String id;
     private final String host;
     private final int port;
-    private final int connectTimeoutMillis;
+    private final long connectTimeoutMillis;
     private final long requestTimeoutMillis;
+    private final long requestTimeoutNanos;
     private final Vertx vertx;
     private final NetClient netClient;
     private final int maxPoolSize;
@@ -64,14 +69,17 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
         this.id = Objects.requireNonNull(id, "id");
         this.host = Objects.requireNonNull(host, "host");
         this.port = port;
-        this.connectTimeoutMillis = Math.max(100, connectTimeoutMillis);
-        this.requestTimeoutMillis = Math.max(5000L, this.connectTimeoutMillis * 2L);
+        long normalizedConnectTimeout = Math.max(100, connectTimeoutMillis);
+        this.connectTimeoutMillis = Math.max(1L, normalizedConnectTimeout);
+        this.requestTimeoutMillis = Math.max(5_000L, this.connectTimeoutMillis * 2L);
+        this.requestTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(this.requestTimeoutMillis);
         this.vertx = Objects.requireNonNull(vertx, "vertx");
         this.maxPoolSize = Math.max(2, Runtime.getRuntime().availableProcessors());
         this.pool = new LinkedBlockingQueue<>(maxPoolSize);
 
+        int connectTimeoutMillisValue = (int) Math.min(Integer.MAX_VALUE, this.connectTimeoutMillis);
         NetClientOptions options = new NetClientOptions()
-                .setConnectTimeout(this.connectTimeoutMillis)
+                .setConnectTimeout(connectTimeoutMillisValue)
                 .setTcpNoDelay(true)
                 .setReuseAddress(true);
         this.netClient = vertx.createNetClient(options);
@@ -151,23 +159,33 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
             throw new IllegalStateException("Remote node " + id + " is closed");
         }
 
-        PooledConnection connection = null;
+        try (ConnectionLease lease = new ConnectionLease(acquireConnection())) {
+            CompletableFuture<T> future;
+            try {
+                future = Objects.requireNonNull(action.apply(lease.connection()), "action returned null future");
+            } catch (RuntimeException | Error e) {
+                lease.discard(e);
+                throw communicationError("Remote command dispatch failed", e);
+            }
+            return awaitResult(future, lease);
+        } catch (IOException e) {
+            throw communicationError("Failed to acquire connection", e);
+        }
+    }
+
+    private <T> T awaitResult(CompletableFuture<T> future, ConnectionLease lease)
+    {
         try {
-            connection = acquireConnection();
-            CompletableFuture<T> future = action.apply(connection);
-            T result = future.get(requestTimeoutMillis, TimeUnit.MILLISECONDS);
-            release(connection);
-            return result;
+            return future.get(requestTimeoutMillis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
-            if (connection != null) {
-                discard(connection);
-            }
+            lease.discard(e);
             throw communicationError("Request to node timed out", e);
+        } catch (CancellationException e) {
+            lease.discard(e);
+            throw communicationError("Request to node was cancelled", e);
         } catch (ExecutionException e) {
-            if (connection != null) {
-                discard(connection);
-            }
             Throwable cause = e.getCause() != null ? e.getCause() : e;
+            lease.discard(cause);
             if (cause instanceof RuntimeException runtime) {
                 throw communicationError("Remote command failed", runtime);
             }
@@ -177,15 +195,8 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
             throw communicationError("Remote command failed", cause);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            if (connection != null) {
-                discard(connection);
-            }
+            lease.discard(e);
             throw communicationError("Interrupted while waiting for remote response", e);
-        } catch (IOException e) {
-            if (connection != null) {
-                discard(connection);
-            }
-            throw communicationError("Failed to acquire connection", e);
         }
     }
 
@@ -196,7 +207,7 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
 
     private PooledConnection acquireConnection() throws IOException
     {
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(requestTimeoutMillis);
+        long startTime = System.nanoTime();
         while (true) {
             if (closed.get()) {
                 throw new IOException("Remote node is closed");
@@ -223,7 +234,8 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
                 continue;
             }
 
-            long remaining = deadline - System.nanoTime();
+            long elapsed = System.nanoTime() - startTime;
+            long remaining = requestTimeoutNanos - elapsed;
             if (remaining <= 0L) {
                 throw new IOException("Timeout acquiring pooled connection");
             }
@@ -318,7 +330,10 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
             connection.closed = true;
             try {
                 connection.socket.close();
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debugf(e, "Failed to close socket for remote node %s at %s:%d", id, host, port);
+                }
             }
         }
     }
@@ -380,11 +395,56 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
         }
         try {
             netClient.close().toCompletionStage().toCompletableFuture().join();
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debugf(e, "Failed to close net client for remote node %s at %s:%d", id, host, port);
+            }
         }
     }
 
-    private interface ResponseParser<T>
+    private final class ConnectionLease implements AutoCloseable
+    {
+        private PooledConnection connection;
+        private boolean discard;
+
+        private ConnectionLease(PooledConnection connection)
+        {
+            this.connection = Objects.requireNonNull(connection, "connection");
+        }
+
+        private PooledConnection connection()
+        {
+            if (connection == null) {
+                throw new IllegalStateException("Connection lease is closed");
+            }
+            return connection;
+        }
+
+        private void discard(Throwable cause)
+        {
+            discard = true;
+            if (cause != null && LOG.isDebugEnabled()) {
+                LOG.debugf(cause, "Discarding connection to node %s at %s:%d", id, host, port);
+            }
+        }
+
+        @Override
+        public void close()
+        {
+            if (connection == null) {
+                return;
+            }
+            PooledConnection pooled = connection;
+            connection = null;
+            if (discard) {
+                RemoteNode.this.discard(pooled);
+            } else {
+                RemoteNode.this.release(pooled);
+            }
+        }
+    }
+
+    private sealed interface ResponseParser<T> permits AbstractResponseParser
     {
         void handle(Buffer buffer) throws IOException;
 
@@ -395,7 +455,8 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
         void reset();
     }
 
-    private abstract static class AbstractResponseParser<T> implements ResponseParser<T>
+    private abstract static sealed class AbstractResponseParser<T> implements ResponseParser<T>
+            permits BooleanResponseParser, ClearResponseParser, GetResponseParser
     {
         protected final ByteBufferReader reader = new ByteBufferReader();
         protected boolean complete;
