@@ -130,7 +130,11 @@ Multicast koordinasyon, yeni node'u otomatik keşfeder ve tutarlı hash halkası
 | `app.cluster.discovery.node-id` | Opsiyonel sabit düğüm kimliği. | (boş) |
 | `app.cluster.replication.bind-host/advertise-host/port` | Replikasyon sunucusu adres bilgileri. | 0.0.0.0 / 127.0.0.1 / 18080 |
 | `app.cluster.replication.connect-timeout-millis` | Uzak düğüme bağlanma zaman aşımı. | 5000 |
+| `app.cluster.coordination.hint-replay-interval-millis` | Hinted handoff kuyruğu için yeniden oynatma denemeleri arasındaki minimum süre. | 5000 |
+| `app.cluster.coordination.anti-entropy-interval-millis` | Anti-entropy taramalarının periyodu (ms). | 30000 |
 | `app.network.host/port/backlog/worker-threads` | cancached TCP sunucusu ayarları. | 0.0.0.0 / 11211 / 128 / 16 |
+| `app.memcache.max-item-size-bytes` | Tek bir değerin saklanabileceği maksimum boyut (bayt). | 1048576 |
+| `app.memcache.max-cas-retries` | Başarısız CAS işlemleri için tekrar deneme sayısı. | 16 |
 | `app.metrics.report-interval-seconds` | Metrik raporlama periyodu; 0 devre dışı. | 5 |
 
 ## Proje Yapısı

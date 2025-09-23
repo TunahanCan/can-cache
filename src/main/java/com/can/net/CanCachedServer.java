@@ -38,12 +38,11 @@ public class CanCachedServer implements AutoCloseable
     private static final Logger LOG = Logger.getLogger(CanCachedServer.class);
     private static final byte[] CRLF = new byte[]{'\r', '\n'};
     private static final long THIRTY_DAYS_SECONDS = 60L * 60L * 24L * 30L;
-    private static final int MAX_ITEM_SIZE = 1_048_576; // 1 MB
-    private static final int MAX_CAS_RETRIES = 16;
-
     private final Vertx vertx;
     private final ClusterClient clusterClient;
     private final AppProperties.Network networkConfig;
+    private final int maxItemSize;
+    private final int maxCasRetries;
     private final CacheEngine<String, String> localEngine;
 
     private final AtomicLong casCounter = new AtomicLong(1L);
@@ -73,6 +72,9 @@ public class CanCachedServer implements AutoCloseable
         this.vertx = Objects.requireNonNull(vertx, "vertx");
         this.clusterClient = Objects.requireNonNull(clusterClient, "clusterClient");
         this.networkConfig = Objects.requireNonNull(properties.network(), "networkConfig");
+        var memcacheConfig = Objects.requireNonNull(properties.memcache(), "memcacheConfig");
+        this.maxItemSize = Math.max(1, memcacheConfig.maxItemSizeBytes());
+        this.maxCasRetries = Math.max(1, memcacheConfig.maxCasRetries());
         this.localEngine = Objects.requireNonNull(localEngine, "localEngine");
     }
 
@@ -195,7 +197,7 @@ public class CanCachedServer implements AutoCloseable
             }
         }
 
-        if (bytes < 0 || bytes > MAX_ITEM_SIZE) {
+        if (bytes < 0 || bytes > maxItemSize) {
             return new ImmediateCommand(() -> {
                 maybeApplyDelayedFlush();
                 return handleSimpleLine("CLIENT_ERROR bad data chunk");
@@ -262,7 +264,7 @@ public class CanCachedServer implements AutoCloseable
                 if (existing == null) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
-                if ((long) existing.value().length + valueBytes.length > MAX_ITEM_SIZE) {
+                if ((long) existing.value().length + valueBytes.length > maxItemSize) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR object too large");
                 }
                 CasUpdateStatus status = appendOrPrepend(key, existing, valueBytes, false);
@@ -280,7 +282,7 @@ public class CanCachedServer implements AutoCloseable
                 if (existing == null) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
-                if ((long) existing.value().length + valueBytes.length > MAX_ITEM_SIZE) {
+                if ((long) existing.value().length + valueBytes.length > maxItemSize) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR object too large");
                 }
                 CasUpdateStatus status = appendOrPrepend(key, existing, valueBytes, true);
@@ -348,11 +350,11 @@ public class CanCachedServer implements AutoCloseable
                                             boolean prepend)
     {
         StoredValueCodec.StoredValue current = snapshot;
-        for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
+        for (int attempt = 0; attempt < maxCasRetries; attempt++) {
             if (current == null) {
                 return CasUpdateStatus.NOT_FOUND;
             }
-            if ((long) current.value().length + addition.length > MAX_ITEM_SIZE) {
+            if ((long) current.value().length + addition.length > maxItemSize) {
                 return CasUpdateStatus.TOO_LARGE;
             }
             byte[] combined = new byte[current.value().length + addition.length];
@@ -443,7 +445,7 @@ public class CanCachedServer implements AutoCloseable
 
         String key = parts[1];
         StoredValueCodec.StoredValue current = getEntry(key);
-        for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
+        for (int attempt = 0; attempt < maxCasRetries; attempt++) {
             if (current == null) {
                 return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
             }
@@ -457,7 +459,7 @@ public class CanCachedServer implements AutoCloseable
                 updated = BigInteger.ZERO;
             }
             byte[] newValue = updated.toString().getBytes(StandardCharsets.US_ASCII);
-            if (newValue.length > MAX_ITEM_SIZE) {
+            if (newValue.length > maxItemSize) {
                 return handleSimpleLine("SERVER_ERROR object too large");
             }
             StoredValueCodec.StoredValue candidate = new StoredValueCodec.StoredValue(newValue, current.flags(), nextCas(), current.expireAt());
@@ -494,7 +496,7 @@ public class CanCachedServer implements AutoCloseable
             return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
         }
         StoredValueCodec.StoredValue current = getEntry(parts[1]);
-        for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
+        for (int attempt = 0; attempt < maxCasRetries; attempt++) {
             if (current == null) {
                 return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
             }
