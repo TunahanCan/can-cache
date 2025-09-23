@@ -6,7 +6,12 @@
 Can-Cache, Memcached metin protokolüyle uyumlu çalışan, yatay olarak ölçeklenebilir ve hatalara dayanıklı bir dağıtık önbellek uygulamasıdır. Amaç; mevcut Memcached istemcilerini değiştirmeden modern Java (Quarkus) ekosisteminde çalışabilen, hem bellek içi performansı hem de kalıcılığı bir arada sunan bir altyapı sağlamaktır. Sistem; tek düğümlü senaryolardan, onlarca replikanın bulunduğu kümelere kadar aynı mimari ilkelerle çalışacak şekilde tasarlanmıştır.
 
 ### 2. Başlangıç Seviyesi: Temel Bileşenler ve Veri Yolu
-Bu bölüm, bileşenler arasındaki ilişkiyi kavramak için yüksek seviyede bir resim sunar. İstemciler TCP üzerinden `CanCachedServer` ile konuşur. Sunucu, komutları ayrıştırdıktan sonra `ClusterClient` ile kümeye iletir. Okuma/yazma işlemleri hedef düğümlerin `CacheEngine` örneklerine ulaşır, TTL ve tahliye politikaları burada yürütülür. Opsiyonel snapshot ve metrik bileşenleri sistemi kalıcı ve gözlemlenebilir kılar.
+Bu bölüm, bileşenler arasındaki ilişkiyi kavramak için yüksek seviyede bir resim sunar.
+İstemciler TCP üzerinden `CanCachedServer` ile konuşur.
+Sunucu, Quarkus'un yerleşik Vert.x `NetServer` bileşeniyle Netty tabanlı event loop'lar üzerinde çalışır; böylece kabul edilen bağlantılar bloklamayan soketler ve paylaşımlı event loop thread'leri aracılığıyla sürdürülür.
+Komutlar ayrıştırıldıktan sonra `ClusterClient` ile kümeye iletilir.
+Okuma/yazma işlemleri hedef düğümlerin `CacheEngine` örneklerine ulaşır, TTL ve tahliye politikaları burada yürütülür.
+Opsiyonel snapshot ve metrik bileşenleri sistemi kalıcı ve gözlemlenebilir kılar.
 
 ```mermaid
 flowchart LR
@@ -37,11 +42,11 @@ flowchart LR
 ### 3. Orta Seviye: Bileşenlerin Derinlemesine İncelemesi
 
 #### 3.1 Komut & Protokol Katmanı
-- **Temel Rolü:** `CanCachedServer`, gelen her TCP bağlantısını kabul eder, satır bazında komutları ayrıştırır ve Memcached protokolündeki sözdizimini/yanıt formatlarını korur. Böylece istemciler herhangi bir kod değişimi yapmadan Can-Cache ile konuşabilir.
-- **İş Parçacığı Modeli:** Sunucu, konfigürasyonda verilen kadar işçi thread açar (`ThreadPoolExecutor`). Kabul edilen her soket, bu işçi havuzuna aktarılır. Kabul döngüsü ayrı bir daemon thread üzerinde çalışır. IO yoğun iş yükleri için Java sanal thread'leri kullanılmasa da thread havuzunun üstünde CPU bloklaması olmadan çalışacak şekilde tasarlanmıştır. Komut tarafında ise `ClusterClient` ve koordinasyon servisleri sanal thread'lerden faydalanır.
-- **Komut Ayrıştırma:** `processCommand` metodu, `split("\\s+")` ile komutu ve parametreleri ayırır. Depolama komutları (`set/add/replace/append/prepend/cas`) için gövdedeki byte sayısı okunur, ASCII sayısal doğrulamaları yapılır ve maksimum 1 MB sınırı enforce edilir. Belleğe alınmadan önce flush zamanlaması (`maybeApplyDelayedFlush`) kontrol edilerek gecikmeli flush talimatı varsa tetiklenir.
-- **Yanıt Semantiği:** Her komut Memcached'deki sabit yanıtları döner (`STORED`, `NOT_STORED`, `EXISTS`, `NOT_FOUND`, `ERROR`). `noreply` seçeneği, istemci gereksiz ağ yükü istemediğinde yanıt üretmemeyi sağlar. Bağlantı ve komut istatistikleri (`curr_connections`, `total_connections`, `cmd_get`, `cmd_set`) AtomicLong sayaçlarla tutulur.
-- **Hata Yönetimi:** Komut satırında yanlış format, sayı sınırı aşımı veya TTL hataları `CLIENT_ERROR` ile raporlanır. Beklenmeyen durumlarda `SERVER_ERROR` döner ve istemcinin tutarlı bir durum yakalaması sağlanır.
+- **Temel Rolü:** `CanCachedServer`, Quarkus uygulaması başladıktan sonra Vert.x `NetServer` ile belirtilen portu dinler; gelen her TCP bağlantısının soketi `ConnectionContext` adlı hafif bir durum nesnesine bağlanır. Komutlar satır bazında ayrıştırılır ve Memcached protokolündeki yanıt formatları birebir korunur, böylece istemciler ek adaptasyon gerektirmez.
+- **İş Parçacığı Modeli:** Ağ tarafı tamamen Vert.x event loop thread'leri üzerinde yürür. Kabul edilen her `NetSocket` aynı event loop üzerinde veri alır; uygulama kodu ayrıca `ThreadPoolExecutor` yönetmez. Komut yürütme aşamasında bloklama ihtimali bulunan kümeye yazma/okuma çağrıları `vertx.executeBlocking(..., false, ...)` ile Vert.x'in paylaşımlı worker havuzuna taşınır. `ConnectionContext` içindeki `processing` bayrağı sayesinde aynı bağlantıda komutlar sıralı kalırken, event loop thread'i yeni veri okumak için serbest bırakılır.
+- **Akış Kontrolü ve Komut Ayrıştırma:** Her bağlantıdan gelen baytlar Vert.x `Buffer` nesnesinde biriktirilir. `indexOfCrlf` ile satır sonu tespit edilene kadar veri okunur; storage komutları için `PendingStorageCommand` gövdenin tamamını (değer + CRLF) alana dek bekletilir. Bu yaklaşım, kısmi paketlerle gelen verileri doğru şekilde toparlar ve istemcilerin birden fazla komutu ardışık olarak pipeline etmesine imkan tanır.
+- **Yanıt Semantiği:** Komut sonuçları `CommandResult` ile modellenir; yanıt gerekmiyorsa `continueWithoutResponse`, bağlantı kapatılacaksa `terminate` döner. Hazırlanan yanıtlar Vert.x `Buffer` nesneleriyle event loop üzerinden sokete yazılır. `noreply` seçeneği, gereksiz ağ yükünü önlemek için bu katmanda değerlendirilir. Bağlantı/komut sayaçları (`curr_connections`, `total_connections`, `cmd_get`, `cmd_set`) atomik sayaçlarla tutulmaya devam eder.
+- **Hata Yönetimi:** Satır formatı, sayısal alanlar veya payload uzunluğu ile ilgili tutarsızlıklar `CLIENT_ERROR` yanıtlarıyla raporlanır. Çalışma zamanı istisnaları `executeBlocking` içerisinden yakalanıp bağlantı kapatılır; event loop üzerinde beklenmedik bloklama oluşmadan istemci tutarlı bir son durum görür.
 
 #### 3.2 Kümelenme Katmanı
 - **Ana Görev:** `ClusterClient`, kümeyi temsil eden merkezi bileşendir. `ConsistentHashRing` üzerinden anahtarın lider ve takipçi düğümlerini seçer. Böylece yeni düğümler eklendiğinde anahtar dağılımı minimal yeniden dağıtımla gerçekleşir.
@@ -136,8 +141,10 @@ sequenceDiagram
 - **Digest Denetimi:** Periyodik `'H'` istekleri; segment fingerprint'lerini karşılaştırarak farklılık tespit eder. Fark varsa zorunlu bootstrap (force) tetiklenir.
 
 ### 7. Uzman Seviyesi: Performans, Kaynak Yönetimi ve Hata Senaryoları
-- **Sanal Thread Kullanımı:** Koordinasyon servisleri (`CoordinationService`, `ReplicationServer`) ve `CacheEngine` temizleyicisi sanal thread'lerle çalışır. Bu yaklaşım, bloklayıcı IO operasyonlarında binlerce eşzamanlı işi yönetmeyi kolaylaştırır.
-- **Backpressure ve Kuyruklar:** `ThreadPoolExecutor`'ün `LinkedBlockingQueue`'su bağlantı başına iş yükünü sıraya alır. Eğer komut üretimi tüketimden hızlıysa sunucu yeni bağlantıları kabul etmeye devam eder ancak işçi thread'ler sırayla komutları işler. Gerekirse `workerThreads` artırılarak kapasite genişletilir.
+
+- **Vert.x Event Loop ve Worker Etkileşimi:** Ağ katmanı, Quarkus'un Vert.x event loop thread'leri üzerinde çalışır. Her bağlantı `ConnectionContext` aracılığıyla event loop'ta veri biriktirir; komut yürütmesi `vertx.executeBlocking` ile Vert.x worker havuzuna taşınır. Bu sayede Netty'nin tekil event loop thread'i bloklanmaz, ancak `processing` bayrağı sayesinde bağlantı başına komut sıralaması korunur.
+- **Sanal Thread Kullanımı:** Koordinasyon servisleri (`CoordinationService`, `ReplicationServer`), `CacheEngine` temizleyicisi, snapshot ve metrik zamanlayıcıları gibi arka plan işler hâlâ `Thread.ofVirtual()` temelli havuzlarla çalışır. Event loop modeli ağ yoğunluğunu taşırken, virtual thread'ler IO ağırlıklı yönetim görevlerinde yüksek eşzamanlılık sağlar.
+- **Backpressure ve Akış Kontrolü:** Artık `ThreadPoolExecutor` kuyruğu yerine her `ConnectionContext` komut çalışırken `processBuffer` döngüsünü durdurur. Event loop, worker sonucunu beklerken yeni veri parçalarını sadece buffer'a ekler; komut tamamlandığında biriken veri tekrar işlenir. Bu mekanizma, pipelined isteklerde bile bellek tahsisini sınırlı tutar ve bağlantı başına düzen sağlar.
 - **Hata İzolasyonu:** Lider node hatası durumunda yazma başarısız olur ve istemciye hata döner; böylece sessiz veri kaybı engellenir. Takipçi hataları ipucuna dönüştürüldüğü için veri tutarlılığı nihayetinde sağlanır.
 - **Snapshot Tutarlılığı:** Snapshot alınırken `CacheEngine` segmentleri üzerinde `forEach` yapılarak mevcut değerler atomik biçimde dosyaya yazılır. Yazma sırasında geçici dosya (`.tmp`) kullanılır, işlem başarıyla bittiğinde atomik rename ile son dosya güncellenir.
 - **Gözlemlenebilirlik Entegrasyonları:** Metrik raporları ve yayınlanan olaylar, dış sistemlere (Prometheus, ELK, Kafka vb.) kolay entegrasyon için tasarlanmıştır. `Broker` üzerinden anahtar alanı değişikliklerini dinlemek, önbelleğe bağlı türev sistemler için temel oluşturur.
@@ -151,7 +158,7 @@ sequenceDiagram
   - Hinted handoff kuyruğu disk üzerinde kalıcı değildir; uzun süreli kesintilerde quorum sağlamak kritik önem taşır.
 
 ### 9. Sistemi Genişletme İçin Öneriler
-- Yeni komutlar eklerken `CanCachedServer` içindeki `processCommand` switch bloğuna ilgili komutu ekleyin ve Memcached yanıt semantiğini koruyun.
+- Yeni komutlar eklerken `CanCachedServer` içindeki `parseCommand` karar yapısına ilgili komutu ekleyin; gerekirse yeni `CommandAction` türleri oluşturarak Memcached yanıt semantiğini koruyun.
 - Bellek motoruna yeni tahliye politikaları eklemek için `EvictionPolicyType` arayüzünü uygulayın ve `CacheSegment` ile entegre edin.
 - Gözlemlenebilirlik ihtiyaçları arttığında `MetricsReporter` yerine Prometheus push/pull entegrasyonu eklemek mümkündür; `MetricsRegistry` zaten soyut bir katman sağlar.
 

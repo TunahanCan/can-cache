@@ -5,33 +5,26 @@ import com.can.config.AppProperties;
 import com.can.core.CacheEngine;
 import com.can.core.StoredValueCodec;
 import io.quarkus.runtime.Startup;
+import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.net.NetServer;
+import io.vertx.core.net.NetServerOptions;
+import io.vertx.core.net.NetSocket;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jboss.logging.Logger;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.math.BigInteger;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 /**
  * cancached text protokolünü taklit eden basit bir TCP sunucusudur. Quarkus uygulaması
@@ -42,13 +35,13 @@ import java.util.concurrent.atomic.AtomicLong;
 @Singleton
 public class CanCachedServer implements AutoCloseable
 {
-
     private static final Logger LOG = Logger.getLogger(CanCachedServer.class);
     private static final byte[] CRLF = new byte[]{'\r', '\n'};
     private static final long THIRTY_DAYS_SECONDS = 60L * 60L * 24L * 30L;
     private static final int MAX_ITEM_SIZE = 1_048_576; // 1 MB
     private static final int MAX_CAS_RETRIES = 16;
 
+    private final Vertx vertx;
     private final ClusterClient clusterClient;
     private final AppProperties.Network networkConfig;
     private final CacheEngine<String, String> localEngine;
@@ -68,138 +61,107 @@ public class CanCachedServer implements AutoCloseable
     private final long startTime = System.currentTimeMillis();
 
     private volatile boolean running;
-    private ThreadPoolExecutor workers;
-    private ServerSocket serverSocket;
-    private Thread acceptThread;
+    private NetServer netServer;
     private AutoCloseable removalSubscription;
 
     @Inject
-    public CanCachedServer(ClusterClient clusterClient, AppProperties properties, CacheEngine<String, String> localEngine) {
+    public CanCachedServer(Vertx vertx,
+                           ClusterClient clusterClient,
+                           AppProperties properties,
+                           CacheEngine<String, String> localEngine)
+    {
+        this.vertx = Objects.requireNonNull(vertx, "vertx");
         this.clusterClient = Objects.requireNonNull(clusterClient, "clusterClient");
         this.networkConfig = Objects.requireNonNull(properties.network(), "networkConfig");
         this.localEngine = Objects.requireNonNull(localEngine, "localEngine");
     }
 
     @PostConstruct
-    void start() {
-        int workerThreads = Math.max(1, networkConfig.workerThreads());
-        workers = new ThreadPoolExecutor(
-                workerThreads,
-                workerThreads,
-                0L,
-                TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(),
-                new NamedThreadFactory("cancached-worker-"));
+    void start()
+    {
+        NetServerOptions options = new NetServerOptions()
+                .setHost(networkConfig.host())
+                .setPort(networkConfig.port())
+                .setTcpNoDelay(true)
+                .setReuseAddress(true)
+                .setAcceptBacklog(Math.max(1, networkConfig.backlog()));
 
+        netServer = vertx.createNetServer(options);
+        netServer.connectHandler(this::onClientConnected);
         try {
-            serverSocket = new ServerSocket();
-            serverSocket.bind(new InetSocketAddress(networkConfig.host(), networkConfig.port()),
-                    Math.max(1, networkConfig.backlog()));
-        } catch (IOException e) {
-            workers.shutdownNow();
+            netServer.listen().toCompletionStage().toCompletableFuture().join();
+        } catch (RuntimeException e) {
             throw new IllegalStateException("Failed to bind cancached port", e);
         }
 
         running = true;
-        acceptThread = new Thread(this::acceptLoop, "cancached-acceptor");
-        acceptThread.setDaemon(true);
-        acceptThread.start();
-        LOG.infof("cancached-compatible server listening on %s:%d", networkConfig.host(), serverSocket.getLocalPort());
+        LOG.infof("cancached-compatible server listening on %s:%d", networkConfig.host(), netServer.actualPort());
         removalSubscription = localEngine.onRemoval(key -> decrementCurrItems());
     }
 
-    private void acceptLoop() {
-        while (running) {
-            try {
-                Socket client = serverSocket.accept();
-                client.setTcpNoDelay(true);
-                workers.execute(() -> handleClient(client));
-            } catch (SocketException e) {
-                if (running) {
-                    LOG.warn("Socket closed unexpectedly while accepting clients", e);
-                }
-                break;
-            } catch (IOException e) {
-                if (running) {
-                    LOG.error("Failed to accept client connection", e);
-                }
-            }
+    private void onClientConnected(NetSocket socket)
+    {
+        if (!running) {
+            socket.close();
+            return;
         }
-    }
-
-    private void handleClient(Socket socket) {
         currConnections.incrementAndGet();
         totalConnections.incrementAndGet();
-        try (socket;
-             BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
-             BufferedOutputStream out = new BufferedOutputStream(socket.getOutputStream())) {
 
-            while (running && !socket.isClosed()) {
-                String line = readLine(in);
-                if (line == null) {
-                    break;
-                }
-                if (line.isEmpty()) {
-                    continue;
-                }
-                if (!processCommand(line, in, out)) {
-                    break;
-                }
-            }
-        } catch (IOException e) {
-            LOG.debugf(e, "Client %s disconnected with error", socket.getRemoteSocketAddress());
-        } finally {
+        ConnectionContext context = new ConnectionContext(socket);
+        socket.closeHandler(v -> {
+            context.onClosed();
             currConnections.decrementAndGet();
-        }
+        });
+        socket.exceptionHandler(e -> {
+            if (LOG.isDebugEnabled()) {
+                LOG.debugf(e, "Client %s disconnected with error", socket.remoteAddress());
+            }
+            socket.close();
+        });
+        socket.handler(context::handleData);
     }
 
-    private boolean processCommand(String line, BufferedInputStream in, BufferedOutputStream out) throws IOException
+    private CommandAction parseCommand(String line)
     {
-        maybeApplyDelayedFlush();
         String[] parts = line.trim().split("\\s+");
-        if (parts.length == 0) {
-            return true;
+        if (parts.length == 0 || parts[0].isEmpty()) {
+            return new ImmediateCommand(() -> {
+                maybeApplyDelayedFlush();
+                return CommandResult.continueWithoutResponse();
+            });
         }
         String command = parts[0].toLowerCase(Locale.ROOT);
         return switch (command) {
-            case "set", "add", "replace", "append", "prepend", "cas" -> handleStorageCommand(command, parts, in, out);
-            case "get" -> {
-                handleGet(parts, out, false);
-                yield true;
-            }
-            case "gets" -> {
-                handleGet(parts, out, true);
-                yield true;
-            }
-            case "delete" -> handleDelete(parts, out);
-            case "incr", "decr" -> handleIncrDecr(command, parts, out);
-            case "touch" -> handleTouch(parts, out);
-            case "flush_all" -> handleFlushAll(parts, out);
-            case "stats" -> {
-                handleStats(out);
-                yield true;
-            }
-            case "version" -> {
-                writeLine(out, "VERSION " + getVersion());
-                out.flush();
-                yield true;
-            }
-            case "quit" -> false;
-            default -> {
-                writeLine(out, "ERROR");
-                out.flush();
-                yield true;
-            }
+            case "set", "add", "replace", "append", "prepend", "cas" -> prepareStorageCommand(command, parts);
+            case "get" -> new ImmediateCommand(() -> handleGet(parts, false));
+            case "gets" -> new ImmediateCommand(() -> handleGet(parts, true));
+            case "delete" -> new ImmediateCommand(() -> handleDelete(parts));
+            case "incr", "decr" -> new ImmediateCommand(() -> handleIncrDecr(command, parts));
+            case "touch" -> new ImmediateCommand(() -> handleTouch(parts));
+            case "flush_all" -> new ImmediateCommand(() -> handleFlushAll(parts));
+            case "stats" -> new ImmediateCommand(this::handleStats);
+            case "version" -> new ImmediateCommand(this::handleVersion);
+            case "quit" -> new ImmediateCommand(() -> {
+                maybeApplyDelayedFlush();
+                return CommandResult.terminate();
+            });
+            default -> new ImmediateCommand(() -> {
+                maybeApplyDelayedFlush();
+                return handleSimpleLine("ERROR");
+            });
         };
     }
 
-    private boolean handleStorageCommand(String command, String[] parts, BufferedInputStream in, BufferedOutputStream out) throws IOException {
+    private CommandAction prepareStorageCommand(String command, String[] parts)
+    {
         boolean isCas = "cas".equals(command);
         int minParts = isCas ? 6 : 5;
         if (parts.length < minParts) {
-            writeLine(out, "CLIENT_ERROR bad command line format");
-            out.flush();
-            return true;
+            return new ImmediateCommand(() -> {
+                maybeApplyDelayedFlush();
+                return handleSimpleLine("CLIENT_ERROR bad command line format");
+            });
         }
 
         int flags;
@@ -214,9 +176,10 @@ public class CanCachedServer implements AutoCloseable
                 casUnique = Long.parseUnsignedLong(parts[5]);
             }
         } catch (NumberFormatException e) {
-            writeLine(out, "CLIENT_ERROR numeric value expected");
-            out.flush();
-            return true;
+            return new ImmediateCommand(() -> {
+                maybeApplyDelayedFlush();
+                return handleSimpleLine("CLIENT_ERROR numeric value expected");
+            });
         }
 
         int noreplyIndex = isCas ? 6 : 5;
@@ -225,33 +188,38 @@ public class CanCachedServer implements AutoCloseable
             if (parts.length == noreplyIndex + 1 && "noreply".equalsIgnoreCase(parts[noreplyIndex])) {
                 noreply = true;
             } else {
-                writeLine(out, "CLIENT_ERROR invalid arguments");
-                out.flush();
-                return true;
+                return new ImmediateCommand(() -> {
+                    maybeApplyDelayedFlush();
+                    return handleSimpleLine("CLIENT_ERROR invalid arguments");
+                });
             }
         }
 
         if (bytes < 0 || bytes > MAX_ITEM_SIZE) {
-            writeLine(out, "CLIENT_ERROR bad data chunk");
-            out.flush();
-            return true;
+            return new ImmediateCommand(() -> {
+                maybeApplyDelayedFlush();
+                return handleSimpleLine("CLIENT_ERROR bad data chunk");
+            });
         }
 
-        byte[] payload = in.readNBytes((int) bytes + CRLF.length);
-        if (payload.length < bytes + CRLF.length) {
-            writeLine(out, "CLIENT_ERROR bad data chunk");
-            out.flush();
-            return true;
-        }
-        if (payload[(int) bytes] != '\r' || payload[(int) bytes + 1] != '\n') {
-            writeLine(out, "CLIENT_ERROR bad data chunk");
-            out.flush();
-            return true;
-        }
-
-        byte[] value = Arrays.copyOf(payload, (int) bytes);
-        String key = parts[1];
         Duration ttl = parseExpiration(exptime);
+        return new StorageCommand(new PendingStorageCommand(command, parts[1], flags, ttl, (int) bytes, noreply, isCas, casUnique));
+    }
+
+    private CommandResult handleStoragePayload(PendingStorageCommand pending, Buffer payload)
+    {
+        maybeApplyDelayedFlush();
+
+        if (payload.length() < pending.totalLength()) {
+            return handleSimpleLine("CLIENT_ERROR bad data chunk");
+        }
+        if (payload.getByte(pending.bytes()) != '\r' || payload.getByte(pending.bytes() + 1) != '\n') {
+            return handleSimpleLine("CLIENT_ERROR bad data chunk");
+        }
+
+        byte[] valueBytes = payload.getBytes(0, pending.bytes());
+        String key = pending.key();
+        Duration ttl = pending.ttl();
         cmdSet.incrementAndGet();
 
         StoredValueCodec.StoredValue existing = getEntry(key);
@@ -263,137 +231,73 @@ public class CanCachedServer implements AutoCloseable
             if (existing != null && clusterClient.delete(key)) {
                 decrementCurrItems();
             }
-            if (!noreply) {
-                writeLine(out, "STORED");
-                out.flush();
-            }
-            return true;
+            return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("STORED");
         }
 
-        if (isCas) {
-            return handleCasCommand(key, value, flags, ttl, casUnique, noreply, existing, out);
+        if (pending.isCas()) {
+            return handleCasCommand(key, valueBytes, pending.flags(), ttl, pending.casUnique(), pending.noreply(), existing);
         }
 
-        switch (command) {
+        switch (pending.command()) {
             case "add" -> {
                 if (existing != null) {
-                    if (!noreply) {
-                        writeLine(out, "NOT_STORED");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
-                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(value, flags, nextCas(), computeExpireAt(ttl));
+                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(valueBytes, pending.flags(), nextCas(), computeExpireAt(ttl));
                 if (!storeEntry(key, entry, ttl)) {
-                    if (!noreply) {
-                        writeLine(out, "NOT_STORED");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
                 incrementItems();
             }
             case "replace" -> {
                 if (existing == null) {
-                    if (!noreply) {
-                        writeLine(out, "NOT_STORED");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
-                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(value, flags, nextCas(), computeExpireAt(ttl));
+                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(valueBytes, pending.flags(), nextCas(), computeExpireAt(ttl));
                 if (!storeEntry(key, entry, ttl)) {
-                    if (!noreply) {
-                        writeLine(out, "NOT_STORED");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
             }
             case "append" -> {
                 if (existing == null) {
-                    if (!noreply) {
-                        writeLine(out, "NOT_STORED");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
-                if ((long) existing.value().length + value.length > MAX_ITEM_SIZE) {
-                    if (!noreply) {
-                        writeLine(out, "SERVER_ERROR object too large");
-                        out.flush();
-                    }
-                    return true;
+                if ((long) existing.value().length + valueBytes.length > MAX_ITEM_SIZE) {
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR object too large");
                 }
-                CasUpdateStatus status = appendOrPrepend(key, existing, value, false);
+                CasUpdateStatus status = appendOrPrepend(key, existing, valueBytes, false);
                 if (status == CasUpdateStatus.NOT_FOUND) {
-                    if (!noreply) {
-                        writeLine(out, "NOT_STORED");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
                 if (status == CasUpdateStatus.TOO_LARGE) {
-                    if (!noreply) {
-                        writeLine(out, "SERVER_ERROR object too large");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR object too large");
                 }
                 if (status == CasUpdateStatus.CONFLICT) {
-                    if (!noreply) {
-                        writeLine(out, "SERVER_ERROR cas conflict");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR cas conflict");
                 }
             }
             case "prepend" -> {
                 if (existing == null) {
-                    if (!noreply) {
-                        writeLine(out, "NOT_STORED");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
-                if ((long) existing.value().length + value.length > MAX_ITEM_SIZE) {
-                    if (!noreply) {
-                        writeLine(out, "SERVER_ERROR object too large");
-                        out.flush();
-                    }
-                    return true;
+                if ((long) existing.value().length + valueBytes.length > MAX_ITEM_SIZE) {
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR object too large");
                 }
-                CasUpdateStatus status = appendOrPrepend(key, existing, value, true);
+                CasUpdateStatus status = appendOrPrepend(key, existing, valueBytes, true);
                 if (status == CasUpdateStatus.NOT_FOUND) {
-                    if (!noreply) {
-                        writeLine(out, "NOT_STORED");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
                 if (status == CasUpdateStatus.TOO_LARGE) {
-                    if (!noreply) {
-                        writeLine(out, "SERVER_ERROR object too large");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR object too large");
                 }
                 if (status == CasUpdateStatus.CONFLICT) {
-                    if (!noreply) {
-                        writeLine(out, "SERVER_ERROR cas conflict");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR cas conflict");
                 }
             }
             default -> {
-                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(value, flags, nextCas(), computeExpireAt(ttl));
+                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(valueBytes, pending.flags(), nextCas(), computeExpireAt(ttl));
                 if (!storeEntry(key, entry, ttl)) {
-                    if (!noreply) {
-                        writeLine(out, "NOT_STORED");
-                        out.flush();
-                    }
-                    return true;
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
                 if (existing == null) {
                     incrementItems();
@@ -401,27 +305,22 @@ public class CanCachedServer implements AutoCloseable
             }
         }
 
-        if (!noreply) {
-            writeLine(out, "STORED");
-            out.flush();
-        }
-        return true;
+        return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("STORED");
     }
 
-    private boolean handleCasCommand(String key, byte[] value, int flags, Duration ttl, long casUnique, boolean noreply, StoredValueCodec.StoredValue existing, BufferedOutputStream out) throws IOException {
+    private CommandResult handleCasCommand(String key,
+                                           byte[] value,
+                                           int flags,
+                                           Duration ttl,
+                                           long casUnique,
+                                           boolean noreply,
+                                           StoredValueCodec.StoredValue existing)
+    {
         if (existing == null) {
-            if (!noreply) {
-                writeLine(out, "NOT_FOUND");
-                out.flush();
-            }
-            return true;
+            return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
         }
         if (existing.cas() != casUnique) {
-            if (!noreply) {
-                writeLine(out, "EXISTS");
-                out.flush();
-            }
-            return true;
+            return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("EXISTS");
         }
         long expireAt = computeExpireAt(ttl);
         StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(value, flags, nextCas(), expireAt);
@@ -432,24 +331,22 @@ public class CanCachedServer implements AutoCloseable
         boolean stored = clusterClient.compareAndSwap(key, StoredValueCodec.encode(entry), casUnique, effectiveTtl);
         if (!stored) {
             StoredValueCodec.StoredValue latest = getEntry(key);
-            if (!noreply) {
-                if (latest == null) {
-                    writeLine(out, "NOT_FOUND");
-                } else {
-                    writeLine(out, "EXISTS");
-                }
-                out.flush();
+            if (noreply) {
+                return CommandResult.continueWithoutResponse();
             }
-            return true;
+            if (latest == null) {
+                return handleSimpleLine("NOT_FOUND");
+            }
+            return handleSimpleLine("EXISTS");
         }
-        if (!noreply) {
-            writeLine(out, "STORED");
-            out.flush();
-        }
-        return true;
+        return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("STORED");
     }
 
-    private CasUpdateStatus appendOrPrepend(String key, StoredValueCodec.StoredValue snapshot, byte[] addition, boolean prepend) {
+    private CasUpdateStatus appendOrPrepend(String key,
+                                            StoredValueCodec.StoredValue snapshot,
+                                            byte[] addition,
+                                            boolean prepend)
+    {
         StoredValueCodec.StoredValue current = snapshot;
         for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
             if (current == null) {
@@ -476,14 +373,15 @@ public class CanCachedServer implements AutoCloseable
         return CasUpdateStatus.CONFLICT;
     }
 
-    private void handleGet(String[] parts, BufferedOutputStream out, boolean includeCas) throws IOException {
+    private CommandResult handleGet(String[] parts, boolean includeCas)
+    {
+        maybeApplyDelayedFlush();
         if (parts.length < 2) {
-            writeLine(out, "CLIENT_ERROR bad command line format");
-            out.flush();
-            return;
+            return handleSimpleLine("CLIENT_ERROR bad command line format");
         }
         cmdGet.incrementAndGet();
         long now = System.currentTimeMillis();
+        Buffer response = Buffer.buffer();
         for (int i = 1; i < parts.length; i++) {
             String key = parts[i];
             StoredValueCodec.StoredValue entry = getEntry(key);
@@ -495,48 +393,43 @@ public class CanCachedServer implements AutoCloseable
             String header = includeCas
                     ? String.format(Locale.ROOT, "VALUE %s %d %d %d", key, entry.flags(), entry.value().length, entry.cas())
                     : String.format(Locale.ROOT, "VALUE %s %d %d", key, entry.flags(), entry.value().length);
-            writeLine(out, header);
-            out.write(entry.value());
-            out.write(CRLF);
+            writeLine(response, header);
+            response.appendBytes(entry.value());
+            response.appendBytes(CRLF);
         }
-        writeLine(out, "END");
-        out.flush();
+        writeLine(response, "END");
+        return CommandResult.continueWith(response);
     }
 
-    private boolean handleDelete(String[] parts, BufferedOutputStream out) throws IOException {
+    private CommandResult handleDelete(String[] parts)
+    {
+        maybeApplyDelayedFlush();
         if (parts.length < 2) {
-            writeLine(out, "CLIENT_ERROR bad command line format");
-            out.flush();
-            return true;
+            return handleSimpleLine("CLIENT_ERROR bad command line format");
         }
         boolean noreply = parts.length == 3 && "noreply".equalsIgnoreCase(parts[2]);
         if (parts.length > 3 || (parts.length == 3 && !noreply)) {
-            writeLine(out, "CLIENT_ERROR invalid arguments");
-            out.flush();
-            return true;
+            return handleSimpleLine("CLIENT_ERROR invalid arguments");
         }
         boolean removed = clusterClient.delete(parts[1]);
         if (removed) {
             decrementCurrItems();
         }
-        if (!noreply) {
-            writeLine(out, removed ? "DELETED" : "NOT_FOUND");
-            out.flush();
+        if (noreply) {
+            return CommandResult.continueWithoutResponse();
         }
-        return true;
+        return handleSimpleLine(removed ? "DELETED" : "NOT_FOUND");
     }
 
-    private boolean handleIncrDecr(String command, String[] parts, BufferedOutputStream out) throws IOException {
+    private CommandResult handleIncrDecr(String command, String[] parts)
+    {
+        maybeApplyDelayedFlush();
         if (parts.length < 3) {
-            writeLine(out, "CLIENT_ERROR bad command line format");
-            out.flush();
-            return true;
+            return handleSimpleLine("CLIENT_ERROR bad command line format");
         }
         boolean noreply = parts.length == 4 && "noreply".equalsIgnoreCase(parts[3]);
         if (parts.length > 4 || (parts.length == 4 && !noreply)) {
-            writeLine(out, "CLIENT_ERROR invalid arguments");
-            out.flush();
-            return true;
+            return handleSimpleLine("CLIENT_ERROR invalid arguments");
         }
         BigInteger delta;
         try {
@@ -545,26 +438,18 @@ public class CanCachedServer implements AutoCloseable
                 throw new NumberFormatException();
             }
         } catch (NumberFormatException e) {
-            writeLine(out, "CLIENT_ERROR invalid numeric delta");
-            out.flush();
-            return true;
+            return handleSimpleLine("CLIENT_ERROR invalid numeric delta");
         }
 
         String key = parts[1];
         StoredValueCodec.StoredValue current = getEntry(key);
         for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
             if (current == null) {
-                if (!noreply) {
-                    writeLine(out, "NOT_FOUND");
-                    out.flush();
-                }
-                return true;
+                return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
             }
             String currentValue = new String(current.value(), StandardCharsets.US_ASCII);
             if (!currentValue.chars().allMatch(Character::isDigit)) {
-                writeLine(out, "CLIENT_ERROR cannot increment or decrement non-numeric value");
-                out.flush();
-                return true;
+                return handleSimpleLine("CLIENT_ERROR cannot increment or decrement non-numeric value");
             }
             BigInteger numeric = new BigInteger(currentValue);
             BigInteger updated = "incr".equals(command) ? numeric.add(delta) : numeric.subtract(delta);
@@ -573,66 +458,45 @@ public class CanCachedServer implements AutoCloseable
             }
             byte[] newValue = updated.toString().getBytes(StandardCharsets.US_ASCII);
             if (newValue.length > MAX_ITEM_SIZE) {
-                writeLine(out, "SERVER_ERROR object too large");
-                out.flush();
-                return true;
+                return handleSimpleLine("SERVER_ERROR object too large");
             }
             StoredValueCodec.StoredValue candidate = new StoredValueCodec.StoredValue(newValue, current.flags(), nextCas(), current.expireAt());
             Duration ttl = ttlFromExpireAt(current.expireAt());
             if (clusterClient.compareAndSwap(key, StoredValueCodec.encode(candidate), current.cas(), ttl)) {
-                if (!noreply) {
-                    writeLine(out, updated.toString());
-                    out.flush();
-                }
-                return true;
+                return noreply ? CommandResult.continueWithoutResponse() : CommandResult.continueWith(lineBuffer(updated.toString()));
             }
             current = getEntry(key);
         }
-        if (!noreply) {
-            writeLine(out, "SERVER_ERROR cas conflict");
-            out.flush();
-        }
-        return true;
+        return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR cas conflict");
     }
-    private boolean handleTouch(String[] parts, BufferedOutputStream out) throws IOException {
+
+    private CommandResult handleTouch(String[] parts)
+    {
+        maybeApplyDelayedFlush();
         if (parts.length < 3) {
-            writeLine(out, "CLIENT_ERROR bad command line format");
-            out.flush();
-            return true;
+            return handleSimpleLine("CLIENT_ERROR bad command line format");
         }
         boolean noreply = parts.length == 4 && "noreply".equalsIgnoreCase(parts[3]);
         if (parts.length > 4 || (parts.length == 4 && !noreply)) {
-            writeLine(out, "CLIENT_ERROR invalid arguments");
-            out.flush();
-            return true;
+            return handleSimpleLine("CLIENT_ERROR invalid arguments");
         }
         long exptime;
         try {
             exptime = Long.parseLong(parts[2]);
         } catch (NumberFormatException e) {
-            writeLine(out, "CLIENT_ERROR numeric value expected");
-            out.flush();
-            return true;
+            return handleSimpleLine("CLIENT_ERROR numeric value expected");
         }
         Duration ttl = parseExpiration(exptime);
         if (Duration.ZERO.equals(ttl)) {
             if (clusterClient.delete(parts[1])) {
                 decrementCurrItems();
             }
-            if (!noreply) {
-                writeLine(out, "NOT_FOUND");
-                out.flush();
-            }
-            return true;
+            return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
         }
         StoredValueCodec.StoredValue current = getEntry(parts[1]);
         for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
             if (current == null) {
-                if (!noreply) {
-                    writeLine(out, "NOT_FOUND");
-                    out.flush();
-                }
-                return true;
+                return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
             }
             long expireAt = computeExpireAt(ttl);
             StoredValueCodec.StoredValue candidate = new StoredValueCodec.StoredValue(current.value(), current.flags(), current.cas(), expireAt);
@@ -642,47 +506,40 @@ public class CanCachedServer implements AutoCloseable
             }
             if (clusterClient.compareAndSwap(parts[1], StoredValueCodec.encode(candidate), current.cas(), effectiveTtl)) {
                 cmdTouch.incrementAndGet();
-                if (!noreply) {
-                    writeLine(out, "TOUCHED");
-                    out.flush();
-                }
-                return true;
+                return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("TOUCHED");
             }
             current = getEntry(parts[1]);
         }
-        if (!noreply) {
-            writeLine(out, "SERVER_ERROR cas conflict");
-            out.flush();
-        }
-        return true;
+        return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR cas conflict");
     }
-    private boolean handleFlushAll(String[] parts, BufferedOutputStream out) throws IOException {
+
+    private CommandResult handleFlushAll(String[] parts)
+    {
+        maybeApplyDelayedFlush();
         boolean noreply = false;
         long delaySeconds = 0L;
         if (parts.length == 2) {
             if ("noreply".equalsIgnoreCase(parts[1])) {
                 noreply = true;
             } else {
-                delaySeconds = parseLong(parts[1], out);
-                if (delaySeconds < 0) {
-                    return true;
+                Long parsed = parseNonNegativeLong(parts[1]);
+                if (parsed == null) {
+                    return handleSimpleLine("CLIENT_ERROR numeric value expected");
                 }
+                delaySeconds = parsed;
             }
         } else if (parts.length == 3) {
-            delaySeconds = parseLong(parts[1], out);
-            if (delaySeconds < 0) {
-                return true;
+            Long parsed = parseNonNegativeLong(parts[1]);
+            if (parsed == null) {
+                return handleSimpleLine("CLIENT_ERROR numeric value expected");
             }
+            delaySeconds = parsed;
             if (!"noreply".equalsIgnoreCase(parts[2])) {
-                writeLine(out, "CLIENT_ERROR invalid arguments");
-                out.flush();
-                return true;
+                return handleSimpleLine("CLIENT_ERROR invalid arguments");
             }
             noreply = true;
         } else if (parts.length > 3) {
-            writeLine(out, "CLIENT_ERROR invalid arguments");
-            out.flush();
-            return true;
+            return handleSimpleLine("CLIENT_ERROR invalid arguments");
         }
 
         cmdFlush.incrementAndGet();
@@ -695,14 +552,11 @@ public class CanCachedServer implements AutoCloseable
             flushDeadlineMillis.set(deadline);
         }
 
-        if (!noreply) {
-            writeLine(out, "OK");
-            out.flush();
-        }
-        return true;
+        return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("OK");
     }
 
-    private long parseLong(String value, BufferedOutputStream out) throws IOException {
+    private Long parseNonNegativeLong(String value)
+    {
         try {
             long parsed = Long.parseLong(value);
             if (parsed < 0) {
@@ -710,14 +564,15 @@ public class CanCachedServer implements AutoCloseable
             }
             return parsed;
         } catch (NumberFormatException e) {
-            writeLine(out, "CLIENT_ERROR numeric value expected");
-            out.flush();
-            return -1L;
+            return null;
         }
     }
 
-    private void handleStats(BufferedOutputStream out) throws IOException {
+    private CommandResult handleStats()
+    {
+        maybeApplyDelayedFlush();
         long now = System.currentTimeMillis();
+        Buffer out = Buffer.buffer();
         writeStat(out, "pid", ProcessHandle.current().pid());
         writeStat(out, "uptime", (now - startTime) / 1000);
         writeStat(out, "time", now / 1000);
@@ -733,11 +588,18 @@ public class CanCachedServer implements AutoCloseable
         writeStat(out, "curr_items", currItems.get());
         writeStat(out, "total_items", totalItems.get());
         writeLine(out, "END");
-        out.flush();
+        return CommandResult.continueWith(out);
     }
 
-    private void writeStat(BufferedOutputStream out, String name, Object value) throws IOException {
-        writeLine(out, "STAT " + name + " " + value);
+    private CommandResult handleVersion()
+    {
+        maybeApplyDelayedFlush();
+        return handleSimpleLine("VERSION " + getVersion());
+    }
+
+    private CommandResult handleSimpleLine(String line)
+    {
+        return CommandResult.continueWith(lineBuffer(line));
     }
 
     private void maybeApplyDelayedFlush()
@@ -784,7 +646,8 @@ public class CanCachedServer implements AutoCloseable
         return clusterClient.set(key, StoredValueCodec.encode(entry), effectiveTtl);
     }
 
-    private long nextCas() {
+    private long nextCas()
+    {
         return casCounter.updateAndGet(prev -> prev == Long.MAX_VALUE ? 1L : prev + 1L);
     }
 
@@ -828,7 +691,8 @@ public class CanCachedServer implements AutoCloseable
         totalItems.incrementAndGet();
     }
 
-    private void decrementCurrItems() {
+    private void decrementCurrItems()
+    {
         currItems.updateAndGet(prev -> Math.max(0L, prev - 1L));
     }
 
@@ -851,28 +715,26 @@ public class CanCachedServer implements AutoCloseable
         return Duration.ofSeconds(exptime);
     }
 
-    private String readLine(InputStream in) throws IOException {
-        StringBuilder sb = new StringBuilder();
-        int ch;
-        while ((ch = in.read()) != -1) {
-            if (ch == '\n') {
-                int len = sb.length();
-                if (len > 0 && sb.charAt(len - 1) == '\r') {
-                    sb.setLength(len - 1);
-                }
-                return sb.toString();
-            }
-            sb.append((char) ch);
-        }
-        return sb.isEmpty() ? null : sb.toString();
+    private void writeLine(Buffer buffer, String line)
+    {
+        buffer.appendString(line, StandardCharsets.US_ASCII.name());
+        buffer.appendBytes(CRLF);
     }
 
-    private void writeLine(BufferedOutputStream out, String line) throws IOException {
-        out.write(line.getBytes(StandardCharsets.US_ASCII));
-        out.write(CRLF);
+    private Buffer lineBuffer(String line)
+    {
+        Buffer buffer = Buffer.buffer(line.length() + CRLF.length);
+        writeLine(buffer, line);
+        return buffer;
     }
 
-    private String getVersion() {
+    private void writeStat(Buffer out, String name, Object value)
+    {
+        writeLine(out, "STAT " + name + " " + value);
+    }
+
+    private String getVersion()
+    {
         Package pkg = CanCachedServer.class.getPackage();
         if (pkg != null && pkg.getImplementationVersion() != null) {
             return pkg.getImplementationVersion();
@@ -880,16 +742,15 @@ public class CanCachedServer implements AutoCloseable
         return "0.0.1";
     }
 
-    /**
-     * Sunucunun dinlediği portu testler için elde etmek adına yayınlanır.
-     */
-    public int port() {
-        return serverSocket != null ? serverSocket.getLocalPort() : networkConfig.port();
+    public int port()
+    {
+        return netServer != null ? netServer.actualPort() : networkConfig.port();
     }
 
     @PreDestroy
     @Override
-    public void close() {
+    public void close()
+    {
         running = false;
         if (removalSubscription != null) {
             try {
@@ -897,44 +758,202 @@ public class CanCachedServer implements AutoCloseable
             } catch (Exception ignored) {
             }
         }
-        if (serverSocket != null && !serverSocket.isClosed()) {
+        if (netServer != null) {
             try {
-                serverSocket.close();
-            } catch (IOException e) {
-                LOG.debug("Failed to close server socket", e);
-            }
-        }
-        if (acceptThread != null) {
-            try {
-                acceptThread.join(2000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        if (workers != null) {
-            workers.shutdownNow();
-            try {
-                workers.awaitTermination(5, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+                netServer.close().toCompletionStage().toCompletableFuture().join();
+            } catch (RuntimeException e) {
+                LOG.debug("Failed to close net server", e);
             }
         }
     }
 
-    private static final class NamedThreadFactory implements ThreadFactory
+    private interface CommandAction
     {
-        private final String prefix;
-        private final AtomicInteger counter = new AtomicInteger(1);
+    }
 
-        private NamedThreadFactory(String prefix) {
-            this.prefix = prefix;
+    private static final class ImmediateCommand implements CommandAction
+    {
+        private final Supplier<CommandResult> executor;
+
+        private ImmediateCommand(Supplier<CommandResult> executor)
+        {
+            this.executor = executor;
         }
 
-        @Override
-        public Thread newThread(Runnable r) {
-            Thread t = new Thread(r, prefix + counter.getAndIncrement());
-            t.setDaemon(true);
-            return t;
+        private Supplier<CommandResult> executor()
+        {
+            return executor;
+        }
+    }
+
+    private static final class StorageCommand implements CommandAction
+    {
+        private final PendingStorageCommand pending;
+
+        private StorageCommand(PendingStorageCommand pending)
+        {
+            this.pending = pending;
+        }
+
+        private PendingStorageCommand pending()
+        {
+            return pending;
+        }
+    }
+
+    private record PendingStorageCommand(String command,
+                                         String key,
+                                         int flags,
+                                         Duration ttl,
+                                         int bytes,
+                                         boolean noreply,
+                                         boolean isCas,
+                                         long casUnique)
+    {
+        int totalLength()
+        {
+            return bytes + CRLF.length;
+        }
+    }
+
+    private record CommandResult(Buffer response, boolean keepAlive)
+    {
+        static CommandResult continueWith(Buffer response)
+        {
+            return new CommandResult(response, true);
+        }
+
+        static CommandResult continueWithoutResponse()
+        {
+            return new CommandResult(null, true);
+        }
+
+        static CommandResult terminate()
+        {
+            return new CommandResult(null, false);
+        }
+    }
+
+    private final class ConnectionContext
+    {
+        private final NetSocket socket;
+        private Buffer buffer = Buffer.buffer();
+        private PendingStorageCommand pendingStorage;
+        private boolean closed;
+        private boolean processing;
+
+        private ConnectionContext(NetSocket socket)
+        {
+            this.socket = socket;
+        }
+
+        private void handleData(Buffer data)
+        {
+            if (closed) {
+                return;
+            }
+            buffer.appendBuffer(data);
+            processBuffer();
+        }
+
+        private void onClosed()
+        {
+            closed = true;
+            pendingStorage = null;
+            buffer = Buffer.buffer();
+        }
+
+        private void processBuffer()
+        {
+            while (!closed && !processing) {
+                if (pendingStorage != null) {
+                    if (buffer.length() < pendingStorage.totalLength()) {
+                        return;
+                    }
+                    Buffer payload = buffer.getBuffer(0, pendingStorage.totalLength());
+                    buffer = buffer.getBuffer(pendingStorage.totalLength(), buffer.length());
+                    PendingStorageCommand command = pendingStorage;
+                    pendingStorage = null;
+                    executeCommand(() -> handleStoragePayload(command, payload));
+                    return;
+                }
+
+                int lineEnd = indexOfCrlf(buffer);
+                if (lineEnd < 0) {
+                    return;
+                }
+                String line = buffer.getString(0, lineEnd);
+                buffer = buffer.getBuffer(lineEnd + CRLF.length, buffer.length());
+                if (line.isEmpty()) {
+                    continue;
+                }
+
+                CommandAction action = parseCommand(line);
+                if (action instanceof ImmediateCommand immediate) {
+                    executeCommand(immediate.executor());
+                    return;
+                }
+                if (action instanceof StorageCommand storage) {
+                    pendingStorage = storage.pending();
+                    if (buffer.length() >= pendingStorage.totalLength()) {
+                        continue;
+                    }
+                }
+                return;
+            }
+        }
+
+        private void executeCommand(Supplier<CommandResult> executor)
+        {
+            processing = true;
+            vertx.<CommandResult>executeBlocking(promise -> {
+                try {
+                    promise.complete(executor.get());
+                } catch (Throwable t) {
+                    promise.fail(t);
+                }
+            }, false, ar -> {
+                processing = false;
+                if (closed) {
+                    return;
+                }
+                if (ar.succeeded()) {
+                    CommandResult result = ar.result();
+                    if (result != null && result.response() != null && result.response().length() > 0) {
+                        socket.write(result.response());
+                    }
+                    if (result != null && !result.keepAlive()) {
+                        close();
+                        return;
+                    }
+                } else {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debugf(ar.cause(), "Client %s disconnected with error", socket.remoteAddress());
+                    }
+                    close();
+                    return;
+                }
+                processBuffer();
+            });
+        }
+
+        private int indexOfCrlf(Buffer buffer)
+        {
+            int length = buffer.length();
+            for (int i = 0; i < length - 1; i++) {
+                if (buffer.getByte(i) == '\r' && buffer.getByte(i + 1) == '\n') {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        private void close()
+        {
+            if (!closed) {
+                closed = true;
+                socket.close();
+            }
         }
     }
 }
