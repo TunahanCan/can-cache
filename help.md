@@ -13,6 +13,28 @@ Komutlar ayrıştırıldıktan sonra `ClusterClient` ile kümeye iletilir.
 Okuma/yazma işlemleri hedef düğümlerin `CacheEngine` örneklerine ulaşır, TTL ve tahliye politikaları burada yürütülür.
 Opsiyonel snapshot ve metrik bileşenleri sistemi kalıcı ve gözlemlenebilir kılar.
 
+### Vert.x'e Genel Bakış ve Projedeki Yeri
+
+#### Vert.x nedir?
+- Vert.x, JVM üzerinde çalışan, Netty tabanlı, olay güdümlü ve reaktif bir uygulama çatısıdır. Tüm ağ işlemleri tekil "event loop" iş parçacıkları üzerinde koordine edilir ve non-blocking API'ler sayesinde yüksek bağlantı sayıları için ölçeklenebilirlik sağlar.
+- Araç takımı; TCP/HTTP sunucuları ve istemcileri, zamanlayıcılar, paylaşımlı worker havuzları, asenkron akış yardımcıları gibi bileşenleri bir arada sunar. Farklı diller için bağlayıcılar olsa da Quarkus ile birlikte doğrudan Java API'leri kullanılmaktadır.
+- Event loop modeli bloklama kodu tolere etmediğinden, Vert.x `executeBlocking` veya paylaşımlı worker havuzları üzerinden bloklayıcı işleri izole ederek tutarlı performans sağlar.
+
+#### Quarkus entegrasyonu ve yapılandırma
+- Quarkus, iç yapısında Vert.x kullanır; proje içinde `AppConfig.vertx()` ile uygulamaya özel bir `Vertx` örneği üretip event loop / worker havuzu boyutlarını konfigürasyon dosyalarından okuyarak özelleştiriyoruz. Linux üzerinde mevcutsa Epoll/IOUring gibi yerel Netty taşıyıcıları tercih edilecek şekilde `VertxOptions` ayarlanır.【F:src/main/java/com/can/config/AppConfig.java†L43-L85】
+- Aynı yapılandırma sınıfı `vertx.createSharedWorkerExecutor("can-cache-worker", ...)` çağrısıyla tüm bileşenlerin paylaşabildiği bir `WorkerExecutor` üretir. Bu havuz, event loop'u bloklamaması gereken ağır işler için ortak kullanım sağlar.【F:src/main/java/com/can/config/AppConfig.java†L101-L113】
+
+#### Projedeki başlıca Vert.x kullanımları
+- **Memcached uyumlu TCP katmanı:** `CanCachedServer`, `vertx.createNetServer` ile gelen bağlantıları kabul eder, istekleri `Buffer` üzerinde ayrıştırır ve bloklayıcı küme çağrılarını `vertx.executeBlocking` üzerinden worker havuzuna taşıyarak event loop'un serbest kalmasını sağlar.【F:src/main/java/com/can/net/CanCachedServer.java†L39-L195】【F:src/main/java/com/can/net/CanCachedServer.java†L828-L915】
+- **Replikasyon sunucusu:** `ReplicationServer`, Vert.x `NetServer` kullanarak diğer düğümlerden gelen binary komutları okur; her bağlantı için komut sıralarını korur ve `WorkerExecutor.executeBlocking` ile önbellek işlemlerini gerçekleştirir.【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L1-L208】
+- **Uzak düğüm istemcisi:** `RemoteNode`, Vert.x `NetClient` ile TCP bağlantılarını havuzlar, asenkron olarak komut gönderip yanıtları `Promise`/`Future` zincirleriyle bekler ve istemci tarafında tekrar kullanılabilir soketler oluşturur.【F:src/main/java/com/can/cluster/coordination/RemoteNode.java†L1-L144】
+- **Zamanlayıcılar ve periyodik görevler:** TTL temizleyicisi `CacheEngine.startCleaner()` içinde `vertx.setPeriodic` ile periyodik görev oluşturulur; koordinasyon servisi heartbeat/anti-entropy döngülerini ve hint replay'i Vert.x zamanlayıcılarıyla planlar; metrik raporlayıcı ve snapshot zamanlayıcısı benzer şekilde `setPeriodic` + `executeBlocking` kombinasyonunu kullanır.【F:src/main/java/com/can/core/CacheEngine.java†L94-L118】【F:src/main/java/com/can/cluster/coordination/CoordinationService.java†L69-L183】【F:src/main/java/com/can/metric/MetricsReporter.java†L1-L77】【F:src/main/java/com/can/rdb/SnapshotScheduler.java†L1-L92】
+- **Arka plan iş yüklerinin izolesi:** Koordinasyon, replikasyon, snapshot ve metrik bileşenleri event loop'u bloklamamak için `WorkerExecutor.executeBlocking` veya doğrudan Vert.x `executeBlocking` mekanizmasını kullanır; böylece CPU yoğun veya IO-bloklayıcı işler paylaşılmış worker havuzunda yürür ve soketlere hizmet veren event loop'lar kısa tutulur.【F:src/main/java/com/can/net/CanCachedServer.java†L828-L915】【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L169-L208】【F:src/main/java/com/can/cluster/coordination/CoordinationService.java†L117-L183】
+
+#### Eşzamanlılık modeli ve geri basınç
+- Her `NetSocket` bağlantısı tek bir event loop thread'i üzerinde çalışır; bağlantı başına oluşturulan `ConnectionContext` veya `ReplicationConnection` nesneleri `processing` bayraklarıyla komut yürütme sırasında gelen yeni veriyi tamponlayıp işlemenin bitmesini bekler. Bu sayede pipelined komutlarda bile sıralı yürütme ve düşük bellek kullanımı korunur.【F:src/main/java/com/can/net/CanCachedServer.java†L768-L915】【F:src/main/java/com/can/cluster/coordination/ReplicationServer.java†L124-L220】
+- TTL kuyruğu temizleme, snapshot alma ve metrik dökümleri gibi daha uzun süren işler `WorkerExecutor` üzerindeki sanal thread'lerde çalışır; sonuçlar event loop'a geri bildirildiğinde tamponlanmış veriler tekrar işlenerek sistem genelinde backpressure mekanizması sağlanır.【F:src/main/java/com/can/core/CacheEngine.java†L94-L158】【F:src/main/java/com/can/rdb/SnapshotScheduler.java†L63-L92】
+
 ```mermaid
 flowchart LR
     subgraph Client
