@@ -203,7 +203,7 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
             }
             PooledConnection pooled = pool.poll();
             if (pooled != null) {
-                if (!pooled.closed && !pooled.socket.isClosed()) {
+                if (!pooled.closed) {
                     pooled.socket.resume();
                     return pooled;
                 }
@@ -237,7 +237,7 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
             if (pooled == null) {
                 throw new IOException("Timeout acquiring pooled connection");
             }
-            if (!pooled.closed && !pooled.socket.isClosed()) {
+            if (!pooled.closed) {
                 pooled.socket.resume();
                 return pooled;
             }
@@ -296,7 +296,7 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
             return;
         }
         connection.clearInFlight();
-        if (closed.get() || connection.closed || connection.socket.isClosed()) {
+        if (closed.get() || connection.closed) {
             discard(connection);
             return;
         }
