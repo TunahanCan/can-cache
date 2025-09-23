@@ -6,6 +6,8 @@ import com.can.cluster.HintedHandoffService;
 import com.can.cluster.Node;
 import com.can.config.AppProperties;
 import com.can.core.CacheEngine;
+import io.vertx.core.Vertx;
+import io.vertx.core.WorkerExecutor;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
@@ -35,10 +37,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Multicast tabanlı hafif bir koordinasyon katmanı. Her düğüm belirli aralıklarla
@@ -63,6 +61,8 @@ public class CoordinationService implements AutoCloseable
     private final int replicationFactor;
     private final long hintReplayIntervalMillis;
     private final long antiEntropyIntervalMillis;
+    private final Vertx vertx;
+    private final WorkerExecutor workerExecutor;
 
     private final Map<String, RemoteMember> members = new ConcurrentHashMap<>();
     private final Object membershipLock = new Object();
@@ -70,10 +70,9 @@ public class CoordinationService implements AutoCloseable
     private MulticastSocket listenSocket;
     private DatagramSocket sendSocket;
     private InetAddress groupAddress;
-    private ScheduledExecutorService scheduler;
-    private ScheduledFuture<?> heartbeatTask;
-    private ScheduledFuture<?> reapTask;
-    private ScheduledFuture<?> repairTask;
+    private long heartbeatTimerId = -1L;
+    private long reapTimerId = -1L;
+    private long repairTimerId = -1L;
     private Thread listenerThread;
     private volatile boolean running;
 
@@ -83,7 +82,9 @@ public class CoordinationService implements AutoCloseable
                                ClusterState clusterState,
                                HintedHandoffService hintedHandoffService,
                                CacheEngine<String, String> localEngine,
-                               AppProperties properties) {
+                               AppProperties properties,
+                               Vertx vertx,
+                               WorkerExecutor workerExecutor) {
         this.ring = ring;
         this.localNode = localNode;
         this.clusterState = clusterState;
@@ -96,6 +97,8 @@ public class CoordinationService implements AutoCloseable
         var coordination = cluster.coordination();
         this.hintReplayIntervalMillis = Math.max(0L, coordination.hintReplayIntervalMillis());
         this.antiEntropyIntervalMillis = Math.max(0L, coordination.antiEntropyIntervalMillis());
+        this.vertx = vertx;
+        this.workerExecutor = workerExecutor;
     }
 
     @PostConstruct
@@ -113,13 +116,18 @@ public class CoordinationService implements AutoCloseable
         listenerThread.setDaemon(true);
         listenerThread.start();
 
-        scheduler = Executors.newScheduledThreadPool(1, Thread.ofVirtual().factory());
         long heartbeat = Math.max(1000L, discoveryConfig.heartbeatIntervalMillis());
         long reapInterval = Math.max(heartbeat, discoveryConfig.failureTimeoutMillis() / 2);
-        heartbeatTask = scheduler.scheduleAtFixedRate(this::broadcastHeartbeat, 0L, heartbeat, TimeUnit.MILLISECONDS);
-        reapTask = scheduler.scheduleAtFixedRate(this::pruneDeadMembers, reapInterval, reapInterval, TimeUnit.MILLISECONDS);
+        broadcastHeartbeat();
+        heartbeatTimerId = vertx.setPeriodic(heartbeat, id -> broadcastHeartbeat());
+        reapTimerId = vertx.setPeriodic(reapInterval, id -> pruneDeadMembers());
         long repairInterval = Math.max(reapInterval, antiEntropyIntervalMillis);
-        repairTask = scheduler.scheduleAtFixedRate(this::runAntiEntropy, repairInterval, repairInterval, TimeUnit.MILLISECONDS);
+        repairTimerId = vertx.setPeriodic(repairInterval, id ->
+                workerExecutor.executeBlocking(promise -> {
+                    runAntiEntropy();
+                    promise.complete();
+                })
+        );
 
         LOG.infof("Coordination service started for node %s, announcing %s:%d", localNode.id(),
                 advertisedHost(), replicationConfig.port());
@@ -468,18 +476,9 @@ public class CoordinationService implements AutoCloseable
     public void close()
     {
         running = false;
-        if (heartbeatTask != null) {
-            heartbeatTask.cancel(true);
-        }
-        if (reapTask != null) {
-            reapTask.cancel(true);
-        }
-        if (repairTask != null) {
-            repairTask.cancel(true);
-        }
-        if (scheduler != null) {
-            scheduler.shutdownNow();
-        }
+        cancelTimer(heartbeatTimerId);
+        cancelTimer(reapTimerId);
+        cancelTimer(repairTimerId);
         if (listenSocket != null) {
             try {
                 listenSocket.close();
@@ -496,6 +495,12 @@ public class CoordinationService implements AutoCloseable
         synchronized (membershipLock) {
             members.values().forEach(member -> ring.removeNode(member.node(), member.idBytes()));
             members.clear();
+        }
+    }
+
+    private void cancelTimer(long timerId) {
+        if (timerId >= 0L) {
+            vertx.cancelTimer(timerId);
         }
     }
 
