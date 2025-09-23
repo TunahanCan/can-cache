@@ -1,47 +1,51 @@
 # can-cache
 
-**can-cache**, Quarkus 3 üzerinde çalışan, cancached metin protokolü ile %100 uyumlu
-bir bellek içi anahtar–değer sunucusudur. Tek JVM olarak başlayabilir, tutarlı
-hash tabanlı yönlendirme ile yatayda ölçeklenir ve replikasyon sayesinde veri
-kayıplarını en aza indirir. Sistem; TTL yönetimi, CAS desteği, gecikmeye duyarlı
-replikasyon, anlık görüntü (snapshot) alma ve hafif gözlemlenebilirlik özellikleri
-ile modern bir cache katmanının gereksinimlerini karşılayacak şekilde
-kurgulanmıştır.
+<p align="center">
+  <img src="https://img.shields.io/badge/quarkus-3.x-4695EB?logo=quarkus&logoColor=white" alt="Built with Quarkus 3" />
+  <img src="https://img.shields.io/badge/protocol-cancached-orange" alt="Protocol compatible" />
+  <img src="https://img.shields.io/badge/distribution-consistent%20hashing-4c1" alt="Consistent hashing" />
+</p>
 
-## Öne çıkan yetenekler
+> **can-cache**, cancached metin protokolü ile %100 uyumlu, Quarkus 3 tabanlı hafif ama küme ölçekli bir bellek içi anahtar–değer sunucusudur. Tek JVM ile başlayıp saniyeler içinde tutarlı hash halkasına katılan, gecikmeye duyarlı replikasyon ve anlık snapshot alma özellikleriyle modern uygulamaların cache katmanına güç verir.
 
-- **cancached uyumluluğu:** `set/add/replace/append/prepend/cas/get/gets/delete`
-  `incr/decr/touch/flush_all/stats/version/quit` komutlarını metin protokolü ile
-  işler. 1 MB üzerindeki yükleri engeller, 30 gün üzeri TTL değerlerini epoch
-  olarak yorumlar ve CAS sayaçlarını atomik olarak üretir.
-- **Tutarlı hash + replikasyon:** `ClusterClient`, sanal düğüm destekli
-  `ConsistentHashRing` üzerinde replikasyon faktörü kadar kopya seçer; yazmaları
-  çoğunluk quorum'una taşır, başarısız kopyalar için `HintedHandoffService`
-  ipuçlarını kalıcılaştırıp yeniden oynatır, okumaları ilk başarılı yanıta
-  yönlendirir. İlk kopya lider kabul edilir; lider yazması başarısız olursa
-  istemciye hata fırlatılırken takipçi hataları hinted handoff ile toparlanır.
-  Örnek akış: üç kopyalı bir yazmada lider ve iki takipçi seçilir; yanıt veren
-  ilk iki kopya çoğunluğu sağladığında işlem başarılı sayılır, düşen kopyaya ait
-  ipuçları toparlanıp node geri geldiğinde `HintedHandoffService` tarafından
-  yeniden uygulanır.
-- **Otomatik keşif:** `CoordinationService`, multicast kalp atışları ile yeni JVM
-  örneklerini bulur, `RemoteNode` vekilleri oluşturarak halkaya ekler ve zaman
-  aşımına uğrayanları temizler.
-- **Gecikmeye duyarlı replikasyon:** Her uzaktaki kopya için kısa ömürlü TCP
-  bağlantı açan `RemoteNode`, tek baytlık komutlar ile `ReplicationServer`
-  üzerinden `CacheEngine`’i günceller; TTL’leri milisaniye hassasiyetiyle korur.
-- **Segmentlenmiş bellek motoru:** `CacheEngine`, yapılandırılabilir sayıda
-  `CacheSegment` oluşturur, `DelayQueue` tabanlı TTL temizleyicisi ve seçilebilir
-  LRU/TinyLFU tahliye politikaları ile yüksek isabet oranı sağlar.
-- **Kalıcılık ve geri yükleme:** `SnapshotScheduler`, `SnapshotFile` ile düzenli
-  aralıklarla disk tabanlı RDB formatı üretir; uygulama yeniden başladığında aynı
-  dosyadan belleği doldurur.
-- **Gözlemlenebilirlik ve olaylar:** `MetricsRegistry` + `MetricsReporter`
-  kombinasyonu sayaç/zamanlayıcı istatistiklerini konsola döker, `Broker`
-  yayınla-abone ol modeliyle `keyspace:set` ve `keyspace:del` olaylarını servis
-  eder.
+---
 
-## Mimari görünüm
+## İçindekiler
+- [Öne Çıkan Özellikler](#öne-çıkan-özellikler)
+- [Neden can-cache?](#neden-can-cache)
+- [Mimari Anahat](#mimari-anahat)
+- [2 Dakikada Demo](#2-dakikada-demo)
+- [Küme Kurulum Örneği](#küme-kurulum-örneği)
+- [Yapılandırma Sihirbazı](#yapılandırma-sihirbazı)
+- [Proje Yapısı](#proje-yapısı)
+- [Yol Haritası](#yol-haritası)
+- [Katkı & Geri Bildirim](#katkı--geri-bildirim)
+- [Lisans](#lisans)
+
+## Öne Çıkan Özellikler
+
+### ⚡ Protokol & Performans
+- cancached metin protokolünün tüm çekirdek komutlarını (`set/add/replace/append/prepend/cas/get/gets/delete/incr/decr/touch/flush_all/stats/version/quit`) bire bir uygular, 1 MB üzerindeki yükleri reddeder ve 30 günü aşan TTL değerlerini epoch olarak yorumlar.
+- CAS sayaçları atomik olarak üretilir; `StoredValueCodec` sayesinde CAS, bayrak ve TTL tek bir Base64 dizesinde taşınır.
+- Segmentlenmiş `CacheEngine` ile seçilebilir LRU ya da TinyLFU tahliye politikaları, milisaniye hassasiyetinde TTL temizliği ve yüksek isabet oranı sağlar.
+
+### 🛡️ Dayanıklılık & Tutarlılık
+- Sanal düğüm destekli **tutarlı hash halkası** üzerinde çalışan `ClusterClient`, replikasyon faktörü kadar kopyayı deterministik biçimde seçer ve yazmaları çoğunluk quorum'una taşır.
+- `HintedHandoffService`, başarısız kopyalar için ipuçlarını kalıcılaştırıp node geri döndüğünde otomatik oynatır; veri kayıplarını en aza indirir.
+- `SnapshotScheduler`, RDB benzeri dosya formatıyla periyodik snapshot alır; uygulama yeniden başladığında belleği aynı dosyadan doldurur.
+
+### 🔍 Gözlemlenebilirlik & Operasyon
+- `MetricsRegistry` + `MetricsReporter`, mikro saniye hassasiyetinde sayaç ve zamanlayıcı istatistiklerini periyodik olarak raporlar.
+- `Broker` yayınla-abone ol modeliyle `keyspace:set` ve `keyspace:del` olaylarını servis eder; `CacheEngine.onRemoval` abonelikleri ile cache yaşam döngüsü izlenebilir.
+- Multicast tabanlı `CoordinationService`, yeni JVM örneklerini otomatik keşfeder, zaman aşımına uğrayan node'ları temizler.
+
+## Neden can-cache?
+- **Ciddi üretim senaryoları için tasarlandı:** Gecikmeye duyarlı replikasyon, hinted handoff ve anti-entropy döngüleri ile ağ kesintilerini tolere eder.
+- **Modern JVM özelliklerinden faydalanır:** Sanal thread'ler, reaktif IO ve Quarkus ekosisteminin hızını kullanır.
+- **Basit kurulum, hızlı ölçekleme:** Tek bir komutla ayağa kalkar; yeni node'lar multicast ile kümeye otomatik katılır.
+- **Genişletilebilir çekirdek:** Yeni codec'ler, tahliye stratejileri ve gözlemleyiciler kolayca eklenebilir.
+
+## Mimari Anahat
 
 ```mermaid
 flowchart LR
@@ -61,93 +65,54 @@ flowchart LR
     CE -- metrik/olay --> Obs[MetricsRegistry & Broker]
 ```
 
-### Komut işleme ve protokol katmanı
-- `CanCachedServer`, Quarkus ayaklandığında konfigüre edilen portu dinler,
-  satır bazlı ayrıştırma yapar ve cancached protokolünün kenar durumlarını bire
-  bir uygular (CAS çakışması, `noreply`, `flush_all` gecikmesi vb.).
-- Değerler `StoredValueCodec` sayesinde CAS, bayrak ve TTL bilgileriyle tek bir
-  Base64 dizesine çevrilir; böylece ağ katmanı ile `CacheEngine` aynı formatı
-  paylaşır.
-- Sunucu istatistikleri (`cmd_get`, `get_hits`, `curr_items` vb.) cancached
-  referansını taklit edecek şekilde tutulur ve `stats` komutu ile raporlanır.
+### Katmanlar
+- **Komut işleme:** `CanCachedServer`, Quarkus ayaklandığında konfigüre edilen portu dinler, satır bazlı ayrıştırma yapar ve cancached protokolünün kenar durumlarını (CAS çakışması, `noreply`, `flush_all` gecikmesi vb.) bire bir uygular.
+- **Kümeleme:** `ConsistentHashRing`, `HashFn` implementasyonu ile sanal düğümler kullanır; `CoordinationService` multicast kalp atışları ile üyeleri güncel tutar.
+- **Replikasyon:** `RemoteNode` kısa ömürlü soketlerle `ReplicationServer`'a bağlanır; `'S'/'G'/'D'/'X'/'C'` komutlarıyla veri aktarımı yaparken fingerprint karşılaştırmaları ile tutarlılığı doğrular.
+- **Bellek motoru:** `CacheEngine`, segmentler, TTL kuyruğu (`DelayQueue<ExpiringKey>`) ve CAS işlemlerini tek noktada yönetir; `AutoCloseable` aboneliklerle `curr_items` gibi istatistikler güncel tutulur.
+- **Kalıcılık & gözlemlenebilirlik:** `SnapshotFile` atomik dosya taşımayla tutarlılığı korur; `MetricsReporter` rapor periyodu > 0 olduğunda saniyeler içinde metrikleri yazdırır.
 
-### Kümeleme ve replikasyon
-- `ConsistentHashRing`, `HashFn` implementasyonu sayesinde sanal düğümlerle
-  yükü dağıtır; düğüm ekleme/çıkarma işlemleri tüm kopyaları deterministik
-  şekilde günceller.
-- `CoordinationService`, multicast dinleyicisi ile gelen
-  `HELLO|nodeId|host|port|epoch` kalp atışlarını işleyerek üyeleri güncel tutar;
-  `RemoteNode` vekillerini `J` (join), `R` (replication) ve `H` (hint)
-  komutları üzerinden `ReplicationServer` ile el sıkıştırır. İlk temasta
-  bootstrap oturumları açıp tam durum aktarımını tetikler, ardından
-  fingerprint/digest karşılaştırmalarına dayalı anti-entropy döngüleri ile
-  ayrışmaları giderir ve periyodik ipucu tekrarları (hint replay) sayesinde
-  kopuk yazmaları toparlar.
-- `RemoteNode`, her çağrıda kısa ömürlü bir soket açar; bağlantıyı `J`
-  komutu ile tanıtır, `R` yanıtı alındığında veri akışını başlatır ve `H`
-  komutu üzerinden digest/ipucu eşlemesini sürdürür. Ardından `'S'/'G'/'D'/'X'/'C'`
-  veri komutlarını akış halinde gönderir, gelen fingerprint bilgileri ile
-  kendi hesaplamasını karşılaştırarak tutarlılığı doğrular.
-- `ReplicationServer`, `J`/`R`/`H` komutlarını işleyerek katılım doğrulama,
-  bootstrap akışını açma ve ipucu/digest senkronizasyonunu yönetir; veri
-  komutlarını sanal thread havuzunda stream olarak işler, TTL’si geçmiş
-  kayıtları otomatik temizler ve `CacheEngine` üzerinde idempotent işlemler
-  uygular.
+## 2 Dakikada Demo
 
-### Çekirdek bellek motoru
-- `CacheEngine`, yapılandırmada verilen segment sayısı ve kapasiteyi kullanarak
-  `CacheSegment` dizisi oluşturur; her segment `ReentrantLock` ve LRU erişim
-  sırasına sahip `LinkedHashMap` ile korunur.
-- `DelayQueue<ExpiringKey>` kuyruğu, TTL süresi dolan kayıtları doğru segment
-  üzerinde kaldırır; temizleyici görev sanal thread olarak periyodik çalışır.
-- CAS operasyonları segment içindeki `compareAndSwap` fonksiyonunda gerçekleşir;
-  mevcut değer dekode edilerek CAS eşleşmesi, TTL güncellemesi ve tahliye kararı
-  tek noktada verilir.
-- `CacheEngine.onRemoval`, temizlenen anahtarları dinleyen abonelikler için
-  `AutoCloseable` geri döndürür; `CanCachedServer` bu mekanizma ile `curr_items`
-  istatistiğini güncel tutar.
+> Gereksinimler: Maven Wrapper (`./mvnw`) ve JDK 25.
 
-### Kalıcılık ve gözlemlenebilirlik
-- `SnapshotFile`, her kaydı `S base64Key base64Value expireAt` formatında yazar,
-  atomik dosya taşımayla tutarlılığı korur, malformed satırları güvenle atlar.
-- `SnapshotScheduler`, uygulama açılır açılmaz snapshot alır, ardından konfigüre
-  edilen aralıklarla (`app.rdb.snapshot-interval-seconds`) tekrar eder.
-- `MetricsReporter`, rapor periyodu > 0 olduğunda çalışır, sayaç ve zamanlayıcı
-  istatistiklerini mikro saniye cinsinden yazdırır.
-- `Broker`, sanal thread havuzu ile her mesajı abonelere fan-out eder; yeni
-  abonelikler `AutoCloseable` döndürdüğü için yaşam döngüsü kontrolü kolaydır.
+```bash
+# 1) Geliştirme modunda sunucuyu başlatın
+./mvnw quarkus:dev
 
-## Hızlı başlangıç
+# 2) Temel bir doğrulama yapın
+printf 'set foo 0 5 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
+# Beklenen çıktı: STORED / VALUE foo 0 3
+```
 
-1. **Gereksinimler:** Maven Wrapper (`./mvnw`) ve JDK 25.
-2. **Geliştirme modu:**
-   ```bash
-   ./mvnw quarkus:dev
-   ```
-   Varsayılan cancached uç noktası `0.0.0.0:11211` olarak açılır.
-3. **Paketleme ve çalıştırma:**
-   ```bash
-   ./mvnw package
-   java -jar target/quarkus-app/quarkus-run.jar
-   ```
-4. **İkinci düğümü başlatma (örnek):**
-   ```bash
-   ./mvnw quarkus:dev \
-       -Dquarkus.http.port=0 \
-       -Dapp.network.port=11212 \
-       -Dapp.cluster.replication.port=18081 \
-       -Dapp.cluster.discovery.node-id=node-b
-   ```
-   Multicast koordinasyon diğer düğümleri otomatik keşfeder.
-5. **Hızlı doğrulama:**
-   ```bash
-   printf 'set foo 0 5 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
-   ```
-   Çıktı olarak `STORED` ve `VALUE foo 0 3` satırları beklenir.
+Paketleme sonrası çalıştırmak için:
 
-## Yapılandırma referansı
+```bash
+./mvnw package
+java -jar target/quarkus-app/quarkus-run.jar
+```
 
-`application.properties` altında tanımlı başlıca anahtarlar:
+## Küme Kurulum Örneği
+
+Tek JVM'den kümelenmiş bir yapıya geçiş bu kadar kolay:
+
+```bash
+# Varsayılan node
+./mvnw quarkus:dev
+
+# İkinci node (farklı portlarla)
+./mvnw quarkus:dev \
+    -Dquarkus.http.port=0 \
+    -Dapp.network.port=11212 \
+    -Dapp.cluster.replication.port=18081 \
+    -Dapp.cluster.discovery.node-id=node-b
+```
+
+Multicast koordinasyon, yeni node'u otomatik keşfeder ve tutarlı hash halkasına ekler. Yazmalar quorum tamamlanana kadar bekler; başarısız takipçiler için hinted handoff devreye girer.
+
+## Yapılandırma Sihirbazı
+
+`application.properties` altında sizi bekleyen başlıca anahtarlar:
 
 | Anahtar | Açıklama | Varsayılan |
 | --- | --- | --- |
@@ -162,13 +127,13 @@ flowchart LR
 | `app.cluster.discovery.multicast-group/port` | Multicast koordinasyon adresi. | 230.0.0.1 / 45565 |
 | `app.cluster.discovery.heartbeat-interval-millis` | Kalp atışı aralığı. | 5000 |
 | `app.cluster.discovery.failure-timeout-millis` | Üye zaman aşımı eşiği. | 15000 |
-| `app.cluster.discovery.node-id` | Opsiyonel sabit düğüm kimliği. | boş |
+| `app.cluster.discovery.node-id` | Opsiyonel sabit düğüm kimliği. | (boş) |
 | `app.cluster.replication.bind-host/advertise-host/port` | Replikasyon sunucusu adres bilgileri. | 0.0.0.0 / 127.0.0.1 / 18080 |
 | `app.cluster.replication.connect-timeout-millis` | Uzak düğüme bağlanma zaman aşımı. | 5000 |
 | `app.network.host/port/backlog/worker-threads` | cancached TCP sunucusu ayarları. | 0.0.0.0 / 11211 / 128 / 16 |
 | `app.metrics.report-interval-seconds` | Metrik raporlama periyodu; 0 devre dışı. | 5 |
 
-## Dizin rehberi
+## Proje Yapısı
 
 | Dizin | İçerik |
 | --- | --- |
@@ -183,24 +148,27 @@ flowchart LR
 | `src/main/java/com/can/config` | CDI yapılandırması ve tip güvenli konfigürasyon arayüzleri. |
 | `integration-tests/` | Docker Compose ile çalışan uçtan uca cancached uyumluluk testleri. |
 | `performance-tests/` | JMeter planları ve NFR dokümanları. |
+| `scripts/` | Yardımcı komut dosyaları (`run-integration-tests.sh` vb.). |
 
-## Geliştirme notları
+## Yol Haritası
 
-- Snapshot çıktısı varsayılan olarak depo kökündeki `data.rdb` dosyasına yazılır;
-  yerel geliştirmede dosyayı silmek temiz başlangıç sağlar.
-- `MetricsReporter`ı devre dışı bırakmak için `app.metrics.report-interval-seconds=0`
-  değerini verin; servis kapanır ve raporlama yapılmaz.
-- Özel veri türleri için `Codec<T>` implementasyonu yazabilir, `CacheEngine.builder`
-  ile farklı codec/tahliye stratejileri tanımlayabilirsiniz.
-- Yeni tahliye algoritmaları, `EvictionPolicy` arayüzünü uygulayıp
-  `EvictionPolicyType` içine enum değeri eklenerek entegre edilebilir.
-- `Broker.subscribe` tarafından döndürülen `AutoCloseable`, abonelik yaşam
-  döngüsünü manuel olarak yönetmenizi sağlar; kaynak kaçaklarını engelleyiniz.
+- [ ] Ek replikasyon stratejileri (örn. aktif-aktif senaryolar için CRDT araştırması)
+- [ ] Opsiyonel REST/HTTP yönetim ucu
+- [ ] Prometheus metrik ihracı
+- [ ] Otomatik benchmark pipeline'ı (JMeter + GitHub Actions)
+- [ ] Helm chart ile Kubernetes dağıtımı
 
-## Test ve doğrulama
+> Fikirlerin mi var? [Issue aç](../../issues) veya PR gönder!
 
-- `./mvnw test` komutu birim testlerini (varsa) çalıştırır.
-- `./scripts/run-integration-tests.sh` cancached uyumluluğunu Docker Compose
-  üzerinden uçtan uca doğrular.
-- Performans regresyonları için `performance-tests/jmeter` altındaki JMeter
-  senaryoları kullanılabilir.
+## Katkı & Geri Bildirim
+
+1. Depoyu forklayın ve `main` üzerine değişikliklerinizi rebase edin.
+2. Kod stilini koruyarak anlamlı commit mesajları yazın.
+3. `./mvnw test` ve gerekiyorsa `./scripts/run-integration-tests.sh` ile doğrulayın.
+4. Deneyimlerinizi, performans ölçümlerinizi veya yeni kullanım senaryolarınızı paylaşın — proje bu geri bildirimlerle büyüyor.
+
+Sorularınız mı var? Bir [issue](../../issues/new) açabilir veya doğrudan Pull Request ile gelebilirsiniz.
+
+## Lisans
+
+Bu depo şu an için ayrı bir lisans dosyası içermiyor. Kullanım koşulları ve lisanslama ile ilgili sorularınızı lütfen depo sahibine yöneltin.
