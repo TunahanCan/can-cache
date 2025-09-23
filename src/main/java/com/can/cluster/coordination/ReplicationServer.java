@@ -3,6 +3,7 @@ package com.can.cluster.coordination;
 import com.can.cluster.ClusterState;
 import com.can.config.AppProperties;
 import com.can.core.CacheEngine;
+import io.vertx.core.WorkerExecutor;
 import io.quarkus.runtime.Startup;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -23,9 +24,6 @@ import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
 /**
  * Diğer düğümlerden gelen replikasyon komutlarını kabul ederek {@link CacheEngine}
  * üzerinde doğrudan uygulayan hafif TCP sunucusudur. Protokol, {@link RemoteNode}
@@ -41,22 +39,25 @@ public class ReplicationServer implements AutoCloseable
     private final CacheEngine<String, String> engine;
     private final AppProperties.Replication config;
     private final ClusterState clusterState;
+    private final WorkerExecutor workerExecutor;
 
     private volatile boolean running;
     private ServerSocket serverSocket;
-    private ExecutorService workers;
     private Thread acceptThread;
 
     @Inject
-    public ReplicationServer(CacheEngine<String, String> engine, ClusterState clusterState, AppProperties properties) {
+    public ReplicationServer(CacheEngine<String, String> engine,
+                             ClusterState clusterState,
+                             AppProperties properties,
+                             WorkerExecutor workerExecutor) {
         this.engine = engine;
         this.clusterState = clusterState;
         this.config = properties.cluster().replication();
+        this.workerExecutor = workerExecutor;
     }
 
     @PostConstruct
     void start() {
-        workers = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
         try {
             serverSocket = new ServerSocket();
             serverSocket.bind(new InetSocketAddress(config.bindHost(), config.port()));
@@ -79,7 +80,14 @@ public class ReplicationServer implements AutoCloseable
             try {
                 Socket socket = serverSocket.accept();
                 socket.setTcpNoDelay(true);
-                workers.execute(() -> handleClient(socket));
+                workerExecutor.executeBlocking(promise -> {
+                    try {
+                        handleClient(socket);
+                        promise.complete();
+                    } catch (Exception e) {
+                        promise.fail(e);
+                    }
+                }, false);
             } catch (SocketException e) {
                 if (running) {
                     LOG.warn("Replication server socket closed unexpectedly", e);
@@ -295,9 +303,6 @@ public class ReplicationServer implements AutoCloseable
         }
         if (acceptThread != null) {
             acceptThread.interrupt();
-        }
-        if (workers != null) {
-            workers.shutdownNow();
         }
     }
     private static final class StreamWriteException extends RuntimeException

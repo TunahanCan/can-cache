@@ -5,15 +5,13 @@ import com.can.metric.Counter;
 import com.can.metric.MetricsRegistry;
 import com.can.metric.Timer;
 import com.can.pubsub.Broker;
+import io.vertx.core.Vertx;
 
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.DelayQueue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Anahtar-değer çiftlerini segmentlere bölerek depolayan, TTL yönetimi yapan,
@@ -27,8 +25,9 @@ public final class CacheEngine<K,V> implements AutoCloseable
     private final int segments;
     private final CacheSegment<K>[] table;
     private final DelayQueue<ExpiringKey> ttlQueue = new DelayQueue<>();
-    private final ScheduledExecutorService cleaner; // virtual thread scheduled
     private final long cleanerPollMillis;
+    private final Vertx vertx;
+    private long cleanerTimerId = -1L;
 
     private final Codec<K> keyCodec;
     private final Codec<V> valCodec;
@@ -43,7 +42,8 @@ public final class CacheEngine<K,V> implements AutoCloseable
     private CacheEngine(int segments, int maxCapacity, long cleanerPollMillis,
                         EvictionPolicyType evictionPolicy,
                         Codec<K> keyCodec, Codec<V> valCodec,
-                        MetricsRegistry metrics, Broker broker) {
+                        MetricsRegistry metrics, Broker broker,
+                        Vertx vertx) {
         this.segments = segments;
         this.table = new CacheSegment[segments];
         int per = Math.max(1, maxCapacity / segments);
@@ -52,6 +52,7 @@ public final class CacheEngine<K,V> implements AutoCloseable
         this.cleanerPollMillis = cleanerPollMillis;
         this.keyCodec = keyCodec; this.valCodec = valCodec;
         this.metrics = metrics; this.broker = broker;
+        this.vertx = Objects.requireNonNull(vertx, "vertx");
 
         if (metrics != null){
             this.hits = metrics.counter("cache_hits");
@@ -64,7 +65,6 @@ public final class CacheEngine<K,V> implements AutoCloseable
             this.hits=this.misses=this.evictions=null; this.tGet=this.tSet=this.tDel=null;
         }
 
-        this.cleaner = Executors.newScheduledThreadPool(1, Thread.ofVirtual().factory());
         startCleaner();
     }
 
@@ -78,7 +78,7 @@ public final class CacheEngine<K,V> implements AutoCloseable
     {
         private int segments = 8, maxCapacity = 10_000; private long cleanerPollMillis = 100;
         private final Codec<K> keyCodec; private final Codec<V> valCodec;
-        private MetricsRegistry metrics; private Broker broker;
+        private MetricsRegistry metrics; private Broker broker; private Vertx vertx;
         private EvictionPolicyType evictionPolicy = EvictionPolicyType.LRU;
         public Builder(Codec<K> keyCodec, Codec<V> valCodec){ this.keyCodec=keyCodec; this.valCodec=valCodec; }
         public Builder<K,V> segments(int s){ this.segments=s; return this; }
@@ -86,25 +86,34 @@ public final class CacheEngine<K,V> implements AutoCloseable
         public Builder<K,V> cleanerPollMillis(long ms){ this.cleanerPollMillis=ms; return this; }
         public Builder<K,V> metrics(MetricsRegistry m){ this.metrics=m; return this; }
         public Builder<K,V> broker(Broker b){ this.broker=b; return this; }
+        public Builder<K,V> vertx(Vertx vertx){ this.vertx=Objects.requireNonNull(vertx); return this; }
         public Builder<K,V> evictionPolicy(EvictionPolicyType p){ this.evictionPolicy=Objects.requireNonNull(p); return this; }
         public CacheEngine<K,V> build(){ return new CacheEngine<>(segments, maxCapacity, cleanerPollMillis, evictionPolicy,
-                keyCodec, valCodec, metrics, broker); }
+                keyCodec, valCodec, metrics, broker, Objects.requireNonNull(vertx, "vertx")); }
     }
     private int segIndex(Object key){ return (key.hashCode() & 0x7fffffff) % segments; }
     private CacheSegment<K> seg(Object key){ return table[segIndex(key)]; }
 
     private void startCleaner() {
-        cleaner.scheduleWithFixedDelay(() -> {
-            try {
-                ExpiringKey ek;
-                while ((ek = ttlQueue.poll()) != null) {
-                    CacheSegment<K> segment = table[ek.segmentIndex()];
-                    if (segment.removeIfMatches((K) ek.key(), ek.expireAtMillis()) && evictions != null) {
-                        evictions.inc();
-                    }
+        cleanerTimerId = vertx.setPeriodic(cleanerPollMillis, id ->
+                vertx.executeBlocking(promise -> {
+                    runCleaner();
+                    promise.complete();
+                })
+        );
+    }
+
+    private void runCleaner() {
+        try {
+            ExpiringKey ek;
+            while ((ek = ttlQueue.poll()) != null) {
+                CacheSegment<K> segment = table[ek.segmentIndex()];
+                if (segment.removeIfMatches((K) ek.key(), ek.expireAtMillis()) && evictions != null) {
+                    evictions.inc();
                 }
-            } catch (Throwable ignored) {}
-        }, cleanerPollMillis, cleanerPollMillis, TimeUnit.MILLISECONDS);
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     private void notifyRemoval(K key) {
@@ -292,7 +301,10 @@ public final class CacheEngine<K,V> implements AutoCloseable
 
     @Override
     public void close(){
-        cleaner.shutdownNow();
+        if (cleanerTimerId >= 0L) {
+            vertx.cancelTimer(cleanerTimerId);
+            cleanerTimerId = -1L;
+        }
     }
 
     @FunctionalInterface

@@ -2,13 +2,13 @@ package com.can.metric;
 
 import com.can.config.AppProperties;
 import io.quarkus.runtime.Startup;
+import io.vertx.core.Vertx;
+import io.vertx.core.WorkerExecutor;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -23,17 +23,21 @@ public class MetricsReporter implements AutoCloseable
 {
     private final MetricsRegistry registry;
     private final long intervalSeconds;
+    private final Vertx vertx;
+    private final WorkerExecutor workerExecutor;
     private final AtomicBoolean running = new AtomicBoolean(false);
-    private ScheduledExecutorService executor;
+    private long timerId = -1L;
 
     @Inject
-    public MetricsReporter(MetricsRegistry registry, AppProperties properties) {
-        this(registry, properties.metrics().reportIntervalSeconds());
+    public MetricsReporter(MetricsRegistry registry, AppProperties properties, Vertx vertx, WorkerExecutor workerExecutor) {
+        this(registry, properties.metrics().reportIntervalSeconds(), vertx, workerExecutor);
     }
 
-    public MetricsReporter(MetricsRegistry registry, long intervalSeconds) {
+    public MetricsReporter(MetricsRegistry registry, long intervalSeconds, Vertx vertx, WorkerExecutor workerExecutor) {
         this.registry = registry;
         this.intervalSeconds = intervalSeconds;
+        this.vertx = vertx;
+        this.workerExecutor = workerExecutor;
     }
 
     @PostConstruct
@@ -45,8 +49,13 @@ public class MetricsReporter implements AutoCloseable
         if (intervalSeconds <= 0 || !running.compareAndSet(false, true)) {
             return;
         }
-        executor = Executors.newScheduledThreadPool(2, Thread.ofVirtual().factory());
-        executor.scheduleAtFixedRate(this::dump, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
+        long periodMillis = TimeUnit.SECONDS.toMillis(intervalSeconds);
+        timerId = vertx.setPeriodic(periodMillis, id ->
+                workerExecutor.executeBlocking(promise -> {
+                    dump();
+                    promise.complete();
+                })
+        );
     }
 
     public boolean isRunning() {
@@ -81,9 +90,9 @@ public class MetricsReporter implements AutoCloseable
     @Override
     public synchronized void close() {
         running.set(false);
-        if (executor != null) {
-            executor.shutdownNow();
-            executor = null;
+        if (timerId >= 0L) {
+            vertx.cancelTimer(timerId);
+            timerId = -1L;
         }
     }
 }
