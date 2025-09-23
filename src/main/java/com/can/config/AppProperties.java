@@ -104,6 +104,9 @@ public interface AppProperties
         @WithDefault("128")
         int backlog();
 
+        @WithDefault("0")
+        int eventLoopThreads();
+
         @WithDefault("16")
         int workerThreads();
     }
