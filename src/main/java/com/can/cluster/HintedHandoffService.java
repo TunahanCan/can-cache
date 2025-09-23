@@ -1,5 +1,9 @@
 package com.can.cluster;
 
+import com.can.cluster.handoff.CasHint;
+import com.can.cluster.handoff.DeleteHint;
+import com.can.cluster.handoff.Hint;
+import com.can.cluster.handoff.SetHint;
 import com.can.metric.Counter;
 import com.can.metric.MetricsRegistry;
 import org.jboss.logging.Logger;
@@ -103,56 +107,6 @@ public final class HintedHandoffService
         }
         if (replayed != null && replayedCount > 0) {
             replayed.add(replayedCount);
-        }
-    }
-
-    interface Hint
-    {
-        boolean replay(com.can.cluster.Node<String, String> node);
-    }
-
-    private record SetHint(String key, String value, Duration ttl) implements Hint
-    {
-        @Override
-        public boolean replay(com.can.cluster.Node<String, String> node)
-        {
-            return node.set(key, value, ttl);
-        }
-
-        @Override
-        public String toString()
-        {
-            return "SetHint{" + key + '}';
-        }
-    }
-
-    private record DeleteHint(String key) implements Hint
-    {
-        @Override
-        public boolean replay(com.can.cluster.Node<String, String> node)
-        {
-            return node.delete(key);
-        }
-
-        @Override
-        public String toString()
-        {
-            return "DeleteHint{" + key + '}';
-        }
-    }
-
-    private record CasHint(String key, String value, long expectedCas, Duration ttl) implements Hint
-    {
-        @Override
-        public boolean replay(com.can.cluster.Node<String, String> node)
-        {
-            return node.compareAndSwap(key, value, expectedCas, ttl);
-        }
-
-        @Override
-        public String toString()
-        {
-            return "CasHint{" + key + '}';
         }
     }
 }

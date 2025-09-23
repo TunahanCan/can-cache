@@ -4,6 +4,11 @@ import com.can.cluster.ClusterClient;
 import com.can.config.AppProperties;
 import com.can.core.CacheEngine;
 import com.can.core.StoredValueCodec;
+import com.can.net.protocol.CommandAction;
+import com.can.net.protocol.CommandResult;
+import com.can.net.protocol.ImmediateCommand;
+import com.can.net.protocol.PendingStorageCommand;
+import com.can.net.protocol.StorageCommand;
 import io.quarkus.runtime.Startup;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -766,73 +771,6 @@ public class CanCachedServer implements AutoCloseable
             } catch (RuntimeException e) {
                 LOG.debug("Failed to close net server", e);
             }
-        }
-    }
-
-    private interface CommandAction
-    {
-    }
-
-    private static final class ImmediateCommand implements CommandAction
-    {
-        private final Supplier<CommandResult> executor;
-
-        private ImmediateCommand(Supplier<CommandResult> executor)
-        {
-            this.executor = executor;
-        }
-
-        private Supplier<CommandResult> executor()
-        {
-            return executor;
-        }
-    }
-
-    private static final class StorageCommand implements CommandAction
-    {
-        private final PendingStorageCommand pending;
-
-        private StorageCommand(PendingStorageCommand pending)
-        {
-            this.pending = pending;
-        }
-
-        private PendingStorageCommand pending()
-        {
-            return pending;
-        }
-    }
-
-    private record PendingStorageCommand(String command,
-                                         String key,
-                                         int flags,
-                                         Duration ttl,
-                                         int bytes,
-                                         boolean noreply,
-                                         boolean isCas,
-                                         long casUnique)
-    {
-        int totalLength()
-        {
-            return bytes + CRLF.length;
-        }
-    }
-
-    private record CommandResult(Buffer response, boolean keepAlive)
-    {
-        static CommandResult continueWith(Buffer response)
-        {
-            return new CommandResult(response, true);
-        }
-
-        static CommandResult continueWithoutResponse()
-        {
-            return new CommandResult(null, true);
-        }
-
-        static CommandResult terminate()
-        {
-            return new CommandResult(null, false);
         }
     }
 

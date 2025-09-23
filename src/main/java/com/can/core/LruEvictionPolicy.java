@@ -1,5 +1,7 @@
 package com.can.core;
 
+import com.can.core.model.CacheValue;
+
 import java.util.LinkedHashMap;
 
 /**

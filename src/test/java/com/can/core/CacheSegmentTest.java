@@ -1,5 +1,8 @@
 package com.can.core;
 
+import com.can.core.model.CacheValue;
+import com.can.core.model.CasDecision;
+import com.can.core.model.CasResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -106,8 +109,8 @@ class CacheSegmentTest
             CacheValue initial = new CacheValue(new byte[]{1}, 0);
             segment.put("a", initial);
 
-            CacheSegment.CasResult result = segment.compareAndSwap("a", existing ->
-                    CacheSegment.CasDecision.success(new CacheValue(new byte[]{2}, 5L)));
+            CasResult result = segment.compareAndSwap("a", existing ->
+                    CasDecision.success(new CacheValue(new byte[]{2}, 5L)));
 
             assertTrue(result.success());
             CacheValue stored = segment.get("a");
@@ -123,7 +126,7 @@ class CacheSegmentTest
             CacheValue initial = new CacheValue(new byte[]{1}, 0);
             segment.put("a", initial);
 
-            CacheSegment.CasResult result = segment.compareAndSwap("a", existing -> CacheSegment.CasDecision.expired());
+            CasResult result = segment.compareAndSwap("a", existing -> CasDecision.expired());
 
             assertFalse(result.success());
             assertNull(segment.get("a"));
@@ -137,7 +140,7 @@ class CacheSegmentTest
             CacheValue initial = new CacheValue(new byte[]{1}, 0);
             segment.put("a", initial);
 
-            CacheSegment.CasResult result = segment.compareAndSwap("a", existing -> null);
+            CasResult result = segment.compareAndSwap("a", existing -> null);
 
             assertFalse(result.success());
             assertNull(result.newValue());

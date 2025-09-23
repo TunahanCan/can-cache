@@ -1,6 +1,10 @@
 package com.can.core;
 
 import com.can.codec.Codec;
+import com.can.core.model.CacheValue;
+import com.can.core.model.CasDecision;
+import com.can.core.model.CasResult;
+import com.can.core.model.ExpiringKey;
 import com.can.metric.Counter;
 import com.can.metric.MetricsRegistry;
 import com.can.metric.Timer;
@@ -163,24 +167,24 @@ public final class CacheEngine<K,V> implements AutoCloseable
         CacheSegment<K> segment = seg(key);
         int idx = segIndex(key);
         long now = System.currentTimeMillis();
-        CacheSegment.CasResult result = segment.compareAndSwap(key, existing -> {
+        CasResult result = segment.compareAndSwap(key, existing -> {
             if (existing == null) {
-                return CacheSegment.CasDecision.fail();
+                return CasDecision.fail();
             }
             if (existing.expired(now)) {
-                return CacheSegment.CasDecision.expired();
+                return CasDecision.expired();
             }
             @SuppressWarnings("unchecked")
             String encoded = (String) valCodec.decode(existing.value());
             StoredValueCodec.StoredValue stored = StoredValueCodec.decode(encoded);
             if (stored.cas() != expectedCas) {
-                return CacheSegment.CasDecision.fail();
+                return CasDecision.fail();
             }
             long expireAt = existing.expireAtMillis();
             if (ttl != null) {
                 expireAt = computeExpireAt(ttl, now);
             }
-            return CacheSegment.CasDecision.success(new CacheValue(valCodec.encode(value), expireAt));
+            return CasDecision.success(new CacheValue(valCodec.encode(value), expireAt));
         });
         boolean success = result.success();
         if (success) {

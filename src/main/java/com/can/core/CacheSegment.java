@@ -1,11 +1,15 @@
 package com.can.core;
 
+import com.can.core.model.CacheValue;
+import com.can.core.model.CasDecision;
+import com.can.core.model.CasResult;
+
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.BiConsumer;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiConsumer;
 
 /**
  * Önbellek kapasitesini parçalara ayırarak eşzamanlı erişimi azaltan segment
@@ -117,7 +121,7 @@ final class CacheSegment<K>
         }
     }
 
-    CacheSegment.CasResult compareAndSwap(K key, java.util.function.Function<CacheValue, CasDecision> decisionFn) {
+    CasResult compareAndSwap(K key, java.util.function.Function<CacheValue, CasDecision> decisionFn) {
         lock.lock();
         try {
             CacheValue existing = map.get(key);
@@ -125,22 +129,22 @@ final class CacheSegment<K>
             if (decision == null) {
                 return new CasResult(false, null);
             }
-            if (existing != null && decision.recordAccess) {
+            if (existing != null && decision.recordAccess()) {
                 policy.recordAccess(key);
             }
-            if (decision.removeExisting && existing != null) {
+            if (decision.removeExisting() && existing != null) {
                 if (map.remove(key) != null) {
                     policy.onRemove(key);
-                    if (decision.notifyRemoval) {
+                    if (decision.notifyRemoval()) {
                         notifyRemoval(key);
                     }
                 }
                 existing = null;
             }
-            if (decision.success && decision.newValue != null) {
-                map.put(key, decision.newValue);
+            if (decision.success() && decision.newValue() != null) {
+                map.put(key, decision.newValue());
             }
-            return new CasResult(decision.success, decision.newValue);
+            return new CasResult(decision.success(), decision.newValue());
         } finally {
             lock.unlock();
         }
@@ -164,25 +168,6 @@ final class CacheSegment<K>
         if (removalListener != null) {
             removalListener.onRemoval(key);
         }
-    }
-
-    record CasResult(boolean success, CacheValue newValue) {
-    }
-
-    record CasDecision(boolean success, CacheValue newValue, boolean removeExisting, boolean notifyRemoval,
-                       boolean recordAccess)
-    {
-        static CasDecision success(CacheValue newValue) {
-                return new CasDecision(true, newValue, false, false, true);
-            }
-
-            static CasDecision fail() {
-                return new CasDecision(false, null, false, false, false);
-            }
-
-            static CasDecision expired() {
-                return new CasDecision(false, null, true, true, false);
-            }
     }
 
     void clear() {
