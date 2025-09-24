@@ -43,11 +43,32 @@ if [[ ${profile} == "--" ]]; then
   profile="small"
 fi
 
+sibling_mvnw="$(dirname "$0")/../mvnw"
 sampler_jar_rel="performance-tests/java-sampler/target/can-cache-jmeter-sampler-0.0.1-SNAPSHOT.jar"
 local_jmeter_env=()
 docker_jmeter_env=()
 local_classpath=${JMETER_ADD_CLASSPATH:-}
 docker_classpath=${JMETER_ADD_CLASSPATH:-}
+
+ensure_sampler_jar() {
+  if [[ -f "${sampler_jar_rel}" ]]; then
+    return 0
+  fi
+
+  if [[ -x ./mvnw ]]; then
+    echo "Java sampler JAR not found at ${sampler_jar_rel}, attempting to build it" >&2
+    ./mvnw -q -f performance-tests/java-sampler/pom.xml package >&2
+  elif [[ -x ${sibling_mvnw} ]]; then
+    echo "Java sampler JAR not found at ${sampler_jar_rel}, attempting to build it" >&2
+    "${sibling_mvnw}" -q -f performance-tests/java-sampler/pom.xml package >&2
+  else
+    echo "Warning: Java sampler JAR not found at ${sampler_jar_rel}. Build it with ./mvnw -f performance-tests/java-sampler/pom.xml package" >&2
+    return 1
+  fi
+}
+
+ensure_sampler_jar || true
+
 if [[ -f "${sampler_jar_rel}" ]]; then
   sampler_abs="$(pwd)/${sampler_jar_rel}"
   if [[ -n ${local_classpath} ]]; then
@@ -57,8 +78,6 @@ if [[ -f "${sampler_jar_rel}" ]]; then
     local_classpath=${sampler_abs}
     docker_classpath=/workspace/${sampler_jar_rel}
   fi
-elif [[ -z ${local_classpath} ]]; then
-  echo "Warning: Java sampler JAR not found at ${sampler_jar_rel}. Build it with ./mvnw -f performance-tests/java-sampler/pom.xml package" >&2
 fi
 
 if [[ -n ${local_classpath} ]]; then
