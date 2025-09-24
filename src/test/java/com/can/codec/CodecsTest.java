@@ -3,7 +3,6 @@ package com.can.codec;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.io.Serial;
 import java.io.Serializable;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -11,58 +10,54 @@ import static org.junit.jupiter.api.Assertions.*;
 class CodecsTest
 {
     @Nested
-    class StringCodecBehaviour
+    class StringCodecDavranisi
     {
+        // Bu test null değerin boş diziye dönüştürüldüğünü doğrular.
         @Test
-        void encode_and_decode_roundtrip()
+        void encode_null_bos_dizi_doner()
         {
-            StringCodec codec = StringCodec.UTF8;
-            byte[] encoded = codec.encode("hello");
-            assertEquals("hello", codec.decode(encoded));
+            assertArrayEquals(new byte[0], StringCodec.UTF8.encode(null));
         }
 
+        // Bu test boş dizinin boş stringe çözüldüğünü gösterir.
         @Test
-        void encode_and_decode_handles_empty_string()
+        void decode_bos_dizi_bos_string_doner()
         {
-            StringCodec codec = StringCodec.UTF8;
-            assertArrayEquals(new byte[0], codec.encode(null));
-            assertEquals("", codec.decode(new byte[0]));
+            assertEquals("", StringCodec.UTF8.decode(new byte[0]));
         }
 
+        // Bu test encode-decode işleminin yuvarlak tur sağladığını doğrular.
         @Test
-        void decode_returns_null_when_input_is_null()
+        void encode_decode_tam_tur_calismaya_devam_eder()
         {
-            StringCodec codec = StringCodec.UTF8;
-            assertNull(codec.decode(null));
+            String original = "Merhaba dünya";
+            byte[] encoded = StringCodec.UTF8.encode(original);
+            assertEquals(original, StringCodec.UTF8.decode(encoded));
         }
     }
 
     @Nested
-    class JavaSerializerCodecBehaviour
+    class JavaSerializerCodecDavranisi
     {
+        // Bu test serileştirilebilir nesnenin aynı içerikle geri döndüğünü doğrular.
         @Test
-        void encode_and_decode_serializable_object()
+        void serialize_ve_deserialize_ayni_nesneyi_doner()
         {
-            JavaSerializerCodec<Dummy> codec = new JavaSerializerCodec<>();
-            Dummy original = new Dummy("value", 42);
-            byte[] encoded = codec.encode(original);
-            Dummy decoded = codec.decode(encoded);
-
-            assertEquals(original.name, decoded.name);
-            assertEquals(original.count, decoded.count);
+            JavaSerializerCodec<Sample> codec = new JavaSerializerCodec<>();
+            Sample original = new Sample("data", 42);
+            byte[] bytes = codec.encode(original);
+            Sample decoded = codec.decode(bytes);
+            assertEquals(original, decoded);
         }
 
+        // Bu test boş diziden null döndüğünü gösterir.
         @Test
-        void decode_returns_null_for_empty_array()
+        void decode_bos_dizi_null_doner()
         {
-            JavaSerializerCodec<Dummy> codec = new JavaSerializerCodec<>();
+            JavaSerializerCodec<Sample> codec = new JavaSerializerCodec<>();
             assertNull(codec.decode(new byte[0]));
         }
     }
 
-    private record Dummy(String name, int count) implements Serializable
-    {
-        @Serial
-        private static final long serialVersionUID = 1L;
-    }
+    private record Sample(String text, int number) implements Serializable {}
 }

@@ -11,87 +11,102 @@ import static org.junit.jupiter.api.Assertions.*;
 class EvictionPoliciesTest
 {
     @Nested
-    class LruPolicy
+    class TipCozumleme
     {
-        private final LruEvictionPolicy<String> policy = new LruEvictionPolicy<>();
-
+        // Bu test yapılandırma değeri boş olduğunda LRU politikasının seçildiğini doğrular.
         @Test
-        void admit_allows_when_capacity_not_reached()
+        void from_config_bos_deger_lru_doner()
         {
+            assertEquals(EvictionPolicyType.LRU, EvictionPolicyType.fromConfig(null));
+            assertEquals(EvictionPolicyType.LRU, EvictionPolicyType.fromConfig(" "));
+        }
+
+        // Bu test farklı yazımlarla verilen TinyLFU değerinin doğru çözümlendiğini gösterir.
+        @Test
+        void from_config_tiny_lfu_normalize_edilir()
+        {
+            assertEquals(EvictionPolicyType.TINY_LFU, EvictionPolicyType.fromConfig("tiny-lfu"));
+            assertEquals(EvictionPolicyType.TINY_LFU, EvictionPolicyType.fromConfig("Tiny_Lfu"));
+        }
+
+        // Bu test bilinmeyen politika değerinde istisna fırlatıldığını doğrular.
+        @Test
+        void from_config_bilinmeyen_deger_hata_firlatir()
+        {
+            assertThrows(IllegalArgumentException.class, () -> EvictionPolicyType.fromConfig("unknown"));
+        }
+    }
+
+    @Nested
+    class LruDavranisi
+    {
+        // Bu test kapasite dolmadığında yeni anahtarın doğrudan kabul edildiğini gösterir.
+        @Test
+        void lru_bos_kapasitede_adayi_kabul_eder()
+        {
+            LruEvictionPolicy<String> policy = new LruEvictionPolicy<>();
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
-            map.put("a", new CacheValue(new byte[]{1}, 0));
-            EvictionPolicy.AdmissionDecision<String> decision = policy.admit("b", map, 2);
+            var decision = policy.admit("candidate", map, 2);
             assertTrue(decision.shouldAdmit());
             assertNull(decision.evictKey());
         }
 
+        // Bu test kapasite dolduğunda en eski girdinin kurban seçildiğini doğrular.
         @Test
-        void admit_evicts_eldest_when_full()
+        void lru_dolulukta_en_eskisini_kurban_secer()
         {
+            LruEvictionPolicy<String> policy = new LruEvictionPolicy<>();
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
-            map.put("first", new CacheValue(new byte[]{1}, 0));
-            map.put("second", new CacheValue(new byte[]{2}, 0));
-
-            EvictionPolicy.AdmissionDecision<String> decision = policy.admit("third", map, 2);
+            map.put("old", new CacheValue(new byte[]{1}, 0L));
+            map.put("young", new CacheValue(new byte[]{2}, 0L));
+            var decision = policy.admit("candidate", map, 2);
             assertTrue(decision.shouldAdmit());
-            assertEquals("first", decision.evictKey());
+            assertEquals("old", decision.evictKey());
         }
     }
 
     @Nested
-    class TinyLfuPolicy
+    class TinyLfuDavranisi
     {
+        // Bu test boş kapasitede TinyLFU'nun adayı kabul ettiğini doğrular.
         @Test
-        void admit_rejects_when_candidate_less_frequent()
+        void tiny_lfu_bos_kapasitede_adayi_kabul_eder()
         {
-            TinyLfuEvictionPolicy<String> policy = new TinyLfuEvictionPolicy<>(1);
+            TinyLfuEvictionPolicy<String> policy = new TinyLfuEvictionPolicy<>(2);
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
-            map.put("victim", new CacheValue(new byte[]{1}, 0));
-
-            for (int i = 0; i < 10; i++) policy.recordAccess("victim");
-            policy.recordAccess("candidate");
-
-            EvictionPolicy.AdmissionDecision<String> decision = policy.admit("candidate", map, 1);
-            assertFalse(decision.shouldAdmit());
+            var decision = policy.admit("candidate", map, 2);
+            assertTrue(decision.shouldAdmit());
+            assertNull(decision.evictKey());
         }
 
+        // Bu test adayın frekansı kurbandan yüksek olduğunda kabul edildiğini gösterir.
         @Test
-        void admit_prefers_more_frequent_candidate()
+        void tiny_lfu_yuksek_frekansli_adayi_kabul_eder()
         {
             TinyLfuEvictionPolicy<String> policy = new TinyLfuEvictionPolicy<>(1);
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
-            map.put("victim", new CacheValue(new byte[]{1}, 0));
-
-            for (int i = 0; i < 5; i++) policy.recordAccess("victim");
-            for (int i = 0; i < 20; i++) policy.recordAccess("candidate");
-
-            EvictionPolicy.AdmissionDecision<String> decision = policy.admit("candidate", map, 1);
+            map.put("victim", new CacheValue(new byte[]{1}, 0L));
+            policy.recordAccess("victim");
+            policy.recordAccess("candidate");
+            policy.recordAccess("candidate");
+            policy.recordAccess("candidate");
+            var decision = policy.admit("candidate", map, 1);
             assertTrue(decision.shouldAdmit());
             assertEquals("victim", decision.evictKey());
         }
-    }
 
-    @Nested
-    class TypeMapping
-    {
+        // Bu test adayın frekansı düşük olduğunda reddedildiğini doğrular.
         @Test
-        void from_config_defaults_to_lru()
+        void tiny_lfu_dusuk_frekansli_adayi_reddeder()
         {
-            assertEquals(EvictionPolicyType.LRU, EvictionPolicyType.fromConfig(null));
-            assertEquals(EvictionPolicyType.LRU, EvictionPolicyType.fromConfig(""));
-        }
-
-        @Test
-        void from_config_accepts_various_formats()
-        {
-            assertEquals(EvictionPolicyType.TINY_LFU, EvictionPolicyType.fromConfig("tiny-lfu"));
-            assertEquals(EvictionPolicyType.LRU, EvictionPolicyType.fromConfig("lru"));
-        }
-
-        @Test
-        void from_config_rejects_unknown_values()
-        {
-            assertThrows(IllegalArgumentException.class, () -> EvictionPolicyType.fromConfig("unknown"));
+            TinyLfuEvictionPolicy<String> policy = new TinyLfuEvictionPolicy<>(1);
+            LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
+            map.put("victim", new CacheValue(new byte[]{1}, 0L));
+            policy.recordAccess("victim");
+            policy.recordAccess("victim");
+            policy.recordAccess("candidate");
+            var decision = policy.admit("candidate", map, 1);
+            assertFalse(decision.shouldAdmit());
         }
     }
 }

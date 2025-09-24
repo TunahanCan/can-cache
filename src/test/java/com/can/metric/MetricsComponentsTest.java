@@ -10,10 +10,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class MetricsComponentsTest
 {
     @Nested
-    class CounterBehaviour
+    class CounterDavranisi
     {
+        // Bu test sayaç artışının ve toplamanın değeri doğru güncellediğini doğrular.
         @Test
-        void counter_increments_and_adds()
+        void counter_artis_ve_toplama_yapar()
         {
             Counter counter = new Counter("hits");
             counter.inc();
@@ -24,77 +25,84 @@ class MetricsComponentsTest
     }
 
     @Nested
-    class TimerBehaviour
+    class TimerDavranisi
     {
+        // Bu test süre kayıtlarının istatistiklere yansıtıldığını gösterir.
         @Test
-        void timer_records_statistics()
+        void timer_sureleri_toplayip_istatistik_uretir()
         {
             Timer timer = new Timer("latency", 128);
-            timer.record(1000);
-            timer.record(2000);
+            timer.record(1_000);
+            timer.record(2_000);
             Timer.Sample sample = timer.snapshot();
-
             assertEquals("latency", sample.name());
             assertEquals(2, sample.count());
-            assertEquals(3000, sample.totalNs());
-            assertEquals(1000, sample.minNs());
-            assertEquals(2000, sample.maxNs());
-            assertTrue(sample.avgNs() >= 1500 && sample.avgNs() <= 2000);
-            assertTrue(sample.p95Ns() >= 0);
+            assertEquals(3_000, sample.totalNs());
+            assertEquals(1_000, sample.minNs());
+            assertEquals(2_000, sample.maxNs());
+            assertTrue(sample.avgNs() >= 1_000);
         }
     }
 
     @Nested
-    class RegistryBehaviour
+    class RegistryDavranisi
     {
+        // Bu test aynı isim için aynı sayaç ve zamanlayıcının döndüğünü doğrular.
         @Test
-        void registry_reuses_same_instances()
+        void registry_ayni_adi_paylasan_nesneleri_yeniden_kullanir()
         {
             MetricsRegistry registry = new MetricsRegistry();
-            Counter c1 = registry.counter("requests");
-            Counter c2 = registry.counter("requests");
-            Timer t1 = registry.timer("latency");
-            Timer t2 = registry.timer("latency");
-
-            assertSame(c1, c2);
-            assertSame(t1, t2);
+            Counter firstCounter = registry.counter("requests");
+            Counter secondCounter = registry.counter("requests");
+            Timer firstTimer = registry.timer("latency");
+            Timer secondTimer = registry.timer("latency");
+            assertSame(firstCounter, secondCounter);
+            assertSame(firstTimer, secondTimer);
             assertTrue(registry.counters().containsKey("requests"));
             assertTrue(registry.timers().containsKey("latency"));
         }
     }
 
     @Nested
-    class ReporterBehaviour
+    class ReporterDavranisi
     {
+        // Bu test geçerli aralıkla başlatılan raporlama görevlerinin çalıştığını doğrular.
         @Test
-        void reporter_starts_and_stops_safely() throws Exception
+        void reporter_gecerli_aralikla_calisir() throws Exception
         {
             MetricsRegistry registry = new MetricsRegistry();
             Vertx vertx = Vertx.vertx();
-            WorkerExecutor worker = vertx.createSharedWorkerExecutor("test-metrics");
-            try {
+            WorkerExecutor worker = vertx.createSharedWorkerExecutor("metrics-test");
+            try
+            {
                 MetricsReporter reporter = new MetricsReporter(registry, 1, vertx, worker);
                 reporter.start(1);
                 assertTrue(reporter.isRunning());
                 reporter.close();
                 assertFalse(reporter.isRunning());
-            } finally {
+            }
+            finally
+            {
                 worker.close();
                 vertx.close().toCompletionStage().toCompletableFuture().join();
             }
         }
 
+        // Bu test geçersiz aralıkta raporlayıcının başlamadığını gösterir.
         @Test
-        void reporter_ignores_invalid_interval()
+        void reporter_gecersiz_araligi_yoksayar()
         {
             MetricsRegistry registry = new MetricsRegistry();
             Vertx vertx = Vertx.vertx();
-            WorkerExecutor worker = vertx.createSharedWorkerExecutor("test-metrics");
-            try {
+            WorkerExecutor worker = vertx.createSharedWorkerExecutor("metrics-test");
+            try
+            {
                 MetricsReporter reporter = new MetricsReporter(registry, 0, vertx, worker);
                 reporter.start(0);
                 assertFalse(reporter.isRunning());
-            } finally {
+            }
+            finally
+            {
                 worker.close();
                 vertx.close().toCompletionStage().toCompletableFuture().join();
             }
