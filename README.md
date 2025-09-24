@@ -175,4 +175,6 @@ Sorularınız mı var? Bir [issue](../../issues/new) açabilir veya doğrudan Pu
 
 ## Lisans
 
-Bu depo şu an için ayrı bir lisans dosyası içermiyor. Kullanım koşulları ve lisanslama ile ilgili sorularınızı lütfen depo sahibine yöneltin.
+Bu proje, MIT Lisansı veya Apache Lisansı Sürüm 2.0 koşulları altında çift lisanslanmıştır. Ayrıntılar için [LICENSE-MIT](./LICENSE-MIT) ve [LICENSE-APACHE](./LICENSE-APACHE) dosyalarına göz atabilirsiniz.
+
+Bu depoya katkıda bulunan herkes, katkılarının her iki lisansın koşulları altında da kullanılabileceğini kabul eder.
