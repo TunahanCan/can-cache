@@ -19,7 +19,7 @@ public class CanCacheApplication implements QuarkusApplication
         return 0;
     }
 
-    static void main(String... args) {
+    public static void main(String... args) {
         Quarkus.run(CanCacheApplication.class, args);
     }
 }

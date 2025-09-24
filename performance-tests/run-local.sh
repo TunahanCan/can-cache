@@ -71,10 +71,10 @@ if [[ -n ${docker_classpath} ]]; then
 fi
 
 case "${profile}" in
-  small) plan="performance-tests/jmeter/can-cache-small.jmx" ;;
-  medium) plan="performance-tests/jmeter/can-cache-medium.jmx" ;;
-  large) plan="performance-tests/jmeter/can-cache-large.jmx" ;;
-  xl) plan="performance-tests/jmeter/can-cache-xl.jmx" ;;
+  small) plan="jmeter/can-cache-small.jmx" ;;
+  medium) plan="jmeter/can-cache-medium.jmx" ;;
+  large) plan="jmeter/can-cache-large.jmx" ;;
+  xl) plan="jmeter/can-cache-xl.jmx" ;;
   *)
     echo "Unknown profile: ${profile}" >&2
     usage >&2

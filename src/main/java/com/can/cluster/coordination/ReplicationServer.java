@@ -254,7 +254,7 @@ public class ReplicationServer implements AutoCloseable
             reader.reset();
         }
 
-        private abstract class BaseCommandDecoder implements CommandDecoder
+        private abstract static class BaseCommandDecoder implements CommandDecoder
         {
             protected void ensureLength(int length) throws IOException
             {
