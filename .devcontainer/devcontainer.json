@@ -1,0 +1,34 @@
+// .devcontainer/devcontainer.json
+{
+  "name": "java-25-codespace",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    // Resmi Java feature'ı: JDK 25'i kur ve varsayılan yap
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "25",
+      "jdkDistro": "ms",         // microsoft build of openjdk (varsayılan)
+      "installMaven": "true",    // Maven istersen "true"
+      "mavenVersion": "latest",
+      "installGradle": "true",   // Gradle istersen "true"
+      "gradleVersion": "latest"
+    }
+  },
+  "postCreateCommand": "java -version && mvn -v || true && gradle -v || true",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack"
+      ],
+      "settings": {
+        // VS Code Java eklentisinin JDK 25'i kullanmasını garanti et
+        "java.configuration.runtimes": [
+          {
+            "name": "JavaSE-25",
+            "path": "/usr/local/sdkman/candidates/java/current"
+          }
+        ],
+        "java.jdt.ls.java.home": "/usr/local/sdkman/candidates/java/current"
+      }
+    }
+  }
+}
