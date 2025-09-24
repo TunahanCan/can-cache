@@ -6,12 +6,27 @@ profile and can be executed with the Apache JMeter command line interface.
 
 ## Prerequisites
 
-* Apache JMeter 5.6 or newer with the bundled Groovy runtime.
+* Apache JMeter 5.6 or newer.
 * A running Can Cache instance that listens on the cancached port (default
   `127.0.0.1:11211`). Start the application with `./mvnw quarkus:dev` or use the
   packaged JAR as described in the project README.
 * Optional: a writable `results/` directory to store `.jtl` output files. The
   paths can be overridden with JMeter properties.
+
+
+## Building the Java sampler
+
+The JMeter plans call into a dedicated Java sampler located under `performance-tests/java-sampler`.
+Build it once before running the plans and copy the resulting JAR to the JMeter classpath (or set
+`JMETER_ADD_CLASSPATH`). Using the Maven wrapper from the repository root:
+
+```bash
+./mvnw -f performance-tests/java-sampler/pom.xml package
+```
+
+The command produces `performance-tests/java-sampler/target/can-cache-jmeter-sampler-0.0.1-SNAPSHOT.jar`.
+The helper script `performance-tests/run-local.sh` automatically wires this JAR for both local
+and Dockerised executions when it is present.
 
 ## Running the plans
 
@@ -56,8 +71,8 @@ Commonly used override properties:
 | `durationSeconds` | Total runtime of the thread group (plan-specific default). | varies |
 | `resultFile` | Output `.jtl` path for aggregated metrics. | `performance-tests/results/can-cache-<profile>.jtl` |
 
-All plans rely on a Groovy JSR223 sampler that performs a full cancached
-round-trip (set, get, delete) and validates responses. The thread groups run for
+All plans rely on a Java sampler (`com.can.cache.perf.CancachedRoundTripSampler`) that performs a full cancached
+round-trip (set, get, delete) and validates responses. Build the sampler once and place the resulting JAR on the JMeter classpath before executing any plan. The thread groups run for
 fixed durations with no loop limits to make the execution time deterministic.
 Adjust thread counts, payload sizes, or timers in each plan to tune the pressure
 exerted on the cache node.

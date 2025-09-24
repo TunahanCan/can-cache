@@ -43,6 +43,33 @@ if [[ ${profile} == "--" ]]; then
   profile="small"
 fi
 
+sampler_jar_rel="performance-tests/java-sampler/target/can-cache-jmeter-sampler-0.0.1-SNAPSHOT.jar"
+local_jmeter_env=()
+docker_jmeter_env=()
+local_classpath=${JMETER_ADD_CLASSPATH:-}
+docker_classpath=${JMETER_ADD_CLASSPATH:-}
+if [[ -f "${sampler_jar_rel}" ]]; then
+  sampler_abs="$(pwd)/${sampler_jar_rel}"
+  if [[ -n ${local_classpath} ]]; then
+    local_classpath+=":${sampler_abs}"
+    docker_classpath+=":/workspace/${sampler_jar_rel}"
+  else
+    local_classpath=${sampler_abs}
+    docker_classpath=/workspace/${sampler_jar_rel}
+  fi
+elif [[ -z ${local_classpath} ]]; then
+  echo "Warning: Java sampler JAR not found at ${sampler_jar_rel}. Build it with ./mvnw -f performance-tests/java-sampler/pom.xml package" >&2
+fi
+
+if [[ -n ${local_classpath} ]]; then
+  local_jmeter_env+=("JMETER_ADD_CLASSPATH=${local_classpath}")
+fi
+
+if [[ -n ${docker_classpath} ]]; then
+  docker_jmeter_env+=("-e")
+  docker_jmeter_env+=("JMETER_ADD_CLASSPATH=${docker_classpath}")
+fi
+
 case "${profile}" in
   small) plan="performance-tests/jmeter/can-cache-small.jmx" ;;
   medium) plan="performance-tests/jmeter/can-cache-medium.jmx" ;;
@@ -85,12 +112,20 @@ jmeter_cmd+=("$@")
 
 if command -v jmeter >/dev/null 2>&1; then
   echo "Running JMeter locally: ${jmeter_cmd[*]}"
-  "${jmeter_cmd[@]}"
+  if [[ ${#local_jmeter_env[@]} -gt 0 ]]; then
+    env "${local_jmeter_env[@]}" "${jmeter_cmd[@]}"
+  else
+    "${jmeter_cmd[@]}"
+  fi
   exit 0
 fi
 
 jmeter_image="${JMETER_IMAGE:-justb4/jmeter:5.6.2}"
-docker_cmd=(docker run --rm -v "$(pwd)":/workspace -w /workspace "${jmeter_image}" jmeter -n -t "${plan}" -l "${result_file}")
+docker_cmd=(docker run --rm)
+if [[ ${#docker_jmeter_env[@]} -gt 0 ]]; then
+  docker_cmd+=("${docker_jmeter_env[@]}")
+fi
+docker_cmd+=(-v "$(pwd)":/workspace -w /workspace "${jmeter_image}" jmeter -n -t "${plan}" -l "${result_file}")
 docker_cmd+=("${props[@]}")
 
 if command -v docker >/dev/null 2>&1; then

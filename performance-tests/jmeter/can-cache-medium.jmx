@@ -83,111 +83,55 @@
         <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
       </ThreadGroup>
       <hashTree>
-        <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="cancached Round Trip" enabled="true">
-          <stringProp name="cacheKey">groovy-cancached-roundtrip</stringProp>
-          <stringProp name="filename"/>
-          <stringProp name="parameters"/>
-          <stringProp name="scriptLanguage">groovy</stringProp>
-          <stringProp name="script"><![CDATA[import java.io.BufferedReader
-import java.io.BufferedWriter
-import java.io.IOException
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
-import java.io.PrintWriter
-import java.io.StringWriter
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.util.UUID
-
-def host = vars.get("targetHost")
-int port = (vars.get("targetPort") ?: "11211") as int
-int ttl = (vars.get("ttlSeconds") ?: "60") as int
-int payloadSize = (vars.get("payloadSize") ?: "128") as int
-int connectTimeout = (vars.get("connectTimeoutMillis") ?: "1000") as int
-int readTimeout = (vars.get("readTimeoutMillis") ?: "3000") as int
-def keyPrefix = vars.get("keyPrefix") ?: "perf-"
-
-Socket socket
-BufferedWriter writer
-BufferedReader reader
-
-SampleResult.sampleStart()
-try {
-    socket = new Socket()
-    socket.connect(new InetSocketAddress(host, port), connectTimeout)
-    socket.soTimeout = readTimeout
-    socket.tcpNoDelay = true
-
-    writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"))
-    reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"))
-
-    def random = UUID.randomUUID().toString().replace("-", "")
-    int repeat = Math.max(1, (int) Math.ceil(payloadSize / (double) random.length()))
-    def payloadSource = random * repeat
-    def payload = payloadSource.substring(0, payloadSize)
-    byte[] payloadBytes = payload.getBytes("UTF-8")
-    def key = keyPrefix + random.substring(0, Math.min(16, random.length()))
-
-    writer.write("set ${key} 0 ${ttl} ${payloadBytes.length}\\r\\n")
-    writer.write(payload)
-    writer.write("\\r\\n")
-    writer.flush()
-
-    def setResp = reader.readLine()
-    if (!"STORED".equals(setResp)) {
-        throw new IOException("SET failed with response: ${setResp}")
-    }
-
-    writer.write("get ${key}\\r\\n")
-    writer.flush()
-
-    def header = reader.readLine()
-    if (header == null || !header.startsWith("VALUE")) {
-        throw new IOException("Unexpected GET header: ${header}")
-    }
-
-    def returned = reader.readLine()
-    def trailer = reader.readLine()
-    if (!payload.equals(returned)) {
-        throw new IOException("Returned payload mismatch (${returned?.length()} vs expected ${payload.length()})")
-    }
-    if (!"END".equals(trailer)) {
-        throw new IOException("Missing END after GET, received: ${trailer}")
-    }
-
-    writer.write("delete ${key}\\r\\n")
-    writer.flush()
-    def deleteResp = reader.readLine()
-    if (deleteResp == null || !(deleteResp.equals("DELETED") || deleteResp.equals("NOT_FOUND"))) {
-        throw new IOException("DELETE failed with response: ${deleteResp}")
-    }
-
-    SampleResult.setResponseCodeOK()
-    SampleResult.setResponseMessage("Round trip succeeded")
-    SampleResult.setResponseData(("SET:${setResp};GET:${header};DEL:${deleteResp}").getBytes("UTF-8"))
-    SampleResult.setSuccessful(true)
-} catch (Exception ex) {
-    log.error("cancached round trip failed", ex)
-    SampleResult.setSuccessful(false)
-    SampleResult.setResponseCode("500")
-    SampleResult.setResponseMessage(ex.getMessage())
-    def sw = new StringWriter()
-    ex.printStackTrace(new PrintWriter(sw))
-    SampleResult.setResponseData(sw.toString(), "UTF-8")
-} finally {
-    SampleResult.sampleEnd()
-    try {
-        writer?.close()
-    } catch (Exception ignore) {}
-    try {
-        reader?.close()
-    } catch (Exception ignore) {}
-    try {
-        socket?.close()
-    } catch (Exception ignore) {}
-}
-]]></stringProp>
-        </JSR223Sampler>
+        <JavaSampler guiclass="JavaTestSamplerGui" testclass="JavaSampler" testname="cancached Round Trip" enabled="true">
+          <stringProp name="classname">com.can.cache.perf.CancachedRoundTripSampler</stringProp>
+          <elementProp name="arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="targetHost" elementType="Argument">
+                <stringProp name="Argument.name">targetHost</stringProp>
+                <stringProp name="Argument.value">${targetHost}</stringProp>
+                <stringProp name="Argument.desc">Hostname of the Can Cache node</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+              <elementProp name="targetPort" elementType="Argument">
+                <stringProp name="Argument.name">targetPort</stringProp>
+                <stringProp name="Argument.value">${targetPort}</stringProp>
+                <stringProp name="Argument.desc">cancached TCP port</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+              <elementProp name="ttlSeconds" elementType="Argument">
+                <stringProp name="Argument.name">ttlSeconds</stringProp>
+                <stringProp name="Argument.value">${ttlSeconds}</stringProp>
+                <stringProp name="Argument.desc">TTL assigned to SET</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+              <elementProp name="connectTimeoutMillis" elementType="Argument">
+                <stringProp name="Argument.name">connectTimeoutMillis</stringProp>
+                <stringProp name="Argument.value">${connectTimeoutMillis}</stringProp>
+                <stringProp name="Argument.desc">Socket connect timeout</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+              <elementProp name="readTimeoutMillis" elementType="Argument">
+                <stringProp name="Argument.name">readTimeoutMillis</stringProp>
+                <stringProp name="Argument.value">${readTimeoutMillis}</stringProp>
+                <stringProp name="Argument.desc">Socket read timeout</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+              <elementProp name="keyPrefix" elementType="Argument">
+                <stringProp name="Argument.name">keyPrefix</stringProp>
+                <stringProp name="Argument.value">${keyPrefix}</stringProp>
+                <stringProp name="Argument.desc">Prefix used for generated cache keys</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+              <elementProp name="payloadSize" elementType="Argument">
+                <stringProp name="Argument.name">payloadSize</stringProp>
+                <stringProp name="Argument.value">${payloadSize}</stringProp>
+                <stringProp name="Argument.desc">Payload size in bytes</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </JavaSampler>
         <hashTree/>
         <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Think Time" enabled="true">
           <stringProp name="ConstantTimer.delay">75</stringProp>
