@@ -27,6 +27,21 @@ jmeter -n \
   -JtargetPort=11211
 ```
 
+To simplify local runs there is a convenience wrapper script that automatically
+creates the results directory, wires common properties, and falls back to a
+Dockerised JMeter image if the binary is not installed:
+
+```bash
+./performance-tests/run-local.sh small
+```
+
+Pass a different profile (`small`, `medium`, `large`, or `xl`) as the first
+argument. Additional JMeter flags can be forwarded after `--`, for example:
+
+```bash
+TARGET_HOST=192.168.10.15 ./performance-tests/run-local.sh medium -- -JdurationSeconds=180
+```
+
 Commonly used override properties:
 
 | Property | Description | Default |
@@ -39,7 +54,7 @@ Commonly used override properties:
 | `keyPrefix` | Prefix used for generated cache keys. | `perf-` |
 | `payloadSize` | Size of the generated payload in bytes (plan-specific default). | varies |
 | `durationSeconds` | Total runtime of the thread group (plan-specific default). | varies |
-| `resultFile` | Output `.jtl` path for aggregated metrics. | varies |
+| `resultFile` | Output `.jtl` path for aggregated metrics. | `performance-tests/results/can-cache-<profile>.jtl` |
 
 All plans rely on a Groovy JSR223 sampler that performs a full cancached
 round-trip (set, get, delete) and validates responses. The thread groups run for
