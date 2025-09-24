@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">can-cache Çift Node Veri Yolculuğu</title>
+  <desc id="desc">İki node'lu can-cache kümesinde bir yazma isteğinin keşiften quorum'a kadar izlediği yolun animasyonu.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="node" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0.9" />
+    </linearGradient>
+    <linearGradient id="client" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#facc15" />
+      <stop offset="100%" stop-color="#f97316" />
+    </linearGradient>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#f8fafc" />
+    </marker>
+    <style>
+      text { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #e2e8f0; }
+      .title { font-size: 28px; font-weight: 600; letter-spacing: 0.02em; }
+      .subtitle { font-size: 16px; fill: #cbd5f5; }
+      .node-label { font-size: 15px; font-weight: 600; }
+      .step text { font-size: 15px; }
+      .step-title { font-size: 17px; font-weight: 600; }
+      .step-desc { font-size: 14px; fill: #cbd5f5; }
+      .step { opacity: 0.18; transform-origin: 0 0; }
+      @keyframes spotlight {
+        0%, 11% { opacity: 1; transform: scale(1.02); }
+        16%, 100% { opacity: 0.18; transform: scale(1.0); }
+      }
+      .step1 { animation: spotlight 24s infinite; animation-delay: 0s; }
+      .step2 { animation: spotlight 24s infinite; animation-delay: 3s; }
+      .step3 { animation: spotlight 24s infinite; animation-delay: 6s; }
+      .step4 { animation: spotlight 24s infinite; animation-delay: 9s; }
+      .step5 { animation: spotlight 24s infinite; animation-delay: 12s; }
+      .step6 { animation: spotlight 24s infinite; animation-delay: 15s; }
+      .step7 { animation: spotlight 24s infinite; animation-delay: 18s; }
+      .step8 { animation: spotlight 24s infinite; animation-delay: 21s; }
+      @keyframes heartbeat {
+        0%, 20%, 100% { r: 18; }
+        10% { r: 22; }
+      }
+      .node-pulse { animation: heartbeat 3s ease-in-out infinite; }
+      @keyframes orbit {
+        0% { offset-distance: 0%; }
+        12% { offset-distance: 12%; }
+        24% { offset-distance: 24%; }
+        36% { offset-distance: 36%; }
+        48% { offset-distance: 48%; }
+        60% { offset-distance: 60%; }
+        72% { offset-distance: 72%; }
+        84% { offset-distance: 84%; }
+        100% { offset-distance: 100%; }
+      }
+      .packet { offset-path: path('M140 200 C 270 120 360 120 480 200 S 700 280 820 200'); offset-rotate: 0deg; animation: orbit 24s linear infinite; }
+      .packet circle { fill: #facc15; stroke: #fde68a; stroke-width: 3; }
+      .timeline-label { font-size: 13px; fill: #94a3b8; text-transform: uppercase; letter-spacing: 0.2em; }
+    </style>
+  </defs>
+  <rect fill="url(#bg)" x="0" y="0" width="960" height="540" rx="28" ry="28" />
+
+  <text x="80" y="70" class="title">İki Node'lu can-cache veri yolculuğu</text>
+  <text x="80" y="95" class="subtitle">İstemciden çıkan bir yazma isteği kümeye katılan ikinci node ile nasıl replike edilir?</text>
+
+  <g transform="translate(110, 130)">
+    <rect x="0" y="0" width="170" height="210" rx="22" ry="22" fill="#1e293b" opacity="0.7" stroke="#38bdf8" stroke-opacity="0.4" />
+    <circle cx="85" cy="60" r="36" fill="url(#client)" />
+    <text x="85" y="62" text-anchor="middle" class="node-label">İstemci</text>
+    <text x="85" y="95" text-anchor="middle" fill="#fef9c3">SET foo ...</text>
+  </g>
+
+  <g transform="translate(380, 110)">
+    <rect x="0" y="0" width="180" height="250" rx="26" ry="26" fill="#172554" opacity="0.8" stroke="#38bdf8" stroke-opacity="0.45" />
+    <circle cx="90" cy="60" r="34" fill="url(#node)" class="node-pulse" />
+    <text x="90" y="65" text-anchor="middle" class="node-label">Node A</text>
+    <text x="90" y="95" text-anchor="middle" fill="#bae6fd">Bootstrap edilmiş lider</text>
+  </g>
+
+  <g transform="translate(650, 110)">
+    <rect x="0" y="0" width="180" height="250" rx="26" ry="26" fill="#0f766e" opacity="0.35" stroke="#5eead4" stroke-opacity="0.4" />
+    <circle cx="90" cy="60" r="34" fill="#14b8a6" class="node-pulse" />
+    <text x="90" y="65" text-anchor="middle" class="node-label">Node B</text>
+    <text x="90" y="95" text-anchor="middle" fill="#ccfbf1">Yeni katılan takipçi</text>
+  </g>
+
+  <path d="M196 190 C 280 140 320 140 420 180" fill="none" stroke="#94a3b8" stroke-width="4" stroke-dasharray="6 10" marker-end="url(#arrow)" />
+  <path d="M470 180 Q 560 220 650 180" fill="none" stroke="#94a3b8" stroke-width="4" marker-end="url(#arrow)" />
+  <path d="M660 220 Q 720 260 780 220" fill="none" stroke="#5eead4" stroke-width="4" marker-end="url(#arrow)" />
+
+  <g class="packet">
+    <circle r="14" />
+    <text x="0" y="-24" text-anchor="middle" font-size="12" fill="#fde68a">foo</text>
+  </g>
+
+  <text x="120" y="360" class="timeline-label">Yaşam döngüsü kareleri</text>
+  <g transform="translate(80, 380)">
+    <g class="step step1">
+      <rect x="0" y="0" width="820" height="44" rx="10" ry="10" fill="rgba(30,58,138,0.45)" />
+      <text x="20" y="19" class="step-title">1. Node B kümeye merhaba der</text>
+      <text x="20" y="34" class="step-desc">Multicast heartbeat algılanır, koordinasyon servisi node'u tutarlı hash halkasına ekler.</text>
+    </g>
+    <g class="step step2" transform="translate(0, 55)">
+      <rect x="0" y="0" width="820" height="44" rx="10" ry="10" fill="rgba(2,132,199,0.35)" />
+      <text x="20" y="19" class="step-title">2. Bootstrap senkronu</text>
+      <text x="20" y="34" class="step-desc">ReplicationServer, Node B'ye snapshot ve ipuçlarını akıtarak belleğini doldurur.</text>
+    </g>
+    <g class="step step3" transform="translate(0, 110)">
+      <rect x="0" y="0" width="820" height="44" rx="10" ry="10" fill="rgba(15,118,110,0.35)" />
+      <text x="20" y="19" class="step-title">3. İstemci isteği gelir</text>
+      <text x="20" y="34" class="step-desc">CanCachedServer protokol satırını ayrıştırır, ClusterClient için yazma çağrısı hazırlar.</text>
+    </g>
+    <g class="step step4" transform="translate(0, 165)">
+      <rect x="0" y="0" width="820" height="44" rx="10" ry="10" fill="rgba(22,101,52,0.35)" />
+      <text x="20" y="19" class="step-title">4. Hash ve replikasyon hedefleri</text>
+      <text x="20" y="34" class="step-desc">Anahtar tutarlı halkada çözümlenir; quorum için Node A lider, Node B takipçi seçilir.</text>
+    </g>
+    <g class="step step5" transform="translate(0, 220)">
+      <rect x="0" y="0" width="820" height="44" rx="10" ry="10" fill="rgba(180,83,9,0.35)" />
+      <text x="20" y="19" class="step-title">5. Node A lokalde yazar</text>
+      <text x="20" y="34" class="step-desc">CacheEngine segmente yazar, TTL kuyruğuna ekler ve metrikler güncellenir.</text>
+    </g>
+    <g class="step step6" transform="translate(0, 275)">
+      <rect x="0" y="0" width="820" height="44" rx="10" ry="10" fill="rgba(190,24,93,0.35)" />
+      <text x="20" y="19" class="step-title">6. Node B'ye replika akışı</text>
+      <text x="20" y="34" class="step-desc">RemoteNode vekili komutu Node B ReplicationServer'a iletir, aynı kayıt yazılır.</text>
+    </g>
+    <g class="step step7" transform="translate(0, 330)">
+      <rect x="0" y="0" width="820" height="44" rx="10" ry="10" fill="rgba(147,51,234,0.35)" />
+      <text x="20" y="19" class="step-title">7. Quorum yanıtı</text>
+      <text x="20" y="34" class="step-desc">Yeterli ACK alınca ClusterClient "STORED" döner, istemci mutlu.</text>
+    </g>
+    <g class="step step8" transform="translate(0, 385)">
+      <rect x="0" y="0" width="820" height="44" rx="10" ry="10" fill="rgba(30,64,175,0.35)" />
+      <text x="20" y="19" class="step-title">8. Arka plan bakımı</text>
+      <text x="20" y="34" class="step-desc">TTL temizleyicisi, hinted handoff ve anti-entropy döngüsü veriyi sürekli dengede tutar.</text>
+    </g>
+  </g>
+</svg>
