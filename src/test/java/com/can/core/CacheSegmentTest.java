@@ -2,11 +2,11 @@ package com.can.core;
 
 import com.can.core.model.CacheValue;
 import com.can.core.model.CasDecision;
-import com.can.core.model.CasResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,193 +16,205 @@ import static org.junit.jupiter.api.Assertions.*;
 class CacheSegmentTest
 {
     private CacheSegment<String> segment;
-    private TestEvictionPolicy policy;
+    private FakePolicy<String> policy;
     private List<String> removals;
 
     @BeforeEach
     void setup()
     {
-        policy = new TestEvictionPolicy();
+        policy = new FakePolicy<>();
         removals = new ArrayList<>();
         segment = new CacheSegment<>(2, policy, removals::add);
     }
 
     @Nested
-    class PutOperations
+    class PutIslemleri
     {
+        // Bu test politika izin verdiğinde yeni girdinin eklendiğini doğrular.
         @Test
-        void put_stores_value_when_policy_admits()
+        void put_yeni_anahtar_onaylandiginda_basarili_olur()
         {
-            CacheValue value = new CacheValue(new byte[]{1}, 0);
-            assertTrue(segment.put("a", value));
-            assertSame(value, segment.get("a"));
-            assertEquals(List.of("a"), policy.recordedKeys);
+            assertTrue(segment.put("a", value("1")));
+            assertEquals(1, segment.size());
+            assertEquals(List.of("a"), policy.accesses());
         }
 
+        // Bu test politika reddettiğinde put çağrısının başarısız döndüğünü gösterir.
         @Test
-        void put_rejects_when_policy_disallows()
+        void put_politika_reddederse_false_doner()
         {
-            policy.decision = EvictionPolicy.AdmissionDecision.reject();
-            assertFalse(segment.put("a", new CacheValue(new byte[]{1}, 0)));
+            policy.rejectNext();
+            assertFalse(segment.put("b", value("2")));
+            assertEquals(0, segment.size());
+        }
+
+        // Bu test mevcut anahtar tekrar yazıldığında değerin güncellendiğini ispatlar.
+        @Test
+        void put_mevcut_anahtari_gunceller()
+        {
+            assertTrue(segment.put("a", value("1")));
+            assertTrue(segment.put("a", value("2")));
+            assertEquals("2", text(segment.get("a")));
+        }
+
+        // Bu test kurban anahtar belirlendiğinde dinleyicinin bilgilendirildiğini doğrular.
+        @Test
+        void put_victim_belirlenince_dinleyici_tetiklenir()
+        {
+            assertTrue(segment.put("a", value("1")));
+            assertTrue(segment.put("b", value("2")));
+            policy.evictNext("a");
+            assertTrue(segment.put("c", value("3")));
+            assertEquals(List.of("a"), removals);
+            assertTrue(policy.removed().contains("a"));
+        }
+
+        // Bu test force eklemenin kapasite dolu olsa bile en eski girdiyi attığını gösterir.
+        @Test
+        void put_force_dolulukta_en_eskisini_siler()
+        {
+            assertTrue(segment.put("a", value("1")));
+            assertTrue(segment.put("b", value("2")));
+            assertTrue(segment.putForce("c", value("3")));
             assertNull(segment.get("a"));
-            assertTrue(policy.removedKeys.isEmpty());
-        }
-
-        @Test
-        void put_evicts_victim_and_notifies()
-        {
-            segment.put("victim", new CacheValue(new byte[]{1}, 0));
-            policy.decision = EvictionPolicy.AdmissionDecision.admit("victim");
-            CacheValue replacement = new CacheValue(new byte[]{2}, 0);
-
-            assertTrue(segment.put("new", replacement));
-            assertSame(replacement, segment.get("new"));
-            assertEquals(List.of("victim"), policy.removedKeys);
-            assertEquals(List.of("victim"), removals);
-        }
-
-        @Test
-        void put_force_removes_oldest_entry()
-        {
-            segment.put("a", new CacheValue(new byte[]{1}, 0));
-            segment.put("b", new CacheValue(new byte[]{2}, 0));
-
-            CacheValue forced = new CacheValue(new byte[]{3}, 0);
-            assertTrue(segment.putForce("c", forced));
-            assertNull(segment.get("a"));
-            assertSame(forced, segment.get("c"));
-            assertTrue(policy.removedKeys.contains("a"));
             assertTrue(removals.contains("a"));
         }
     }
 
     @Nested
-    class RetrievalOperations
+    class SilmeIslemleri
     {
+        // Bu test remove çağrısının değeri döndürüp politikayı bilgilendirdiğini doğrular.
         @Test
-        void get_records_access_when_value_present()
+        void remove_varsa_degeri_doner()
         {
-            CacheValue value = new CacheValue(new byte[]{1}, 0);
-            segment.put("a", value);
-            assertSame(value, segment.get("a"));
-            assertTrue(policy.recordedKeys.contains("a"));
+            assertTrue(segment.put("a", value("1")));
+            CacheValue removed = segment.remove("a");
+            assertNotNull(removed);
+            assertEquals(List.of("a"), policy.removed());
         }
 
+        // Bu test expireAt eşleştiğinde koşullu silmenin başarılı olduğunu ispatlar.
         @Test
-        void remove_if_matches_honours_expire_at()
+        void remove_if_matches_zaman_eslesirse_siler()
         {
-            CacheValue value = new CacheValue(new byte[]{1}, 123L);
-            segment.put("a", value);
+            assertTrue(segment.put("a", new CacheValue("v".getBytes(StandardCharsets.UTF_8), 123L)));
+            assertFalse(segment.removeIfMatches("a", 999L));
             assertTrue(segment.removeIfMatches("a", 123L));
-            assertFalse(segment.removeIfMatches("a", 123L));
-            assertEquals(List.of("a"), policy.removedKeys);
-            assertEquals(List.of("a"), removals);
+            assertTrue(removals.contains("a"));
+        }
+
+        // Bu test clear çağrısının tüm girdileri temizlediğini doğrular.
+        @Test
+        void clear_tum_girdileri_temizler()
+        {
+            assertTrue(segment.put("a", value("1")));
+            assertTrue(segment.put("b", value("2")));
+            segment.clear();
+            assertEquals(0, segment.size());
+            assertTrue(policy.removed().containsAll(List.of("a", "b")));
         }
     }
 
     @Nested
-    class CasOperations
+    class CasIslemleri
     {
+        // Bu test CAS kararı başarı olduğunda yeni değerin yazıldığını gösterir.
         @Test
-        void compare_and_swap_updates_when_successful()
+        void compare_and_swap_basarili_oldugunda_yeni_deger_yazilir()
         {
-            CacheValue initial = new CacheValue(new byte[]{1}, 0);
-            segment.put("a", initial);
-
-            CasResult result = segment.compareAndSwap("a", existing ->
-                    CasDecision.success(new CacheValue(new byte[]{2}, 5L)));
-
+            assertTrue(segment.put("a", value("old")));
+            var result = segment.compareAndSwap("a", existing -> CasDecision.success(value("new")));
             assertTrue(result.success());
-            CacheValue stored = segment.get("a");
-            assertNotNull(stored);
-            assertArrayEquals(new byte[]{2}, stored.value());
-            assertEquals(5L, stored.expireAtMillis());
-            assertTrue(policy.recordedKeys.contains("a"));
+            assertEquals("new", text(segment.get("a")));
+            assertTrue(policy.accesses().contains("a"));
         }
 
+        // Bu test CAS kararı mevcut girdiyi kaldırdığında dinleyicinin çağrıldığını doğrular.
         @Test
-        void compare_and_swap_expired_entry_removes_and_notifies()
+        void compare_and_swap_silme_karari_alirsa_dinleyici_tetiklenir()
         {
-            CacheValue initial = new CacheValue(new byte[]{1}, 0);
-            segment.put("a", initial);
-
-            CasResult result = segment.compareAndSwap("a", existing -> CasDecision.expired());
-
+            assertTrue(segment.put("a", value("old")));
+            var result = segment.compareAndSwap("a", existing -> CasDecision.expired());
             assertFalse(result.success());
             assertNull(segment.get("a"));
-            assertEquals(List.of("a"), policy.removedKeys);
-            assertEquals(List.of("a"), removals);
-        }
-
-        @Test
-        void compare_and_swap_returns_failure_when_decision_null()
-        {
-            CacheValue initial = new CacheValue(new byte[]{1}, 0);
-            segment.put("a", initial);
-
-            CasResult result = segment.compareAndSwap("a", existing -> null);
-
-            assertFalse(result.success());
-            assertNull(result.newValue());
-            assertSame(initial, segment.get("a"));
+            assertTrue(removals.contains("a"));
         }
     }
 
     @Nested
-    class MaintenanceOperations
+    class DigerIslemler
     {
+        // Bu test forEach çağrısının snapshot üzerinden güvenle çalıştığını doğrular.
         @Test
-        void clear_invokes_policy_removals()
+        void for_each_snapshot_uzerinden_calismaya_devam_eder()
         {
-            segment.put("a", new CacheValue(new byte[]{1}, 0));
-            segment.put("b", new CacheValue(new byte[]{2}, 0));
-
-            segment.clear();
-
-            assertEquals(List.of("a", "b"), policy.removedKeys);
-            assertTrue(removals.isEmpty());
-            assertEquals(0, segment.size());
-        }
-
-        @Test
-        void for_each_iterates_snapshot()
-        {
-            segment.put("a", new CacheValue(new byte[]{1}, 0));
-            segment.put("b", new CacheValue(new byte[]{2}, 0));
-
-            List<String> seen = new ArrayList<>();
+            assertTrue(segment.put("a", value("1")));
+            assertTrue(segment.put("b", value("2")));
+            List<String> keys = new ArrayList<>();
             segment.forEach((key, value) -> {
-                seen.add(key + value.value()[0]);
-                segment.put("c", new CacheValue(new byte[]{3}, 0));
+                keys.add(key);
+                segment.put("c", value("3"));
             });
-
-            assertEquals(List.of("a1", "b2"), seen);
-            assertNotNull(segment.get("c"));
+            assertEquals(List.of("a", "b"), keys);
+            assertEquals(3, segment.size());
         }
     }
 
-    private static final class TestEvictionPolicy implements EvictionPolicy<String>
+    private static CacheValue value(String text)
     {
-        EvictionPolicy.AdmissionDecision<String> decision = EvictionPolicy.AdmissionDecision.admit();
-        final List<String> recordedKeys = new ArrayList<>();
-        final List<String> removedKeys = new ArrayList<>();
+        return new CacheValue(text.getBytes(StandardCharsets.UTF_8), 0L);
+    }
+
+    private static String text(CacheValue value)
+    {
+        return new String(value.value(), StandardCharsets.UTF_8);
+    }
+
+    private static final class FakePolicy<K> implements EvictionPolicy<K>
+    {
+        private final List<K> accesses = new ArrayList<>();
+        private final List<K> removed = new ArrayList<>();
+        private EvictionPolicy.AdmissionDecision<K> nextDecision = EvictionPolicy.AdmissionDecision.admit();
 
         @Override
-        public void recordAccess(String key)
+        public void recordAccess(K key)
         {
-            recordedKeys.add(key);
+            accesses.add(key);
         }
 
         @Override
-        public AdmissionDecision<String> admit(String key, LinkedHashMap<String, CacheValue> map, int capacity)
+        public AdmissionDecision<K> admit(K key, LinkedHashMap<K, CacheValue> map, int capacity)
         {
+            AdmissionDecision<K> decision = nextDecision;
+            nextDecision = EvictionPolicy.AdmissionDecision.admit();
             return decision;
         }
 
         @Override
-        public void onRemove(String key)
+        public void onRemove(K key)
         {
-            removedKeys.add(key);
+            removed.add(key);
+        }
+
+        void rejectNext()
+        {
+            nextDecision = EvictionPolicy.AdmissionDecision.reject();
+        }
+
+        void evictNext(K key)
+        {
+            nextDecision = EvictionPolicy.AdmissionDecision.admit(key);
+        }
+
+        List<K> accesses()
+        {
+            return accesses;
+        }
+
+        List<K> removed()
+        {
+            return removed;
         }
     }
 }

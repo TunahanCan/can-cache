@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -16,59 +16,91 @@ class ConsistentHashRingTest
     @BeforeEach
     void setup()
     {
-        ring = new ConsistentHashRing<>(bytes -> Arrays.hashCode(bytes), 4);
+        ring = new ConsistentHashRing<>(new ControlledHash(), 3);
     }
 
     @Nested
-    class NodeManagement
+    class NodeYonetimi
     {
+        // Bu test düğüm eklendiğinde benzersiz liste olarak döndürüldüğünü doğrular.
         @Test
-        void add_node_registers_unique_entries()
+        void add_node_benzersiz_liste_doner()
         {
-            ring.addNode("n1", "n1".getBytes());
-            ring.addNode("n2", "n2".getBytes());
-
-            List<String> nodes = ring.nodes();
-            assertTrue(nodes.contains("n1"));
-            assertTrue(nodes.contains("n2"));
+            ring.addNode("A", bytes("A"));
+            ring.addNode("B", bytes("B"));
+            assertEquals(List.of("A", "B"), ring.nodes());
         }
 
+        // Bu test düğüm kaldırıldığında replika listesinden çıkarıldığını gösterir.
         @Test
-        void remove_node_removes_virtual_nodes()
+        void remove_node_tum_sanal_dugumleri_temizler()
         {
-            ring.addNode("n1", "n1".getBytes());
-            ring.addNode("n2", "n2".getBytes());
-
-            ring.removeNode("n1", "n1".getBytes());
-            List<String> nodes = ring.nodes();
-            assertFalse(nodes.contains("n1"));
+            ring.addNode("A", bytes("A"));
+            ring.addNode("B", bytes("B"));
+            ring.removeNode("B", bytes("B"));
+            assertEquals(List.of("A"), ring.nodes());
+            assertEquals(List.of("A"), ring.getReplicas(bytes("key"), 2));
         }
     }
 
     @Nested
-    class ReplicaSelection
+    class ReplicaSecimi
     {
+        // Bu test replikaların belirlenen sırada ve tekrar etmeden döndüğünü doğrular.
         @Test
-        void get_replicas_returns_requested_number()
+        void get_replicas_belirlenen_dugumleri_siralar()
         {
-            ring.addNode("n1", "n1".getBytes());
-            ring.addNode("n2", "n2".getBytes());
-            ring.addNode("n3", "n3".getBytes());
-
-            List<String> replicas = ring.getReplicas("key".getBytes(), 2);
-            assertEquals(2, replicas.size());
+            ring.addNode("A", bytes("A"));
+            ring.addNode("B", bytes("B"));
+            ring.addNode("C", bytes("C"));
+            List<String> replicas = ring.getReplicas(bytes("key"), 3);
+            assertEquals(List.of("A", "B", "C"), replicas);
         }
 
+        // Bu test istenen replika sayısından az düğüm olduğunda mevcut düğümlerin döndürüldüğünü gösterir.
         @Test
-        void get_replicas_wraps_around_ring()
+        void get_replicas_dugum_sayisindan_buyuk_istegi_kirar()
         {
-            ring.addNode("n1", "n1".getBytes());
-            ring.addNode("n2", "n2".getBytes());
+            ring.addNode("A", bytes("A"));
+            ring.addNode("B", bytes("B"));
+            List<String> replicas = ring.getReplicas(bytes("key"), 5);
+            assertEquals(List.of("A", "B"), replicas);
+        }
 
-            List<String> replicas = ring.getReplicas("key".getBytes(), 5);
-            assertTrue(replicas.size() <= 2);
-            assertTrue(replicas.contains("n1"));
-            assertTrue(replicas.contains("n2"));
+        // Bu test boş halkada replika isteğinin boş liste ürettiğini doğrular.
+        @Test
+        void get_replicas_bos_halkada_bos_liste_doner()
+        {
+            assertTrue(ring.getReplicas(bytes("key"), 2).isEmpty());
+        }
+    }
+
+    private static byte[] bytes(String value)
+    {
+        return value.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static final class ControlledHash implements HashFn
+    {
+        @Override
+        public int hash(byte[] keyBytes)
+        {
+            String text = new String(keyBytes, StandardCharsets.UTF_8);
+            int vnode = 0;
+            int idx = text.indexOf('#');
+            if (idx >= 0)
+            {
+                vnode = Integer.parseInt(text.substring(idx + 1));
+                text = text.substring(0, idx);
+            }
+            return switch (text)
+            {
+                case "A" -> 100 + vnode;
+                case "B" -> 200 + vnode;
+                case "C" -> 300 + vnode;
+                case "key" -> 50;
+                default -> text.hashCode();
+            };
         }
     }
 }

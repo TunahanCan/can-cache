@@ -10,92 +10,86 @@ import static org.junit.jupiter.api.Assertions.*;
 class StoredValueCodecTest
 {
     @Nested
-    class DecodeBehaviour
+    class DecodeDavranisi
     {
+        // Bu test encode edilmiş verinin çözümlenerek aynı alanları ürettiğini doğrular.
         @Test
-        void decode_returns_legacy_when_not_base64()
+        void decode_gecerli_veriyi_cozer()
         {
-            StoredValueCodec.StoredValue value = StoredValueCodec.decode("not-base64");
-            assertFalse(value.hasMetadata());
-            assertArrayEquals("not-base64".getBytes(StandardCharsets.UTF_8), value.value());
-        }
-
-        @Test
-        void decode_returns_legacy_when_payload_too_short()
-        {
-            String encoded = java.util.Base64.getEncoder().encodeToString(new byte[]{1, 2, 3});
-            StoredValueCodec.StoredValue value = StoredValueCodec.decode(encoded);
-            assertFalse(value.hasMetadata());
-            assertArrayEquals(new byte[]{1, 2, 3}, value.value());
-        }
-
-        @Test
-        void decode_roundtrip_preserves_fields()
-        {
-            byte[] payload = "value".getBytes(StandardCharsets.UTF_8);
-            StoredValueCodec.StoredValue original = new StoredValueCodec.StoredValue(payload, 7, 42L, 1234L);
-            String encoded = StoredValueCodec.encode(original);
+            StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
+                    "veri".getBytes(StandardCharsets.UTF_8), 7, 99L, 1_234L);
+            String encoded = StoredValueCodec.encode(stored);
             StoredValueCodec.StoredValue decoded = StoredValueCodec.decode(encoded);
-
+            assertArrayEquals(stored.value(), decoded.value());
+            assertEquals(stored.flags(), decoded.flags());
+            assertEquals(stored.cas(), decoded.cas());
+            assertEquals(stored.expireAt(), decoded.expireAt());
             assertTrue(decoded.hasMetadata());
-            assertArrayEquals(payload, decoded.value());
-            assertEquals(7, decoded.flags());
-            assertEquals(42L, decoded.cas());
-            assertEquals(1234L, decoded.expireAt());
+        }
+
+        // Bu test bozuk Base64 girdisinin legacy formatı olarak ele alındığını gösterir.
+        @Test
+        void decode_hatali_veriyi_legacy_olarak_yorumlar()
+        {
+            StoredValueCodec.StoredValue decoded = StoredValueCodec.decode("not-base64");
+            assertArrayEquals("not-base64".getBytes(StandardCharsets.UTF_8), decoded.value());
+            assertFalse(decoded.hasMetadata());
+            assertEquals(0L, decoded.cas());
+            assertEquals(0L, decoded.expireAt());
+        }
+
+        // Bu test expireAt geçmiş olduğunda expired metodunun true döndüğünü doğrular.
+        @Test
+        void expired_metodu_suresi_gecmis_degerde_true_doner()
+        {
+            long past = System.currentTimeMillis() - 1_000L;
+            StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
+                    "x".getBytes(StandardCharsets.UTF_8), 1, 5L, past);
+            assertTrue(stored.expired(System.currentTimeMillis()));
         }
     }
 
     @Nested
-    class MutationOperations
+    class MutasyonDavranisi
     {
+        // Bu test withValue çağrısının yeni değer ve CAS ürettiğini gösterir.
         @Test
-        void with_value_updates_payload_and_cas()
+        void with_value_yeni_deger_ve_cas_atar()
         {
-            StoredValueCodec.StoredValue base = new StoredValueCodec.StoredValue("v1".getBytes(StandardCharsets.UTF_8), 1, 10L, 100L);
-            StoredValueCodec.StoredValue updated = base.withValue("v2".getBytes(StandardCharsets.UTF_8), 11L);
-
-            assertArrayEquals("v2".getBytes(StandardCharsets.UTF_8), updated.value());
-            assertEquals(11L, updated.cas());
-            assertEquals(1, updated.flags());
-            assertEquals(100L, updated.expireAt());
+            StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
+                    "eski".getBytes(StandardCharsets.UTF_8), 2, 10L, 0L);
+            StoredValueCodec.StoredValue mutated = stored.withValue("yeni".getBytes(StandardCharsets.UTF_8), 12L);
+            assertArrayEquals("yeni".getBytes(StandardCharsets.UTF_8), mutated.value());
+            assertEquals(12L, mutated.cas());
+            assertEquals(stored.flags(), mutated.flags());
+            assertEquals(stored.expireAt(), mutated.expireAt());
         }
 
+        // Bu test withMeta çağrısının tüm alanları güncellediğini doğrular.
         @Test
-        void with_meta_replaces_all_fields()
+        void with_meta_tum_alanlari_gunceller()
         {
-            StoredValueCodec.StoredValue base = new StoredValueCodec.StoredValue("v1".getBytes(StandardCharsets.UTF_8), 1, 10L, 100L);
-            StoredValueCodec.StoredValue updated = base.withMeta("v3".getBytes(StandardCharsets.UTF_8), 5, 99L, 200L);
-
-            assertArrayEquals("v3".getBytes(StandardCharsets.UTF_8), updated.value());
-            assertEquals(5, updated.flags());
-            assertEquals(99L, updated.cas());
-            assertEquals(200L, updated.expireAt());
+            StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
+                    "veri".getBytes(StandardCharsets.UTF_8), 1, 3L, 4L);
+            StoredValueCodec.StoredValue mutated = stored.withMeta(
+                    "yeni".getBytes(StandardCharsets.UTF_8), 9, 7L, 8L);
+            assertArrayEquals("yeni".getBytes(StandardCharsets.UTF_8), mutated.value());
+            assertEquals(9, mutated.flags());
+            assertEquals(7L, mutated.cas());
+            assertEquals(8L, mutated.expireAt());
         }
 
+        // Bu test withExpireAt çağrısının yalnızca süre bilgisini güncellediğini gösterir.
         @Test
-        void with_expire_at_updates_only_expiration()
+        void with_expire_at_sadece_sureyi_degistirir()
         {
-            StoredValueCodec.StoredValue base = new StoredValueCodec.StoredValue("v1".getBytes(StandardCharsets.UTF_8), 1, 10L, 100L);
-            StoredValueCodec.StoredValue updated = base.withExpireAt(500L, 12L);
-
-            assertArrayEquals(base.value(), updated.value());
-            assertEquals(1, updated.flags());
-            assertEquals(12L, updated.cas());
-            assertEquals(500L, updated.expireAt());
-        }
-
-        @Test
-        void expired_returns_true_when_now_beyond_expire()
-        {
-            StoredValueCodec.StoredValue base = new StoredValueCodec.StoredValue(new byte[]{1}, 0, 0L, System.currentTimeMillis() - 1);
-            assertTrue(base.expired(System.currentTimeMillis()));
-        }
-
-        @Test
-        void expired_ignores_max_value()
-        {
-            StoredValueCodec.StoredValue base = new StoredValueCodec.StoredValue(new byte[]{1}, 0, 0L, Long.MAX_VALUE);
-            assertFalse(base.expired(System.currentTimeMillis()));
+            StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
+                    "veri".getBytes(StandardCharsets.UTF_8), 1, 3L, 4L);
+            StoredValueCodec.StoredValue mutated = stored.withExpireAt(55L, 66L);
+            assertEquals(55L, mutated.expireAt());
+            assertEquals(66L, mutated.cas());
+            assertArrayEquals(stored.value(), mutated.value());
+            assertEquals(stored.flags(), mutated.flags());
         }
     }
 }

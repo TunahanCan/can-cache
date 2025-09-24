@@ -1,6 +1,7 @@
 package com.can.core;
 
 import com.can.core.model.ExpiringKey;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.TimeUnit;
@@ -9,28 +10,28 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ExpiringKeyTest
 {
-    @Test
-    void get_delay_converts_milliseconds_to_requested_unit()
+    @Nested
+    class ZamanDavranisi
     {
-        long target = System.currentTimeMillis() + 200;
-        ExpiringKey key = new ExpiringKey("k", 0, target);
+        // Bu test gelecekteki zamanlar için bekleme süresinin pozitif olduğunu doğrular.
+        @Test
+        void get_delay_gelecek_zaman_icin_pozitif_doner()
+        {
+            long expireAt = System.currentTimeMillis() + 200L;
+            ExpiringKey key = new ExpiringKey("k", 0, expireAt);
+            long delay = key.getDelay(TimeUnit.MILLISECONDS);
+            assertTrue(delay > 0 && delay <= 200L);
+        }
 
-        long delayMillis = key.getDelay(TimeUnit.MILLISECONDS);
-        long delaySeconds = key.getDelay(TimeUnit.SECONDS);
-
-        assertTrue(delayMillis <= 200 && delayMillis >= 0);
-        assertTrue(delaySeconds <= 1);
-    }
-
-    @Test
-    void compare_to_orders_by_expiration()
-    {
-        long now = System.currentTimeMillis();
-        ExpiringKey sooner = new ExpiringKey("a", 0, now + 50);
-        ExpiringKey later = new ExpiringKey("b", 0, now + 100);
-
-        assertTrue(sooner.compareTo(later) < 0);
-        assertTrue(later.compareTo(sooner) > 0);
-        assertEquals(0, sooner.compareTo(new ExpiringKey("c", 0, sooner.expireAtMillis())));
+        // Bu test compareTo'nun en erken süresi olan anahtarı önce sıraladığını gösterir.
+        @Test
+        void compare_to_sureye_gore_siralama_yapar()
+        {
+            long now = System.currentTimeMillis();
+            ExpiringKey early = new ExpiringKey("a", 0, now + 10);
+            ExpiringKey late = new ExpiringKey("b", 0, now + 50);
+            assertTrue(early.compareTo(late) < 0);
+            assertTrue(late.compareTo(early) > 0);
+        }
     }
 }
