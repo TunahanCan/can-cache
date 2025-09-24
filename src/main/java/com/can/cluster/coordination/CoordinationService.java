@@ -7,7 +7,6 @@ import com.can.cluster.Node;
 import com.can.config.AppProperties;
 import com.can.core.CacheEngine;
 import io.vertx.core.Vertx;
-import io.vertx.core.WorkerExecutor;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
@@ -37,6 +36,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
 
 /**
  * Multicast tabanlı hafif bir koordinasyon katmanı. Her düğüm belirli aralıklarla
@@ -62,7 +65,7 @@ public class CoordinationService implements AutoCloseable
     private final long hintReplayIntervalMillis;
     private final long antiEntropyIntervalMillis;
     private final Vertx vertx;
-    private final WorkerExecutor workerExecutor;
+    private final ExecutorService taskExecutor;
 
     private final Map<String, RemoteMember> members = new ConcurrentHashMap<>();
     private final Object membershipLock = new Object();
@@ -83,8 +86,7 @@ public class CoordinationService implements AutoCloseable
                                HintedHandoffService hintedHandoffService,
                                CacheEngine<String, String> localEngine,
                                AppProperties properties,
-                               Vertx vertx,
-                               WorkerExecutor workerExecutor) {
+                               Vertx vertx) {
         this.ring = ring;
         this.localNode = localNode;
         this.clusterState = clusterState;
@@ -98,7 +100,8 @@ public class CoordinationService implements AutoCloseable
         this.hintReplayIntervalMillis = Math.max(0L, coordination.hintReplayIntervalMillis());
         this.antiEntropyIntervalMillis = Math.max(0L, coordination.antiEntropyIntervalMillis());
         this.vertx = vertx;
-        this.workerExecutor = workerExecutor;
+        ThreadFactory threadFactory = Thread.ofVirtual().name("coordination-task-", 0).factory();
+        this.taskExecutor = Executors.newThreadPerTaskExecutor(threadFactory);
     }
 
     @PostConstruct
@@ -122,12 +125,7 @@ public class CoordinationService implements AutoCloseable
         heartbeatTimerId = vertx.setPeriodic(heartbeat, id -> broadcastHeartbeat());
         reapTimerId = vertx.setPeriodic(reapInterval, id -> pruneDeadMembers());
         long repairInterval = Math.max(reapInterval, antiEntropyIntervalMillis);
-        repairTimerId = vertx.setPeriodic(repairInterval, id ->
-                workerExecutor.executeBlocking(promise -> {
-                    runAntiEntropy();
-                    promise.complete();
-                })
-        );
+        repairTimerId = vertx.setPeriodic(repairInterval, id -> submitAntiEntropyTask());
 
         LOG.infof("Coordination service started for node %s, announcing %s:%d", localNode.id(),
                 advertisedHost(), replicationConfig.port());
@@ -213,63 +211,129 @@ public class CoordinationService implements AutoCloseable
             }
         }
 
+        try {
+            taskExecutor.execute(() -> processMembershipPacket(nodeId, host, port, remoteEpoch));
+        } catch (RejectedExecutionException e) {
+            if (running) {
+                LOG.debugf("Coordination task rejected for %s:%d", nodeId, port);
+            }
+        }
+    }
+
+    private void processMembershipPacket(String nodeId, String host, int port, long remoteEpoch) {
+        if (!running) {
+            return;
+        }
+
         long now = System.currentTimeMillis();
         byte[] idBytes = nodeId.getBytes(StandardCharsets.UTF_8);
+        boolean handshakeRequired;
+        boolean shouldReplayHints = false;
+        RemoteNode replayTarget = null;
+        RemoteMember replayMember = null;
+        RemoteNode pendingRemoval = null;
 
         synchronized (membershipLock) {
             RemoteMember existing = members.get(nodeId);
             if (existing == null) {
-                JoinHandshakeResult join = performJoinHandshake(nodeId, host, port);
-                if (join == null || !join.accepted()) {
-                    return;
-                }
-                long previousEpoch = clusterState.currentEpoch();
-                boolean shouldBootstrap = join.epoch() >= previousEpoch;
-                clusterState.bumpEpoch();
-                clusterState.observeEpoch(join.epoch());
-
-                RemoteNode remoteNode = new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis(), vertx);
-                RemoteMember member = new RemoteMember(remoteNode, idBytes, host, port, now, join.epoch());
-                members.put(nodeId, member);
-                ring.addNode(remoteNode, idBytes);
-                LOG.infof("Discovered new cluster member %s at %s:%d", nodeId, host, port);
-
-                if (shouldBootstrap) {
-                    bootstrapFrom(member, false);
-                }
-                hintedHandoffService.replay(nodeId, remoteNode);
+                handshakeRequired = true;
             } else if (!existing.matches(host, port)) {
-                RemoteNode previousNode = existing.node();
-                ring.removeNode(previousNode, existing.idBytes());
+                handshakeRequired = true;
+                pendingRemoval = existing.node();
+                if (pendingRemoval != null) {
+                    ring.removeNode(pendingRemoval, existing.idBytes());
+                }
                 existing.resetBootstrap();
-                JoinHandshakeResult join = performJoinHandshake(nodeId, host, port);
-                if (join == null || !join.accepted()) {
-                    return;
-                }
-                long previousEpoch = clusterState.currentEpoch();
-                boolean shouldBootstrap = join.epoch() >= previousEpoch;
-                clusterState.bumpEpoch();
-                clusterState.observeEpoch(join.epoch());
-
-                RemoteNode remoteNode = new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis(), vertx);
-                existing.replace(remoteNode, idBytes, host, port, now, join.epoch());
-                ring.addNode(remoteNode, idBytes);
-                LOG.infof("Cluster member %s moved to %s:%d", nodeId, host, port);
-
-                if (shouldBootstrap) {
-                    bootstrapFrom(existing, false);
-                }
-                hintedHandoffService.replay(nodeId, remoteNode);
-                if (previousNode != null) {
-                    closeRemoteNode(previousNode);
-                }
             } else {
+                handshakeRequired = false;
                 existing.updateLastSeen(now, remoteEpoch);
                 clusterState.observeEpoch(remoteEpoch);
                 if (existing.shouldReplayHints(now, hintReplayIntervalMillis)) {
-                    hintedHandoffService.replay(nodeId, existing.node());
+                    shouldReplayHints = true;
+                    replayTarget = existing.node();
+                    replayMember = existing;
                 }
             }
+        }
+
+        if (!handshakeRequired) {
+            if (shouldReplayHints && replayTarget != null) {
+                hintedHandoffService.replay(nodeId, replayTarget);
+                if (replayMember != null) {
+                    replayMember.markHintReplayed(System.currentTimeMillis());
+                }
+            }
+            return;
+        }
+
+        JoinHandshakeResult join = performJoinHandshake(nodeId, host, port);
+        if (join == null || !join.accepted()) {
+            return;
+        }
+
+        RemoteMember memberForBootstrap = null;
+        RemoteNode previousNode = pendingRemoval;
+        boolean runBootstrap = false;
+        long updateTime = System.currentTimeMillis();
+
+        synchronized (membershipLock) {
+            RemoteMember current = members.get(nodeId);
+            if (current == null) {
+                long previousEpoch = clusterState.currentEpoch();
+                runBootstrap = join.epoch() >= previousEpoch;
+                clusterState.bumpEpoch();
+                clusterState.observeEpoch(join.epoch());
+
+                RemoteNode remoteNode = new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis(), vertx);
+                RemoteMember newMember = new RemoteMember(remoteNode, idBytes, host, port, updateTime, join.epoch());
+                members.put(nodeId, newMember);
+                ring.addNode(remoteNode, idBytes);
+                LOG.infof("Discovered new cluster member %s at %s:%d", nodeId, host, port);
+
+                memberForBootstrap = newMember;
+                shouldReplayHints = true;
+                replayTarget = remoteNode;
+                replayMember = newMember;
+            } else if (!current.matches(host, port)) {
+                long previousEpoch = clusterState.currentEpoch();
+                runBootstrap = join.epoch() >= previousEpoch;
+                clusterState.bumpEpoch();
+                clusterState.observeEpoch(join.epoch());
+
+                RemoteNode remoteNode = new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis(), vertx);
+                previousNode = current.node();
+                current.replace(remoteNode, idBytes, host, port, updateTime, join.epoch());
+                ring.addNode(remoteNode, idBytes);
+                LOG.infof("Cluster member %s moved to %s:%d", nodeId, host, port);
+
+                memberForBootstrap = current;
+                shouldReplayHints = true;
+                replayTarget = remoteNode;
+                replayMember = current;
+            } else {
+                current.updateLastSeen(updateTime, remoteEpoch);
+                clusterState.observeEpoch(remoteEpoch);
+                if (current.shouldReplayHints(updateTime, hintReplayIntervalMillis)) {
+                    shouldReplayHints = true;
+                    replayTarget = current.node();
+                    replayMember = current;
+                }
+            }
+        }
+
+        if (memberForBootstrap != null && runBootstrap) {
+            bootstrapFrom(memberForBootstrap, false);
+        }
+
+        if (shouldReplayHints && replayTarget != null) {
+            hintedHandoffService.replay(nodeId, replayTarget);
+            if (replayMember != null) {
+                replayMember.markHintReplayed(System.currentTimeMillis());
+            }
+        }
+
+        if (previousNode != null) {
+            closeRemoteNode(previousNode);
         }
     }
 
@@ -449,6 +513,19 @@ public class CoordinationService implements AutoCloseable
         }
     }
 
+    private void submitAntiEntropyTask() {
+        if (!running) {
+            return;
+        }
+        try {
+            taskExecutor.execute(this::runAntiEntropy);
+        } catch (RejectedExecutionException e) {
+            if (running) {
+                LOG.debugf("Anti-entropy task rejected: %s", e.getMessage());
+            }
+        }
+    }
+
     private void pruneDeadMembers() {
         long now = System.currentTimeMillis();
         long timeout = Math.max(discoveryConfig.failureTimeoutMillis(), discoveryConfig.heartbeatIntervalMillis() * 3);
@@ -484,6 +561,7 @@ public class CoordinationService implements AutoCloseable
         cancelTimer(heartbeatTimerId);
         cancelTimer(reapTimerId);
         cancelTimer(repairTimerId);
+        taskExecutor.shutdownNow();
         if (listenSocket != null) {
             try {
                 listenSocket.close();
@@ -613,6 +691,10 @@ public class CoordinationService implements AutoCloseable
                 return true;
             }
             return false;
+        }
+
+        private void markHintReplayed(long timestamp) {
+            lastHintReplay = timestamp;
         }
 
         private void replace(RemoteNode node, byte[] idBytes, String host, int port, long lastSeen, long epoch) {
