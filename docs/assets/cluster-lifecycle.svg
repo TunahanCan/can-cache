@@ -1,260 +1,379 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
-  <title id="title">can-cache Çift Node Veri Yolculuğu</title>
-  <desc id="desc">İki node'lu can-cache kümesinde bir yazma isteğinin keşiften quorum'a kadar izlediği yolun animasyonu.</desc>
+  <title id="title">can-cache Yazma Yolculuğu</title>
+  <desc id="desc">İstemciden başlayan bir yazma isteğinin iki node'lu can-cache kümesinde keşiften quorum onayına kadar izlediği adımları ve veri akışını animasyonla açıklar.</desc>
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a" />
-      <stop offset="100%" stop-color="#1e293b" />
+      <stop offset="0%" stop-color="#0b1220" />
+      <stop offset="100%" stop-color="#111c35" />
     </linearGradient>
-    <linearGradient id="node" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.9" />
-      <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0.9" />
+    <linearGradient id="panel" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e293b" stop-opacity="0.92" />
+      <stop offset="100%" stop-color="#111827" stop-opacity="0.92" />
     </linearGradient>
-    <linearGradient id="client" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="clientBody" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" stop-color="#facc15" />
       <stop offset="100%" stop-color="#f97316" />
     </linearGradient>
-    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
-      <path d="M0,0 L12,6 L0,12 Z" fill="#f8fafc" />
+    <linearGradient id="leaderBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+    <linearGradient id="followerBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2dd4bf" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+    <radialGradient id="haloClient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fde68a" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#fde68a" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="haloLeader" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#93c5fd" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="haloFollower" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#99f6e4" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#14b8a6" stop-opacity="0" />
+    </radialGradient>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feColorMatrix type="matrix" values="0 0 0 0 0.6  0 0 0 0 0.8  0 0 0 0 1  0 0 0 0.6 0" in="blur" result="colored" />
+      <feMerge>
+        <feMergeNode in="colored" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L14,7 L0,14 Z" fill="#f8fafc" />
     </marker>
     <style>
-      text { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #e2e8f0; }
-      .title { font-size: 28px; font-weight: 600; letter-spacing: 0.02em; }
-      .subtitle { font-size: 16px; fill: #cbd5f5; }
-      .node-label { font-size: 15px; font-weight: 600; }
-      .step text { font-size: 14px; }
-      .step-title { font-size: 16px; font-weight: 600; }
-      .step-desc { font-size: 13px; fill: #cbd5f5; }
-      .step { opacity: 0; transform-origin: 120px 44px; transform: translateY(8px) scale(0.98); }
-      @keyframes spotlight {
-        0%, 4% { opacity: 0; transform: translateY(8px) scale(0.98); }
-        6%, 16% { opacity: 1; transform: translateY(0) scale(1); }
-        18%, 100% { opacity: 0; transform: translateY(8px) scale(0.98); }
+      :root { --cycle: 40s; }
+      svg { font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; color-scheme: dark; }
+      text { fill: #f8fafc; }
+      .title { font-size: 30px; font-weight: 600; letter-spacing: 0.02em; }
+      .subtitle { font-size: 16px; fill: #cbd5f5; letter-spacing: 0.02em; }
+      .scene-panel { fill: url(#panel); stroke: rgba(148,163,184,0.25); stroke-width: 1.5; }
+      .node { text-anchor: middle; }
+      .node .halo {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: haloPulse 4.2s ease-in-out infinite;
       }
-      .step1 { animation: spotlight 64s ease-in-out infinite; animation-delay: 0s; }
-      .step2 { animation: spotlight 64s ease-in-out infinite; animation-delay: 8s; }
-      .step3 { animation: spotlight 64s ease-in-out infinite; animation-delay: 16s; }
-      .step4 { animation: spotlight 64s ease-in-out infinite; animation-delay: 24s; }
-      .step5 { animation: spotlight 64s ease-in-out infinite; animation-delay: 32s; }
-      .step6 { animation: spotlight 64s ease-in-out infinite; animation-delay: 40s; }
-      .step7 { animation: spotlight 64s ease-in-out infinite; animation-delay: 48s; }
-      .step8 { animation: spotlight 64s ease-in-out infinite; animation-delay: 56s; }
-      @keyframes heartbeat {
-        0%, 20%, 100% { r: 18; }
-        10% { r: 22; }
+      .node .body { stroke-width: 2.5; stroke: rgba(148,163,184,0.35); }
+      .node .label { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
+      .node .role { font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; fill: #94a3b8; }
+      .node .detail { font-size: 13px; fill: #e2e8f0; }
+      .node.client { animation: clientFocus var(--cycle) ease-in-out infinite; }
+      .node.leader { animation: leaderFocus var(--cycle) ease-in-out infinite; }
+      .node.follower { animation: followerFocus var(--cycle) ease-in-out infinite; }
+      .flow {
+        fill: none;
+        stroke-width: 6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-dasharray: 16 18;
+        stroke-dashoffset: 120;
+        opacity: 0;
+        animation: dash 2.8s linear infinite;
       }
-      .node-pulse { animation: heartbeat 3s ease-in-out infinite; }
-      .node { filter: drop-shadow(0 0 0 rgba(56,189,248,0)); transition: filter 0.4s ease; }
-      .node-a { animation: nodeAFocus 64s ease-in-out infinite; }
-      .node-b { animation: nodeBFocus 64s ease-in-out infinite; }
-      @keyframes nodeAFocus {
-        0%, 24% { filter: drop-shadow(0 0 0 rgba(56,189,248,0)); }
-        28%, 72% { filter: drop-shadow(0 0 18px rgba(56,189,248,0.55)); }
-        76%, 100% { filter: drop-shadow(0 0 0 rgba(56,189,248,0)); }
+      .flow-handshake { stroke: #34d399; animation: dash 2.6s linear infinite, showStage1 var(--cycle) ease-in-out infinite; }
+      .flow-bootstrap { stroke: #5eead4; animation: dash 3s linear infinite, showStage2 var(--cycle) ease-in-out infinite; }
+      .flow-client { stroke: #38bdf8; animation: dash 2.4s linear infinite, showStage3 var(--cycle) ease-in-out infinite; }
+      .flow-replica { stroke: #60a5fa; animation: dash 2.4s linear infinite, showStage4 var(--cycle) ease-in-out infinite; }
+      .flow-ack { stroke: #c084fc; animation: dash 2.6s linear infinite, showStage5 var(--cycle) ease-in-out infinite; }
+      .flow-ack-client { stroke: #fbbf24; animation: dash 2.6s linear infinite, showStage5 var(--cycle) ease-in-out infinite; }
+      .packet {
+        offset-distance: 0%;
+        opacity: 0;
+        offset-rotate: auto;
+        transform: translate(-10px, -10px);
       }
-      @keyframes nodeBFocus {
-        0%, 20% { filter: drop-shadow(0 0 16px rgba(45,212,191,0.6)); }
-        24%, 60% { filter: drop-shadow(0 0 0 rgba(45,212,191,0)); }
-        64%, 84% { filter: drop-shadow(0 0 18px rgba(45,212,191,0.65)); }
-        88%, 100% { filter: drop-shadow(0 0 0 rgba(45,212,191,0)); }
+      .packet circle { stroke-width: 3; }
+      .packet text { font-size: 11px; font-weight: 600; }
+      .packet-handshake { offset-path: path('M760 210 C 700 140 580 130 480 210'); animation: packetStage1 var(--cycle) linear infinite; }
+      .packet-bootstrap { offset-path: path('M480 210 C 580 190 680 190 760 210'); animation: packetStage2 var(--cycle) linear infinite; }
+      .packet-client { offset-path: path('M150 260 C 260 210 360 200 480 210'); animation: packetStage3 var(--cycle) linear infinite; }
+      .packet-replica { offset-path: path('M480 210 C 580 190 680 190 760 210'); animation: packetStage4 var(--cycle) linear infinite; }
+      .packet-ack { offset-path: path('M760 230 C 680 270 580 260 480 250'); animation: packetStage5 var(--cycle) linear infinite; }
+      .packet-ack-client { offset-path: path('M480 250 C 360 300 240 300 150 270'); animation: packetStage5 var(--cycle) linear infinite; }
+      .callout { text-anchor: middle; opacity: 0; }
+      .callout-title { font-size: 21px; font-weight: 600; letter-spacing: 0.02em; }
+      .callout-sub { font-size: 14px; fill: #cbd5f5; }
+      .callout.stage1 { animation: calloutStage1 var(--cycle) ease-in-out infinite; }
+      .callout.stage2 { animation: calloutStage2 var(--cycle) ease-in-out infinite; }
+      .callout.stage3 { animation: calloutStage3 var(--cycle) ease-in-out infinite; }
+      .callout.stage4 { animation: calloutStage4 var(--cycle) ease-in-out infinite; }
+      .callout.stage5 { animation: calloutStage5 var(--cycle) ease-in-out infinite; }
+      .timeline { font-size: 12px; }
+      .timeline-base { fill: rgba(15,23,42,0.65); stroke: rgba(148,163,184,0.25); stroke-width: 1.5; }
+      .timeline .stage { opacity: 0.45; }
+      .stage-card { fill: rgba(30,41,59,0.85); stroke: rgba(148,163,184,0.25); stroke-width: 1; }
+      .stage-number { font-size: 11px; fill: #94a3b8; letter-spacing: 0.24em; text-transform: uppercase; }
+      .stage-title { font-size: 15px; font-weight: 600; fill: #f8fafc; }
+      .stage-desc { font-size: 12.5px; fill: #cbd5f5; }
+      .stage.stage1 { animation: stageHighlight1 var(--cycle) linear infinite; }
+      .stage.stage2 { animation: stageHighlight2 var(--cycle) linear infinite; }
+      .stage.stage3 { animation: stageHighlight3 var(--cycle) linear infinite; }
+      .stage.stage4 { animation: stageHighlight4 var(--cycle) linear infinite; }
+      .stage.stage5 { animation: stageHighlight5 var(--cycle) linear infinite; }
+      .cursor rect {
+        width: 140px;
+        height: 64px;
+        rx: 20px;
+        ry: 20px;
+        fill: rgba(250,204,21,0.14);
+        stroke: rgba(250,204,21,0.55);
+        stroke-width: 2;
       }
-      .node circle { transform-box: fill-box; transform-origin: center; stroke-width: 3; }
-      .node-a circle { stroke: rgba(56,189,248,0.6); animation: nodeACircle 64s ease-in-out infinite; }
-      .node-b circle { stroke: rgba(45,212,191,0.5); animation: nodeBCircle 64s ease-in-out infinite; }
-      @keyframes nodeACircle {
-        0%, 24% { transform: scale(1); stroke-opacity: 0.15; }
-        28%, 72% { transform: scale(1.08); stroke-opacity: 1; }
-        76%, 100% { transform: scale(1); stroke-opacity: 0.15; }
+      .cursor { animation: cursorMove var(--cycle) ease-in-out infinite; }
+
+      @keyframes haloPulse {
+        0%, 100% { transform: scale(0.92); opacity: 0.55; }
+        40% { transform: scale(1.1); opacity: 0.92; }
+        60% { transform: scale(1.22); opacity: 0.4; }
       }
-      @keyframes nodeBCircle {
-        0%, 20% { transform: scale(1.06); stroke-opacity: 0.9; }
-        24%, 60% { transform: scale(1); stroke-opacity: 0.2; }
-        64%, 84% { transform: scale(1.08); stroke-opacity: 0.95; }
-        88%, 100% { transform: scale(1); stroke-opacity: 0.2; }
+      @keyframes dash {
+        0% { stroke-dashoffset: 120; }
+        100% { stroke-dashoffset: -120; }
       }
-      @keyframes orbit {
-        0%, 24% { offset-distance: 0%; opacity: 0; }
-        28% { offset-distance: 0%; opacity: 1; }
-        40% { offset-distance: 40%; opacity: 1; }
-        55% { offset-distance: 75%; opacity: 1; }
-        62% { offset-distance: 100%; opacity: 1; }
-        66%, 100% { offset-distance: 100%; opacity: 0; }
+      @keyframes showStage1 {
+        0%, 6% { opacity: 0; }
+        8%, 18% { opacity: 0.95; }
+        22%, 100% { opacity: 0; }
       }
-      .packet { offset-path: path('M150 170 C 300 100 380 100 520 170 S 740 240 840 170'); offset-rotate: 0deg; animation: orbit 64s ease-in-out infinite; }
-      .packet circle { fill: #facc15; stroke: #fde68a; stroke-width: 3; filter: drop-shadow(0 0 8px rgba(250,204,21,0.6)); }
-      .flow { fill: none; stroke-linecap: round; stroke-dasharray: 14 16; stroke-width: 4; opacity: 0.2; animation: flowDash 64s ease-in-out infinite; }
-      .flow-client { stroke: #38bdf8; animation-delay: 12s; }
-      .flow-replica { stroke: #5eead4; animation-delay: 32s; }
-      .flow-ack { stroke: #818cf8; animation-delay: 46s; }
-      @keyframes flowDash {
-        0%, 10% { stroke-dashoffset: 120; opacity: 0; }
-        18%, 40% { stroke-dashoffset: 30; opacity: 0.85; }
-        48%, 60% { stroke-dashoffset: -30; opacity: 0.5; }
-        70%, 100% { stroke-dashoffset: -120; opacity: 0; }
+      @keyframes showStage2 {
+        0%, 26% { opacity: 0; }
+        28%, 40% { opacity: 0.95; }
+        44%, 100% { opacity: 0; }
       }
-      .timeline-label { font-size: 13px; fill: #94a3b8; text-transform: uppercase; letter-spacing: 0.2em; }
-      .timeline-pointer { transform: translate(-40px, 44px); animation: pointerMove 64s ease-in-out infinite; transform-origin: center; }
-      .timeline-pointer circle { fill: #facc15; stroke: #fde68a; stroke-width: 3; }
-      .timeline-pointer line { stroke: rgba(250,204,21,0.45); stroke-width: 2; stroke-linecap: round; }
-      @keyframes pointerMove {
-        0%, 12.5% { transform: translate(-40px, 44px); }
-        15.5%, 25% { transform: translate(220px, 44px); }
-        28%, 37.5% { transform: translate(480px, 44px); }
-        40.5%, 50% { transform: translate(-40px, 140px); }
-        53%, 62.5% { transform: translate(220px, 140px); }
-        65.5%, 75% { transform: translate(480px, 140px); }
-        78%, 87.5% { transform: translate(90px, 236px); }
-        90.5%, 100% { transform: translate(350px, 236px); }
+      @keyframes showStage3 {
+        0%, 46% { opacity: 0; }
+        48%, 60% { opacity: 0.95; }
+        64%, 100% { opacity: 0; }
       }
-      .step-tracker { transform: translate(0, 0); fill: rgba(250,204,21,0.08); stroke: rgba(250,204,21,0.35); stroke-width: 2; animation: trackerMove 64s ease-in-out infinite; }
-      @keyframes trackerMove {
-        0%, 12.5% { transform: translate(0, 0); opacity: 0.9; }
-        15.5%, 25% { transform: translate(260px, 0); opacity: 0.9; }
-        28%, 37.5% { transform: translate(520px, 0); opacity: 0.9; }
-        40.5%, 50% { transform: translate(0, 96px); opacity: 0.9; }
-        53%, 62.5% { transform: translate(260px, 96px); opacity: 0.9; }
-        65.5%, 75% { transform: translate(520px, 96px); opacity: 0.9; }
-        78%, 87.5% { transform: translate(130px, 192px); opacity: 0.9; }
-        90.5%, 100% { transform: translate(390px, 192px); opacity: 0.9; }
+      @keyframes showStage4 {
+        0%, 66% { opacity: 0; }
+        68%, 80% { opacity: 0.95; }
+        84%, 100% { opacity: 0; }
+      }
+      @keyframes showStage5 {
+        0%, 84% { opacity: 0; }
+        86%, 100% { opacity: 0.95; }
+      }
+      @keyframes packetStage1 {
+        0%, 4% { opacity: 0; offset-distance: 0%; }
+        8%, 18% { opacity: 1; offset-distance: 100%; }
+        22%, 100% { opacity: 0; offset-distance: 100%; }
+      }
+      @keyframes packetStage2 {
+        0%, 24% { opacity: 0; offset-distance: 0%; }
+        28%, 38% { opacity: 1; offset-distance: 100%; }
+        42%, 100% { opacity: 0; offset-distance: 100%; }
+      }
+      @keyframes packetStage3 {
+        0%, 44% { opacity: 0; offset-distance: 0%; }
+        48%, 58% { opacity: 1; offset-distance: 100%; }
+        62%, 100% { opacity: 0; offset-distance: 100%; }
+      }
+      @keyframes packetStage4 {
+        0%, 64% { opacity: 0; offset-distance: 0%; }
+        68%, 78% { opacity: 1; offset-distance: 100%; }
+        82%, 100% { opacity: 0; offset-distance: 100%; }
+      }
+      @keyframes packetStage5 {
+        0%, 84% { opacity: 0; offset-distance: 0%; }
+        88%, 96% { opacity: 1; offset-distance: 100%; }
+        100% { opacity: 0; offset-distance: 100%; }
+      }
+      @keyframes calloutStage1 {
+        0%, 4% { opacity: 0; transform: translateY(18px) scale(0.98); }
+        8%, 18% { opacity: 1; transform: translateY(0) scale(1); }
+        22%, 100% { opacity: 0; transform: translateY(-14px) scale(0.98); }
+      }
+      @keyframes calloutStage2 {
+        0%, 24% { opacity: 0; transform: translateY(18px) scale(0.98); }
+        28%, 38% { opacity: 1; transform: translateY(0) scale(1); }
+        42%, 100% { opacity: 0; transform: translateY(-14px) scale(0.98); }
+      }
+      @keyframes calloutStage3 {
+        0%, 44% { opacity: 0; transform: translateY(18px) scale(0.98); }
+        48%, 58% { opacity: 1; transform: translateY(0) scale(1); }
+        62%, 100% { opacity: 0; transform: translateY(-14px) scale(0.98); }
+      }
+      @keyframes calloutStage4 {
+        0%, 64% { opacity: 0; transform: translateY(18px) scale(0.98); }
+        68%, 78% { opacity: 1; transform: translateY(0) scale(1); }
+        82%, 100% { opacity: 0; transform: translateY(-14px) scale(0.98); }
+      }
+      @keyframes calloutStage5 {
+        0%, 84% { opacity: 0; transform: translateY(18px) scale(0.98); }
+        88%, 100% { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      @keyframes cursorMove {
+        0%, 18% { transform: translate(20px, 20px); opacity: 1; }
+        22%, 38% { transform: translate(168px, 20px); }
+        42%, 58% { transform: translate(316px, 20px); }
+        62%, 78% { transform: translate(464px, 20px); }
+        82%, 100% { transform: translate(612px, 20px); }
+      }
+      @keyframes stageHighlight1 {
+        0%, 18% { opacity: 1; }
+        22%, 100% { opacity: 0.45; }
+      }
+      @keyframes stageHighlight2 {
+        0%, 18% { opacity: 0.45; }
+        22%, 38% { opacity: 1; }
+        42%, 100% { opacity: 0.45; }
+      }
+      @keyframes stageHighlight3 {
+        0%, 38% { opacity: 0.45; }
+        42%, 58% { opacity: 1; }
+        62%, 100% { opacity: 0.45; }
+      }
+      @keyframes stageHighlight4 {
+        0%, 58% { opacity: 0.45; }
+        62%, 78% { opacity: 1; }
+        82%, 100% { opacity: 0.45; }
+      }
+      @keyframes stageHighlight5 {
+        0%, 78% { opacity: 0.45; }
+        82%, 100% { opacity: 1; }
+      }
+      @keyframes leaderFocus {
+        0%, 38% { filter: drop-shadow(0 0 0 rgba(96,165,250,0)); }
+        42%, 78% { filter: drop-shadow(0 0 24px rgba(96,165,250,0.8)); }
+        82%, 100% { filter: drop-shadow(0 0 12px rgba(96,165,250,0.4)); }
+      }
+      @keyframes followerFocus {
+        0%, 18% { filter: drop-shadow(0 0 24px rgba(45,212,191,0.75)); }
+        22%, 58% { filter: drop-shadow(0 0 0 rgba(45,212,191,0)); }
+        62%, 82% { filter: drop-shadow(0 0 24px rgba(45,212,191,0.75)); }
+        86%, 100% { filter: drop-shadow(0 0 0 rgba(45,212,191,0)); }
+      }
+      @keyframes clientFocus {
+        0%, 78% { filter: drop-shadow(0 0 0 rgba(250,204,21,0)); }
+        82%, 100% { filter: drop-shadow(0 0 24px rgba(250,204,21,0.8)); }
       }
     </style>
   </defs>
-  <rect fill="url(#bg)" x="0" y="0" width="960" height="540" rx="28" ry="28" />
+  <rect x="0" y="0" width="960" height="540" rx="32" ry="32" fill="url(#bg)" />
+  <text x="80" y="70" class="title">can-cache yazma isteğinin yaşam döngüsü</text>
+  <text x="80" y="96" class="subtitle">İki node'lu kümede keşif, bootstrap, yazma ve quorum onayının görsel akışı</text>
 
-  <text x="80" y="70" class="title">İki Node'lu can-cache veri yolculuğu</text>
-  <text x="80" y="95" class="subtitle">İstemciden çıkan bir yazma isteği kümeye katılan ikinci node ile nasıl replike edilir?</text>
+  <rect x="80" y="120" width="800" height="280" rx="36" ry="36" class="scene-panel" />
 
-  <g transform="translate(90, 50)">
-    <rect x="0" y="0" width="170" height="210" rx="22" ry="22" fill="#1e293b" opacity="0.7" stroke="#38bdf8" stroke-opacity="0.4" />
-    <circle cx="85" cy="60" r="36" fill="url(#client)" />
-    <text x="85" y="62" text-anchor="middle" class="node-label">İstemci</text>
-    <text x="85" y="95" text-anchor="middle" fill="#fef9c3">SET foo ...</text>
+  <g class="callouts">
+    <text class="callout stage1" x="720" y="150">
+      <tspan class="callout-title" x="720" dy="0">Keşif ve katılım</tspan>
+      <tspan class="callout-sub" x="720" dy="20">Node B heartbeat ile kümede görünür.</tspan>
+    </text>
+    <text class="callout stage2" x="720" y="150">
+      <tspan class="callout-title" x="720" dy="0">Bootstrap eşitlemesi</tspan>
+      <tspan class="callout-sub" x="720" dy="20">Node A snapshot ve ipuçlarını akıtır.</tspan>
+    </text>
+    <text class="callout stage3" x="480" y="145">
+      <tspan class="callout-title" x="480" dy="0">İstemci yazma isteği</tspan>
+      <tspan class="callout-sub" x="480" dy="20">SET komutu lider node'a ulaşır.</tspan>
+    </text>
+    <text class="callout stage4" x="620" y="210">
+      <tspan class="callout-title" x="620" dy="0">Replika akışı</tspan>
+      <tspan class="callout-sub" x="620" dy="20">Komut Node B üzerinde tekrar uygulanır.</tspan>
+    </text>
+    <text class="callout stage5" x="360" y="210">
+      <tspan class="callout-title" x="360" dy="0">Quorum onayı</tspan>
+      <tspan class="callout-sub" x="360" dy="20">ACK geri döner ve istemci "STORED" alır.</tspan>
+    </text>
   </g>
 
-  <g transform="translate(360, 30)" class="node node-a">
-    <rect x="0" y="0" width="180" height="250" rx="26" ry="26" fill="#172554" opacity="0.8" stroke="#38bdf8" stroke-opacity="0.45" />
-    <circle cx="90" cy="60" r="34" fill="url(#node)" class="node-pulse" />
-    <text x="90" y="65" text-anchor="middle" class="node-label">Node A</text>
-    <text x="90" y="95" text-anchor="middle" fill="#bae6fd">Bootstrap edilmiş lider</text>
+  <g class="node client" transform="translate(150 260)">
+    <circle class="halo" r="62" fill="url(#haloClient)" />
+    <circle class="body" r="38" fill="url(#clientBody)" />
+    <text class="label" x="0" y="-72">İstemci</text>
+    <text class="detail" x="0" y="-48">SET foo 900</text>
+    <text class="role" x="0" y="54">yazma isteği kaynağı</text>
   </g>
 
-  <g transform="translate(630, 30)" class="node node-b">
-    <rect x="0" y="0" width="180" height="250" rx="26" ry="26" fill="#0f766e" opacity="0.35" stroke="#5eead4" stroke-opacity="0.4" />
-    <circle cx="90" cy="60" r="34" fill="#14b8a6" class="node-pulse" />
-    <text x="90" y="65" text-anchor="middle" class="node-label">Node B</text>
-    <text x="90" y="95" text-anchor="middle" fill="#ccfbf1">Yeni katılan takipçi</text>
+  <g class="node leader" transform="translate(480 210)">
+    <circle class="halo" r="68" fill="url(#haloLeader)" />
+    <circle class="body" r="44" fill="url(#leaderBody)" />
+    <text class="label" x="0" y="-86">Node A</text>
+    <text class="role" x="0" y="-62">lider</text>
+    <text class="detail" x="0" y="64">Koordinasyon &amp; quorum</text>
   </g>
 
-  <path d="M198 160 C 300 110 360 110 460 150" class="flow flow-client" marker-end="url(#arrow)" />
-  <path d="M470 150 Q 580 190 690 150" class="flow flow-replica" marker-end="url(#arrow)" />
-  <path d="M700 190 Q 780 230 830 190" class="flow flow-ack" marker-end="url(#arrow)" />
-
-  <g class="packet">
-    <circle r="14" />
-    <text x="0" y="-24" text-anchor="middle" font-size="12" fill="#fde68a">foo</text>
+  <g class="node follower" transform="translate(760 210)">
+    <circle class="halo" r="68" fill="url(#haloFollower)" />
+    <circle class="body" r="44" fill="url(#followerBody)" />
+    <text class="label" x="0" y="-86">Node B</text>
+    <text class="role" x="0" y="-62">takipçi</text>
+    <text class="detail" x="0" y="64">Replika &amp; dayanıklılık</text>
   </g>
-  <text x="80" y="240" class="timeline-label">Yaşam döngüsü kareleri</text>
-  <g transform="translate(80, 260)">
-    <rect x="-12" y="-12" width="264" height="112" rx="24" ry="24" class="step-tracker" />
-    <g class="timeline-pointer">
-      <line x1="0" y1="0" x2="-24" y2="0" />
-      <circle r="7" />
+
+  <path id="handshake" class="flow flow-handshake" d="M760 210 C 700 140 580 130 480 210" marker-end="url(#arrow)" />
+  <path id="bootstrap" class="flow flow-bootstrap" d="M480 210 C 580 190 680 190 760 210" marker-end="url(#arrow)" />
+  <path id="client-flow" class="flow flow-client" d="M150 260 C 260 210 360 200 480 210" marker-end="url(#arrow)" />
+  <path id="replica" class="flow flow-replica" d="M480 210 C 580 190 680 190 760 210" marker-end="url(#arrow)" />
+  <path id="ack" class="flow flow-ack" d="M760 230 C 680 270 580 260 480 250" marker-end="url(#arrow)" />
+  <path id="ack-client" class="flow flow-ack-client" d="M480 250 C 360 300 240 300 150 270" marker-end="url(#arrow)" />
+
+  <g class="packet packet-handshake">
+    <circle r="12" fill="#34d399" stroke="#bbf7d0" />
+    <text x="0" y="-18" text-anchor="middle" fill="#bbf7d0">HELLO</text>
+  </g>
+  <g class="packet packet-bootstrap">
+    <circle r="12" fill="#2dd4bf" stroke="#ccfbf1" />
+    <text x="0" y="-18" text-anchor="middle" fill="#ccfbf1">SNAP</text>
+  </g>
+  <g class="packet packet-client">
+    <circle r="12" fill="#38bdf8" stroke="#bae6fd" />
+    <text x="0" y="-18" text-anchor="middle" fill="#bae6fd">SET</text>
+  </g>
+  <g class="packet packet-replica">
+    <circle r="12" fill="#60a5fa" stroke="#bfdbfe" />
+    <text x="0" y="-18" text-anchor="middle" fill="#bfdbfe">COPY</text>
+  </g>
+  <g class="packet packet-ack">
+    <circle r="12" fill="#c084fc" stroke="#ddd6fe" />
+    <text x="0" y="-18" text-anchor="middle" fill="#ddd6fe">ACK</text>
+  </g>
+  <g class="packet packet-ack-client">
+    <circle r="12" fill="#fbbf24" stroke="#fde68a" />
+    <text x="0" y="-18" text-anchor="middle" fill="#fde68a">STORED</text>
+  </g>
+
+  <g class="timeline" transform="translate(80 410)">
+    <rect class="timeline-base" x="0" y="0" width="800" height="100" rx="28" ry="28" />
+    <g class="cursor">
+      <rect x="0" y="0" />
     </g>
-    <g class="step step1" transform="translate(0, 0)">
-      <rect x="0" y="0" width="240" height="88" rx="12" ry="12" fill="rgba(30,58,138,0.45)" />
-      <text class="step-title">
-        <tspan x="20" y="24">1. Node B kümeye</tspan>
-        <tspan x="20" dy="18">merhaba der</tspan>
-      </text>
-      <text class="step-desc">
-        <tspan x="20" y="52">Heartbeat algılanır,</tspan>
-        <tspan x="20" dy="16">koordinasyon servisi</tspan>
-        <tspan x="20" dy="16">node'u hash halkasına ekler.</tspan>
-      </text>
+    <g class="stage stage1" transform="translate(20 20)">
+      <rect class="stage-card" width="140" height="64" rx="18" ry="18" />
+      <text class="stage-number" x="20" y="32">AŞAMA 1</text>
+      <text class="stage-title" x="20" y="50">Keşif</text>
+      <text class="stage-desc" x="20" y="68">Node B koordinasyon</text>
     </g>
-    <g class="step step2" transform="translate(260, 0)">
-      <rect x="0" y="0" width="240" height="88" rx="12" ry="12" fill="rgba(2,132,199,0.35)" />
-      <text class="step-title">
-        <tspan x="20" y="24">2. Bootstrap</tspan>
-        <tspan x="20" dy="18">senkronu</tspan>
-      </text>
-      <text class="step-desc">
-        <tspan x="20" y="52">ReplicationServer Node B'ye</tspan>
-        <tspan x="20" dy="16">snapshot ve ipuçlarını</tspan>
-        <tspan x="20" dy="16">akıtarak belleğini doldurur.</tspan>
-      </text>
+    <g class="stage stage2" transform="translate(168 20)">
+      <rect class="stage-card" width="140" height="64" rx="18" ry="18" />
+      <text class="stage-number" x="20" y="32">AŞAMA 2</text>
+      <text class="stage-title" x="20" y="50">Bootstrap</text>
+      <text class="stage-desc" x="20" y="68">Snapshot + ipuçları</text>
     </g>
-    <g class="step step3" transform="translate(520, 0)">
-      <rect x="0" y="0" width="240" height="88" rx="12" ry="12" fill="rgba(15,118,110,0.35)" />
-      <text class="step-title">
-        <tspan x="20" y="24">3. İstemci isteği</tspan>
-        <tspan x="20" dy="18">gelir</tspan>
-      </text>
-      <text class="step-desc">
-        <tspan x="20" y="52">CanCachedServer protokol</tspan>
-        <tspan x="20" dy="16">satırını ayrıştırır, ClusterClient</tspan>
-        <tspan x="20" dy="16">için yazma çağrısı hazırlar.</tspan>
-      </text>
+    <g class="stage stage3" transform="translate(316 20)">
+      <rect class="stage-card" width="140" height="64" rx="18" ry="18" />
+      <text class="stage-number" x="20" y="32">AŞAMA 3</text>
+      <text class="stage-title" x="20" y="50">İstemci</text>
+      <text class="stage-desc" x="20" y="68">Komut liderde işlenir</text>
     </g>
-    <g class="step step4" transform="translate(0, 96)">
-      <rect x="0" y="0" width="240" height="88" rx="12" ry="12" fill="rgba(22,101,52,0.35)" />
-      <text class="step-title">
-        <tspan x="20" y="24">4. Hash ve</tspan>
-        <tspan x="20" dy="18">replikasyon hedefleri</tspan>
-      </text>
-      <text class="step-desc">
-        <tspan x="20" y="52">Anahtar tutarlı halkada</tspan>
-        <tspan x="20" dy="16">çözümlenir; quorum için Node A</tspan>
-        <tspan x="20" dy="16">lider, Node B takipçi seçilir.</tspan>
-      </text>
+    <g class="stage stage4" transform="translate(464 20)">
+      <rect class="stage-card" width="140" height="64" rx="18" ry="18" />
+      <text class="stage-number" x="20" y="32">AŞAMA 4</text>
+      <text class="stage-title" x="20" y="50">Replika</text>
+      <text class="stage-desc" x="20" y="68">Node B kayıt yazar</text>
     </g>
-    <g class="step step5" transform="translate(260, 96)">
-      <rect x="0" y="0" width="240" height="88" rx="12" ry="12" fill="rgba(180,83,9,0.35)" />
-      <text class="step-title">
-        <tspan x="20" y="24">5. Node A lokalde</tspan>
-        <tspan x="20" dy="18">yazar</tspan>
-      </text>
-      <text class="step-desc">
-        <tspan x="20" y="52">CacheEngine segmente</tspan>
-        <tspan x="20" dy="16">yazar, TTL kuyruğunu ve</tspan>
-        <tspan x="20" dy="16">metrikleri günceller.</tspan>
-      </text>
-    </g>
-    <g class="step step6" transform="translate(520, 96)">
-      <rect x="0" y="0" width="240" height="88" rx="12" ry="12" fill="rgba(190,24,93,0.35)" />
-      <text class="step-title">
-        <tspan x="20" y="24">6. Node B'ye</tspan>
-        <tspan x="20" dy="18">replika akışı</tspan>
-      </text>
-      <text class="step-desc">
-        <tspan x="20" y="52">RemoteNode vekili komutu</tspan>
-        <tspan x="20" dy="16">Node B ReplicationServer'a</tspan>
-        <tspan x="20" dy="16">ileterek aynı kaydı yazar.</tspan>
-      </text>
-    </g>
-    <g class="step step7" transform="translate(130, 192)">
-      <rect x="0" y="0" width="240" height="88" rx="12" ry="12" fill="rgba(147,51,234,0.35)" />
-      <text class="step-title">
-        <tspan x="20" y="24">7. Quorum</tspan>
-        <tspan x="20" dy="18">yanıtı</tspan>
-      </text>
-      <text class="step-desc">
-        <tspan x="20" y="52">Yeterli ACK gelince</tspan>
-        <tspan x="20" dy="16">ClusterClient "STORED"</tspan>
-        <tspan x="20" dy="16">döner, istemci mutlu.</tspan>
-      </text>
-    </g>
-    <g class="step step8" transform="translate(390, 192)">
-      <rect x="0" y="0" width="240" height="88" rx="12" ry="12" fill="rgba(30,64,175,0.35)" />
-      <text class="step-title">
-        <tspan x="20" y="24">8. Arka plan</tspan>
-        <tspan x="20" dy="18">bakımı</tspan>
-      </text>
-      <text class="step-desc">
-        <tspan x="20" y="52">TTL temizleyicisi, hinted</tspan>
-        <tspan x="20" dy="16">handoff ve anti-entropy</tspan>
-        <tspan x="20" dy="16">döngüsü veriyi dengede tutar.</tspan>
-      </text>
+    <g class="stage stage5" transform="translate(612 20)">
+      <rect class="stage-card" width="140" height="64" rx="18" ry="18" />
+      <text class="stage-number" x="20" y="32">AŞAMA 5</text>
+      <text class="stage-title" x="20" y="50">Quorum</text>
+      <text class="stage-desc" x="20" y="68">ACK istemciye döner</text>
     </g>
   </g>
 </svg>
