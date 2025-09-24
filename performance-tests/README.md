@@ -26,7 +26,8 @@ Build it once before running the plans and copy the resulting JAR to the JMeter 
 
 The command produces `performance-tests/java-sampler/target/can-cache-jmeter-sampler-0.0.1-SNAPSHOT.jar`.
 The helper script `performance-tests/run-local.sh` automatically wires this JAR for both local
-and Dockerised executions when it is present.
+and Dockerised executions when it is present. When the script is used it will also attempt to
+build the sampler automatically if the JAR is missing, provided the Maven wrapper is available.
 
 ## Running the plans
 
