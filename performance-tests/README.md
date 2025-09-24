@@ -25,6 +25,19 @@ Build it once before running the plans and copy the resulting JAR to the JMeter 
 ```
 
 The command produces `performance-tests/java-sampler/target/can-cache-jmeter-sampler-0.0.1-SNAPSHOT.jar`.
+JMeter needs that JAR on its classpath to load the sampler class. When running the CLI directly,
+set the `JMETER_ADD_CLASSPATH` environment variable before invoking JMeter:
+
+```bash
+export JMETER_ADD_CLASSPATH="$(pwd)/performance-tests/java-sampler/target/can-cache-jmeter-sampler-0.0.1-SNAPSHOT.jar"
+```
+
+Alternatively you can prefix a single command without exporting it globally:
+
+```bash
+JMETER_ADD_CLASSPATH="$(pwd)/performance-tests/java-sampler/target/can-cache-jmeter-sampler-0.0.1-SNAPSHOT.jar" jmeter ...
+```
+
 The helper script `performance-tests/run-local.sh` automatically wires this JAR for both local
 and Dockerised executions when it is present. When the script is used it will also attempt to
 build the sampler automatically if the JAR is missing, provided the Maven wrapper is available.
@@ -36,7 +49,8 @@ corresponding non-functional requirement (NFR) under `performance-tests/nfr`.
 Execute a plan with the JMeter CLI:
 
 ```bash
-jmeter -n \
+JMETER_ADD_CLASSPATH="$(pwd)/performance-tests/java-sampler/target/can-cache-jmeter-sampler-0.0.1-SNAPSHOT.jar" \
+  jmeter -n \
   -t performance-tests/jmeter/can-cache-small.jmx \
   -l results/can-cache-small.jtl \
   -JtargetHost=127.0.0.1 \
