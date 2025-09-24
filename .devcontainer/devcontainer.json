@@ -1,1 +1,29 @@
-{ "image": "mcr.microsoft.com/devcontainers/universal:2", "features": {} }
+{
+  "name": "java-24-codespace",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "24",          // JDK 24
+      "jdkDistro": "tem",       // Temurin (isteğe bağlı: "ms" da olur)
+      "installMaven": "true",
+      "mavenVersion": "latest",
+      "installGradle": "false"
+    }
+  },
+  "postCreateCommand": "java -version && mvn -v",
+  "customizations": {
+    "vscode": {
+      "extensions": ["vscjava.vscode-java-pack"],
+      "settings": {
+        "java.configuration.runtimes": [
+          {
+            "name": "JavaSE-24",
+            "path": "/usr/local/sdkman/candidates/java/current"
+          }
+        ],
+        "java.jdt.ls.java.home": "/usr/local/sdkman/candidates/java/current"
+      }
+    }
+  }
+}
+
