@@ -34,47 +34,53 @@ if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
   exit 0
 fi
 
-profile="${1:-small}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+
+profile="small"
 if [[ $# -gt 0 && ${1} != "--" ]]; then
+  profile="${1}"
   shift
 fi
 
-if [[ ${profile} == "--" ]]; then
-  profile="small"
+if [[ ${1:-} == "--" ]]; then
+  shift
 fi
 
-sampler_jar_rel="performance-tests/java-sampler/target/can-cache-jmeter-sampler-0.0.1-SNAPSHOT.jar"
+sampler_module="${repo_root}/performance-tests/java-sampler"
+mvnw_path="${repo_root}/mvnw"
 
 build_sampler_jar() {
-  if [[ -x ./mvnw ]]; then
+  if [[ -x ${mvnw_path} ]]; then
     echo "Building Java sampler JAR" >&2
-    ./mvnw -q -f performance-tests/java-sampler/pom.xml package >&2
+    "${mvnw_path}" -q -f "${sampler_module}/pom.xml" package >&2
     return 0
   fi
 
-  sibling_mvnw="$(dirname "$0")/../mvnw"
-  if [[ -x ${sibling_mvnw} ]]; then
-    echo "Building Java sampler JAR" >&2
-    "${sibling_mvnw}" -q -f performance-tests/java-sampler/pom.xml package >&2
+  if command -v mvn >/dev/null 2>&1; then
+    echo "Building Java sampler JAR with system Maven" >&2
+    mvn -q -f "${sampler_module}/pom.xml" package >&2
     return 0
   fi
 
-  echo "Unable to locate mvnw to build the Java sampler. Ensure the repository root contains mvnw." >&2
+  echo "Unable to locate mvnw or mvn to build the Java sampler." >&2
   return 1
 }
 
 build_sampler_jar
 
-if [[ ! -f "${sampler_jar_rel}" ]]; then
-  echo "Java sampler JAR not found at ${sampler_jar_rel} after build." >&2
+readarray -t sampler_jars < <(find "${sampler_module}/target" -maxdepth 1 -type f -name 'can-cache-jmeter-sampler-*.jar' | sort)
+if [[ ${#sampler_jars[@]} -eq 0 ]]; then
+  echo "Java sampler JAR was not produced under ${sampler_module}/target." >&2
   exit 1
 fi
 
-sampler_jar_abs="$(cd "$(dirname "${sampler_jar_rel}")" && pwd)/$(basename "${sampler_jar_rel}")"
-echo "Sampler JAR available at ${sampler_jar_abs}" >&2
+sampler_jar="${sampler_jars[-1]}"
+echo "Sampler JAR available at ${sampler_jar}" >&2
 
 if [[ -n ${JMETER_HOME:-} ]]; then
   jmeter_home="${JMETER_HOME}"
+  jmeter_bin="${jmeter_home}/bin/jmeter"
 elif command -v jmeter >/dev/null 2>&1; then
   jmeter_bin="$(command -v jmeter)"
   jmeter_home="$(cd "$(dirname "${jmeter_bin}")/.." && pwd)"
@@ -83,20 +89,25 @@ else
   exit 1
 fi
 
+if [[ ! -x ${jmeter_bin} ]]; then
+  echo "Could not locate the JMeter executable under ${jmeter_home}." >&2
+  exit 1
+fi
+
 if [[ ! -d "${jmeter_home}/lib/ext" ]]; then
   echo "Could not locate lib/ext directory under ${jmeter_home}." >&2
   exit 1
 fi
 
-sampler_target="${jmeter_home}/lib/ext/$(basename "${sampler_jar_rel}")"
+sampler_target="${jmeter_home}/lib/ext/$(basename "${sampler_jar}")"
 echo "Copying sampler JAR to ${sampler_target}" >&2
-cp "${sampler_jar_rel}" "${sampler_target}"
+cp "${sampler_jar}" "${sampler_target}"
 
 case "${profile}" in
-  small) plan="jmeter/can-cache-small.jmx" ;;
-  medium) plan="jmeter/can-cache-medium.jmx" ;;
-  large) plan="jmeter/can-cache-large.jmx" ;;
-  xl) plan="jmeter/can-cache-xl.jmx" ;;
+  small) plan="${script_dir}/jmeter/can-cache-small.jmx" ;;
+  medium) plan="${script_dir}/jmeter/can-cache-medium.jmx" ;;
+  large) plan="${script_dir}/jmeter/can-cache-large.jmx" ;;
+  xl) plan="${script_dir}/jmeter/can-cache-xl.jmx" ;;
   *)
     echo "Unknown profile: ${profile}" >&2
     usage >&2
@@ -104,14 +115,9 @@ case "${profile}" in
     ;;
 esac
 
-if [[ ${1:-} == "--" ]]; then
-  shift
-fi
-
-results_dir="performance-tests/results"
+results_dir="${script_dir}/results"
 mkdir -p "${results_dir}"
 
-# Build default result file name if not provided via env or args.
 default_result_file="${results_dir}/$(basename "${plan}" .jmx)-$(date +%Y%m%d-%H%M%S).jtl"
 result_file="${RESULT_FILE:-${default_result_file}}"
 
@@ -130,7 +136,7 @@ props=(
 [[ -n ${PAYLOAD_SIZE:-} ]] && props+=("-JpayloadSize=${PAYLOAD_SIZE}")
 [[ -n ${DURATION_SECONDS:-} ]] && props+=("-JdurationSeconds=${DURATION_SECONDS}")
 
-jmeter_cmd=(jmeter -n -t "${plan}" -l "${result_file}")
+jmeter_cmd=("${jmeter_bin}" -n -t "${plan}" -l "${result_file}")
 jmeter_cmd+=("${props[@]}")
 jmeter_cmd+=("$@")
 
