@@ -6,9 +6,15 @@
   <img src="https://img.shields.io/badge/distribution-consistent%20hashing-4c1" alt="Consistent hashing" />
 </p>
 
-<p align="center">
-  <a href="#turkish">Türkçe</a> · <a href="#english">English</a>
-</p>
+<div align="center">
+  <a href="#turkish">
+    <img src="https://img.shields.io/badge/Language-T%C3%BCrk%C3%A7e-E30A17?style=for-the-badge&amp;logo=googletranslate&amp;logoColor=white" alt="Türkçe" />
+  </a>
+  <span>&nbsp;&nbsp;</span>
+  <a href="#english">
+    <img src="https://img.shields.io/badge/Language-English-0A3161?style=for-the-badge&amp;logo=googletranslate&amp;logoColor=white" alt="English" />
+  </a>
+</div>
 
 <a id="turkish"></a>
 

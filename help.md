@@ -1,8 +1,14 @@
 # Help
 
-<p align="center">
-  <a href="#help-tr">Türkçe</a> · <a href="#help-en">English</a>
-</p>
+<div align="center">
+  <a href="#help-tr">
+    <img src="https://img.shields.io/badge/Language-T%C3%BCrk%C3%A7e-E30A17?style=for-the-badge&amp;logo=googletranslate&amp;logoColor=white" alt="Türkçe" />
+  </a>
+  <span>&nbsp;&nbsp;</span>
+  <a href="#help-en">
+    <img src="https://img.shields.io/badge/Language-English-0A3161?style=for-the-badge&amp;logo=googletranslate&amp;logoColor=white" alt="English" />
+  </a>
+</div>
 
 <a id="help-tr"></a>
 

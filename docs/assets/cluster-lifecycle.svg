@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
-  <title id="title">can-cache Yazma Yolculuğu</title>
-  <desc id="desc">İstemciden başlayan bir yazma isteğinin iki node'lu can-cache kümesinde keşiften quorum onayına kadar izlediği adımları ve veri akışını animasyonla açıklar.</desc>
+  <title id="title">can-cache Write Journey</title>
+  <desc id="desc">Describes how a write request travels across a two-node can-cache cluster from discovery to quorum acknowledgement.</desc>
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#0b1220" />
@@ -256,56 +256,56 @@
     </style>
   </defs>
   <rect x="0" y="0" width="960" height="540" rx="32" ry="32" fill="url(#bg)" />
-  <text x="80" y="70" class="title">can-cache yazma isteğinin yaşam döngüsü</text>
-  <text x="80" y="96" class="subtitle">İki node'lu kümede keşif, bootstrap, yazma ve quorum onayının görsel akışı</text>
+  <text x="80" y="70" class="title">Lifecycle of a can-cache write request</text>
+  <text x="80" y="96" class="subtitle">Visual flow of discovery, bootstrap, write and quorum confirmation in a two-node cluster</text>
 
   <rect x="80" y="120" width="800" height="280" rx="36" ry="36" class="scene-panel" />
 
   <g class="callouts">
     <text class="callout stage1" x="720" y="150">
-      <tspan class="callout-title" x="720" dy="0">Keşif ve katılım</tspan>
-      <tspan class="callout-sub" x="720" dy="20">Node B heartbeat ile kümede görünür.</tspan>
+      <tspan class="callout-title" x="720" dy="0">Discovery &amp; join</tspan>
+      <tspan class="callout-sub" x="720" dy="20">Node B appears in the cluster via heartbeat.</tspan>
     </text>
     <text class="callout stage2" x="720" y="150">
-      <tspan class="callout-title" x="720" dy="0">Bootstrap eşitlemesi</tspan>
-      <tspan class="callout-sub" x="720" dy="20">Node A snapshot ve ipuçlarını akıtır.</tspan>
+      <tspan class="callout-title" x="720" dy="0">Bootstrap sync</tspan>
+      <tspan class="callout-sub" x="720" dy="20">Node A streams snapshot data and hints.</tspan>
     </text>
     <text class="callout stage3" x="480" y="145">
-      <tspan class="callout-title" x="480" dy="0">İstemci yazma isteği</tspan>
-      <tspan class="callout-sub" x="480" dy="20">SET komutu lider node'a ulaşır.</tspan>
+      <tspan class="callout-title" x="480" dy="0">Client write request</tspan>
+      <tspan class="callout-sub" x="480" dy="20">SET command reaches the leader.</tspan>
     </text>
     <text class="callout stage4" x="620" y="210">
-      <tspan class="callout-title" x="620" dy="0">Replika akışı</tspan>
-      <tspan class="callout-sub" x="620" dy="20">Komut Node B üzerinde tekrar uygulanır.</tspan>
+      <tspan class="callout-title" x="620" dy="0">Replica stream</tspan>
+      <tspan class="callout-sub" x="620" dy="20">Command replays on Node B.</tspan>
     </text>
     <text class="callout stage5" x="360" y="210">
-      <tspan class="callout-title" x="360" dy="0">Quorum onayı</tspan>
-      <tspan class="callout-sub" x="360" dy="20">ACK geri döner ve istemci "STORED" alır.</tspan>
+      <tspan class="callout-title" x="360" dy="0">Quorum acknowledgement</tspan>
+      <tspan class="callout-sub" x="360" dy="20">ACK returns and the client receives "STORED".</tspan>
     </text>
   </g>
 
   <g class="node client" transform="translate(150 260)">
     <circle class="halo" r="62" fill="url(#haloClient)" />
     <circle class="body" r="38" fill="url(#clientBody)" />
-    <text class="label" x="0" y="-72">İstemci</text>
+    <text class="label" x="0" y="-72">Client</text>
     <text class="detail" x="0" y="-48">SET foo 900</text>
-    <text class="role" x="0" y="54">yazma isteği kaynağı</text>
+    <text class="role" x="0" y="54">write request source</text>
   </g>
 
   <g class="node leader" transform="translate(480 210)">
     <circle class="halo" r="68" fill="url(#haloLeader)" />
     <circle class="body" r="44" fill="url(#leaderBody)" />
     <text class="label" x="0" y="-86">Node A</text>
-    <text class="role" x="0" y="-62">lider</text>
-    <text class="detail" x="0" y="64">Koordinasyon &amp; quorum</text>
+    <text class="role" x="0" y="-62">leader</text>
+    <text class="detail" x="0" y="64">Coordination &amp; quorum</text>
   </g>
 
   <g class="node follower" transform="translate(760 210)">
     <circle class="halo" r="68" fill="url(#haloFollower)" />
     <circle class="body" r="44" fill="url(#followerBody)" />
     <text class="label" x="0" y="-86">Node B</text>
-    <text class="role" x="0" y="-62">takipçi</text>
-    <text class="detail" x="0" y="64">Replika &amp; dayanıklılık</text>
+    <text class="role" x="0" y="-62">follower</text>
+    <text class="detail" x="0" y="64">Replica &amp; durability</text>
   </g>
 
   <path id="handshake" class="flow flow-handshake" d="M760 210 C 700 140 580 130 480 210" marker-end="url(#arrow)" />
@@ -347,33 +347,33 @@
     </g>
     <g class="stage stage1" transform="translate(20 20)">
       <rect class="stage-card" width="140" height="64" rx="18" ry="18" />
-      <text class="stage-number" x="20" y="32">AŞAMA 1</text>
-      <text class="stage-title" x="20" y="50">Keşif</text>
-      <text class="stage-desc" x="20" y="68">Node B koordinasyon</text>
+      <text class="stage-number" x="20" y="32">STAGE 1</text>
+      <text class="stage-title" x="20" y="50">Discovery</text>
+      <text class="stage-desc" x="20" y="68">Node B joins coordination</text>
     </g>
     <g class="stage stage2" transform="translate(168 20)">
       <rect class="stage-card" width="140" height="64" rx="18" ry="18" />
-      <text class="stage-number" x="20" y="32">AŞAMA 2</text>
+      <text class="stage-number" x="20" y="32">STAGE 2</text>
       <text class="stage-title" x="20" y="50">Bootstrap</text>
-      <text class="stage-desc" x="20" y="68">Snapshot + ipuçları</text>
+      <text class="stage-desc" x="20" y="68">Snapshot + hints</text>
     </g>
     <g class="stage stage3" transform="translate(316 20)">
       <rect class="stage-card" width="140" height="64" rx="18" ry="18" />
-      <text class="stage-number" x="20" y="32">AŞAMA 3</text>
-      <text class="stage-title" x="20" y="50">İstemci</text>
-      <text class="stage-desc" x="20" y="68">Komut liderde işlenir</text>
+      <text class="stage-number" x="20" y="32">STAGE 3</text>
+      <text class="stage-title" x="20" y="50">Client</text>
+      <text class="stage-desc" x="20" y="68">Command processed on leader</text>
     </g>
     <g class="stage stage4" transform="translate(464 20)">
       <rect class="stage-card" width="140" height="64" rx="18" ry="18" />
-      <text class="stage-number" x="20" y="32">AŞAMA 4</text>
-      <text class="stage-title" x="20" y="50">Replika</text>
-      <text class="stage-desc" x="20" y="68">Node B kayıt yazar</text>
+      <text class="stage-number" x="20" y="32">STAGE 4</text>
+      <text class="stage-title" x="20" y="50">Replica</text>
+      <text class="stage-desc" x="20" y="68">Node B writes entry</text>
     </g>
     <g class="stage stage5" transform="translate(612 20)">
       <rect class="stage-card" width="140" height="64" rx="18" ry="18" />
-      <text class="stage-number" x="20" y="32">AŞAMA 5</text>
+      <text class="stage-number" x="20" y="32">STAGE 5</text>
       <text class="stage-title" x="20" y="50">Quorum</text>
-      <text class="stage-desc" x="20" y="68">ACK istemciye döner</text>
+      <text class="stage-desc" x="20" y="68">ACK returns to client</text>
     </g>
   </g>
 </svg>
