@@ -70,6 +70,9 @@ if [[ ! -f "${sampler_jar_rel}" ]]; then
   exit 1
 fi
 
+sampler_jar_abs="$(cd "$(dirname "${sampler_jar_rel}")" && pwd)/$(basename "${sampler_jar_rel}")"
+echo "Sampler JAR available at ${sampler_jar_abs}" >&2
+
 if [[ -n ${JMETER_HOME:-} ]]; then
   jmeter_home="${JMETER_HOME}"
 elif command -v jmeter >/dev/null 2>&1; then
@@ -109,8 +112,10 @@ results_dir="performance-tests/results"
 mkdir -p "${results_dir}"
 
 # Build default result file name if not provided via env or args.
-default_result_file="${results_dir}/$(basename "${plan}" .jmx).jtl"
+default_result_file="${results_dir}/$(basename "${plan}" .jmx)-$(date +%Y%m%d-%H%M%S).jtl"
 result_file="${RESULT_FILE:-${default_result_file}}"
+
+echo "Results will be written to ${result_file}" >&2
 
 props=(
   "-JtargetHost=${TARGET_HOST:-127.0.0.1}"
@@ -131,3 +136,5 @@ jmeter_cmd+=("$@")
 
 echo "Running JMeter locally: ${jmeter_cmd[*]}"
 "${jmeter_cmd[@]}"
+
+echo "JMeter execution finished. Results available at ${result_file}" >&2
