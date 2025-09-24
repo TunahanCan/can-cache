@@ -3,10 +3,10 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: run-local.sh [PROFILE] [-- JMETER_ARGS...]
+Usage: run-docker.sh [PROFILE] [-- JMETER_ARGS...]
 
-Runs a Can Cache JMeter performance profile against a locally running instance
-using a locally installed Apache JMeter distribution.
+Runs a Can Cache JMeter performance profile using a Dockerised JMeter
+installation.
 
 Profiles:
   small   Lightweight smoke workload (default)
@@ -24,8 +24,10 @@ Environment overrides:
   PAYLOAD_SIZE           Payload size in bytes (plan default if unset)
   DURATION_SECONDS       Thread group duration override in seconds
   RESULT_FILE            Path for the JMeter results (.jtl) file
+  JMETER_IMAGE           Docker image to use for JMeter (default: justb4/jmeter:5.6.2)
 
-Any arguments after `--` are passed directly to the JMeter command.
+Any arguments after `--` are passed directly to the JMeter command inside the
+container.
 USAGE
 }
 
@@ -70,24 +72,10 @@ if [[ ! -f "${sampler_jar_rel}" ]]; then
   exit 1
 fi
 
-if [[ -n ${JMETER_HOME:-} ]]; then
-  jmeter_home="${JMETER_HOME}"
-elif command -v jmeter >/dev/null 2>&1; then
-  jmeter_bin="$(command -v jmeter)"
-  jmeter_home="$(cd "$(dirname "${jmeter_bin}")/.." && pwd)"
-else
-  echo "Apache JMeter is not available on PATH. Install JMeter locally or set JMETER_HOME." >&2
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is not available on PATH. Install Docker to run the plans in a container." >&2
   exit 1
 fi
-
-if [[ ! -d "${jmeter_home}/lib/ext" ]]; then
-  echo "Could not locate lib/ext directory under ${jmeter_home}." >&2
-  exit 1
-fi
-
-sampler_target="${jmeter_home}/lib/ext/$(basename "${sampler_jar_rel}")"
-echo "Copying sampler JAR to ${sampler_target}" >&2
-cp "${sampler_jar_rel}" "${sampler_target}"
 
 case "${profile}" in
   small) plan="jmeter/can-cache-small.jmx" ;;
@@ -125,9 +113,18 @@ props=(
 [[ -n ${PAYLOAD_SIZE:-} ]] && props+=("-JpayloadSize=${PAYLOAD_SIZE}")
 [[ -n ${DURATION_SECONDS:-} ]] && props+=("-JdurationSeconds=${DURATION_SECONDS}")
 
-jmeter_cmd=(jmeter -n -t "${plan}" -l "${result_file}")
-jmeter_cmd+=("${props[@]}")
-jmeter_cmd+=("$@")
+jmeter_image="${JMETER_IMAGE:-justb4/jmeter:5.6.2}"
 
-echo "Running JMeter locally: ${jmeter_cmd[*]}"
-"${jmeter_cmd[@]}"
+docker_cmd=(docker run --rm)
+if [[ -n ${JMETER_ADD_CLASSPATH:-} ]]; then
+  docker_cmd+=(-e "JMETER_ADD_CLASSPATH=${JMETER_ADD_CLASSPATH}:/workspace/${sampler_jar_rel}")
+else
+  docker_cmd+=(-e "JMETER_ADD_CLASSPATH=/workspace/${sampler_jar_rel}")
+fi
+
+docker_cmd+=(-v "$(pwd)":/workspace)
+docker_cmd+=(-w /workspace "${jmeter_image}" jmeter -n -t "${plan}" -l "${result_file}")
+docker_cmd+=("${props[@]}")
+
+echo "Running Dockerised JMeter: ${docker_cmd[*]} $*"
+"${docker_cmd[@]}" "$@"
