@@ -212,7 +212,8 @@ public class CoordinationService implements AutoCloseable
         }
 
         try {
-            taskExecutor.execute(() -> processMembershipPacket(nodeId, host, port, remoteEpoch));
+            final long lambdaRemoteEpoch = remoteEpoch;
+            taskExecutor.execute(() -> processMembershipPacket(nodeId, host, port, lambdaRemoteEpoch));
         } catch (RejectedExecutionException e) {
             if (running) {
                 LOG.debugf("Coordination task rejected for %s:%d", nodeId, port);
