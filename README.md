@@ -6,6 +6,12 @@
   <img src="https://img.shields.io/badge/distribution-consistent%20hashing-4c1" alt="Consistent hashing" />
 </p>
 
+<p align="center">
+  <a href="#turkish">Türkçe</a> · <a href="#english">English</a>
+</p>
+
+<a id="turkish"></a>
+
 > **can-cache**, cancached metin protokolü ile %100 uyumlu, Quarkus 3 tabanlı hafif ama küme ölçekli bir bellek içi anahtar–değer sunucusudur. Tek JVM ile başlayıp saniyeler içinde tutarlı hash halkasına katılan, gecikmeye duyarlı replikasyon ve anlık snapshot alma özellikleriyle modern uygulamaların cache katmanına güç verir.
 
 ---
@@ -220,3 +226,229 @@ Sorularınız mı var? Bir [issue](../../issues/new) açabilir veya doğrudan Pu
 Bu proje, MIT Lisansı veya Apache Lisansı Sürüm 2.0 koşulları altında çift lisanslanmıştır. Ayrıntılar için [LICENSE-MIT](./LICENSE-MIT) ve [LICENSE-APACHE](./LICENSE-APACHE) dosyalarına göz atabilirsiniz.
 
 Bu depoya katkıda bulunan herkes, katkılarının her iki lisansın koşulları altında da kullanılabileceğini kabul eder.
+
+---
+
+<a id="english"></a>
+# can-cache (English)
+
+<p align="center">
+  <img src="https://img.shields.io/badge/quarkus-3.x-4695EB?logo=quarkus&logoColor=white" alt="Built with Quarkus 3" />
+  <img src="https://img.shields.io/badge/protocol-cancached-orange" alt="Protocol compatible" />
+  <img src="https://img.shields.io/badge/distribution-consistent%20hashing-4c1" alt="Consistent hashing" />
+</p>
+
+> **can-cache** is a lightweight yet cluster-scale in-memory key–value server built on Quarkus 3 that is 100% compatible with the cancached text protocol. It can boot on a single JVM and join the consistent hash ring within seconds, empowering the cache tier of modern applications with latency-aware replication and instant snapshots.
+
+---
+
+## Table of Contents
+- [Animated Lifecycle](#animated-lifecycle)
+- [Highlights](#highlights)
+- [Why can-cache?](#why-can-cache)
+- [Architecture Outline](#architecture-outline)
+- [Demo in 2 Minutes](#demo-in-2-minutes)
+- [Cluster Setup Example](#cluster-setup-example)
+- [Configuration Wizard](#configuration-wizard)
+- [Project Layout](#project-layout)
+- [Roadmap](#roadmap)
+- [Contributing & Feedback](#contributing--feedback)
+- [License](#license)
+
+## Animated Lifecycle
+
+<p align="center">
+  <img src="docs/assets/cluster-lifecycle.svg" alt="Animated journey of can-cache data across two nodes" width="860" />
+</p>
+
+The animation presents the journey of a small cluster within seconds across three different loops: **cluster expansion**, **data mutations**, and **topology shrinkage**. This way you can observe how both write operations such as `set/add` and deletions are managed on top of the very same topological events at a glance.
+
+### 1) Cluster Expansion — Node Join Loop
+
+1. **Node discovery:** Node B is identified through multicast heartbeats and added to the consistent hash ring.
+2. **Bootstrap preparation:** The leader node gets ready to share the latest snapshot produced by `SnapshotScheduler` along with the hints waiting on `HintedHandoffService`.
+3. **Snapshot transfer:** `ReplicationServer` streams delta and snapshot chunks to turn the newcomer into a hot standby.
+4. **Anti-entropy synchronization:** Segments on the hash ring are compared; missing records are filled through `RemoteNode` proxies.
+5. **Health check:** If the new member keeps a steady heartbeat for the configured period, the cluster updates its replication factor.
+
+At the end of this phase Node B becomes up to date enough to receive both read and write traffic, joining the mutation loop highlighted with orange/green strokes in the animation.
+
+### 2) Data Mutation Loop — `set/add/delete`
+
+Every node that joins the cluster follows the same mutation pipeline. The `set` request in the animation summarises its eight-frame path:
+
+1. **Request admission:** `CanCachedServer` parses the protocol line and prepares the `ClusterClient` call.
+2. **Replica selection:** The hash ring picks the leader (Node A) and the follower (Node B).
+3. **Local write:** The leader writes to its `CacheEngine` segment while refreshing TTL and metrics.
+4. **Remote replication:** The `RemoteNode` proxy forwards the command to Node B's `ReplicationServer`.
+5. **Quorum response:** After receiving enough ACKs the server returns `STORED` to the client.
+6. **Background maintenance:** TTL sweeping, hinted handoff and anti-entropy loops continue to run.
+
+The `add` command follows the same flow with an extra precondition check; if the key already exists the response is `NOT_STORED`. For `delete` the third step triggers `CacheEngine.remove`, afterwards replicas receive a `D` frame and the quorum verification concludes with a `DELETED` reply. In both cases the background processes (TTL sweeping, replaying hints) remain active to preserve consistency.
+
+### 3) Cluster Shrink — Node Removal Loop
+
+1. **Heartbeat loss:** `CoordinationService` marks the node as suspect after consecutive timeouts.
+2. **Removing from the hash ring:** Virtual nodes are dropped and leadership duties are redistributed across the remaining nodes.
+3. **Hint queue fill:** Mutations that cannot reach the missing node are stored in the `HintedHandoffService` queue.
+4. **Cleanup:** Replica counters and metrics on `CacheEngine` are updated, and the TTL queue realigns with the new ownership.
+5. **Return scenario:** If the node comes back online the bootstrap loop is triggered; otherwise the hints are purged during the next anti-entropy round.
+
+The animation shows this loop with the removed node fading from orange to grey, ensuring data safety even during `delete`/`touch` commands.
+
+## Highlights
+
+### ⚡ Protocol & Performance
+- Implements every core command of the cancached text protocol (`set/add/replace/append/prepend/cas/get/gets/delete/incr/decr/touch/flush_all/stats/version/quit`), rejects payloads larger than 1 MB, and interprets TTL values over 30 days as epoch timestamps.
+- CAS counters are produced atomically; thanks to `StoredValueCodec` CAS, flags, and TTL travel in a single Base64 string.
+- Segmented `CacheEngine` enables switchable LRU or TinyLFU eviction policies, millisecond-precision TTL cleanup and high hit rates.
+
+### 🛡️ Durability & Consistency
+- `ClusterClient` operates on a **consistent hash ring** with virtual nodes, deterministically picking as many replicas as the replication factor and carrying writes to a majority quorum.
+- `HintedHandoffService` persists hints for failed replicas and replays them when the node returns, minimising data loss.
+- `SnapshotScheduler` takes periodic snapshots with an RDB-like file format and warms up memory from the same file when the application restarts.
+
+### 🔍 Observability & Operations
+- `MetricsRegistry` + `MetricsReporter` periodically emit counter and timer statistics with microsecond precision.
+- The `Broker` publish-subscribe model serves `keyspace:set` and `keyspace:del` events; `CacheEngine.onRemoval` subscribers make the cache lifecycle observable.
+- Multicast-based `CoordinationService` discovers new JVM instances automatically and cleans up nodes that time out.
+
+## Why can-cache?
+- **Built for serious production scenarios:** Latency-aware replication, hinted handoff, and anti-entropy loops tolerate network partitions.
+- **Leverages modern JVM capabilities:** Makes use of virtual threads, reactive IO, and the speed of the Quarkus ecosystem.
+- **Simple to deploy, quick to scale:** Comes online with a single command; new nodes join the cluster automatically via multicast.
+- **Extensible core:** New codecs, eviction strategies, and observers can be added with ease.
+
+## Architecture Outline
+
+```mermaid
+flowchart LR
+    subgraph Client
+        MC[cancached client]
+    end
+    MC -- TCP commands --> S[CanCachedServer]
+    S -- routing --> CC[ClusterClient]
+    CC -- hash --> R[ConsistentHashRing]
+    R -- local --> LN[(Local Node \nCacheEngine)]
+    R -- remote --> RN[(RemoteNode proxies)]
+    RN --> RS[ReplicationServer]
+    LN --> CE[CacheEngine]
+    RS --> CE
+    CE -- TTL cleanup --> DQ[DelayQueue]
+    CE -- snapshot --> Snap[SnapshotFile/Scheduler]
+    CE -- metrics/events --> Obs[MetricsRegistry & Broker]
+```
+
+### Layers
+- **Command processing:** `CanCachedServer` listens on the configured port once Quarkus boots, performs line-based parsing and mirrors the edge cases of the cancached protocol (CAS conflicts, `noreply`, `flush_all` delay, etc.).
+- **Clustering:** `ConsistentHashRing` uses a `HashFn` implementation with virtual nodes; `CoordinationService` keeps the membership updated via multicast heartbeats.
+- **Replication:** `RemoteNode` connects to `ReplicationServer` with short-lived sockets; `'S'/'G'/'D'/'X'/'C'` commands transfer data while verifying consistency through fingerprint comparisons.
+- **In-memory engine:** `CacheEngine` manages segments, the TTL queue (`DelayQueue<ExpiringKey>`), and CAS operations; `AutoCloseable` subscriptions keep stats such as `curr_items` up to date.
+- **Persistence & observability:** `SnapshotFile` relies on atomic file moves to stay consistent; `MetricsReporter` prints metrics within seconds when the report period is greater than zero.
+
+## Demo in 2 Minutes
+
+> Requirements: Maven Wrapper (`./mvnw`) and JDK 25.
+
+```bash
+# 1) Start the server in development mode
+./mvnw quarkus:dev
+
+# 2) Perform a quick validation
+printf 'set foo 0 5 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
+# Expected output: STORED / VALUE foo 0 3
+```
+
+To run after packaging:
+
+```bash
+./mvnw package
+java -jar target/quarkus-app/quarkus-run.jar
+```
+
+## Cluster Setup Example
+
+Scaling from a single JVM to a clustered topology is this easy:
+
+```bash
+# Default node
+./mvnw quarkus:dev
+
+# Second node (with alternate ports)
+./mvnw quarkus:dev \
+    -Dquarkus.http.port=0 \
+    -Dapp.network.port=11212 \
+    -Dapp.cluster.replication.port=18081 \
+    -Dapp.cluster.discovery.node-id=node-b
+```
+
+Multicast coordination automatically discovers the new node and adds it to the consistent hash ring. Writes wait until the quorum completes; hinted handoff takes over for failed followers.
+
+## Configuration Wizard
+
+The most important keys waiting under `application.properties`:
+
+| Key | Description | Default |
+| --- | --- | --- |
+| `app.cache.segments` | Number of segments; controls the balance between concurrency and capacity. | 8 |
+| `app.cache.max-capacity` | Maximum number of entries. | 10000 |
+| `app.cache.cleaner-poll-millis` | Poll interval (ms) for the TTL cleaner queue. | 100 |
+| `app.cache.eviction-policy` | `LRU` or `TINY_LFU`. | LRU |
+| `app.rdb.path` | Snapshot file path. | `data.rdb` |
+| `app.rdb.snapshot-interval-seconds` | Snapshot period; 0 means only on startup. | 60 |
+| `app.cluster.virtual-nodes` | Number of virtual nodes per physical node. | 64 |
+| `app.cluster.replication-factor` | Number of replicas per key. | 1 |
+| `app.cluster.discovery.multicast-group/port` | Multicast coordination address. | 230.0.0.1 / 45565 |
+| `app.cluster.discovery.heartbeat-interval-millis` | Heartbeat interval. | 5000 |
+| `app.cluster.discovery.failure-timeout-millis` | Member timeout threshold. | 15000 |
+| `app.cluster.discovery.node-id` | Optional static node identifier. | (empty) |
+| `app.cluster.replication.bind-host/advertise-host/port` | Address details for the replication server. | 0.0.0.0 / 127.0.0.1 / 18080 |
+| `app.cluster.replication.connect-timeout-millis` | Connection timeout for remote nodes. | 5000 |
+| `app.cluster.coordination.hint-replay-interval-millis` | Minimum delay between hint replay attempts. | 5000 |
+| `app.cluster.coordination.anti-entropy-interval-millis` | Period (ms) for anti-entropy sweeps. | 30000 |
+| `app.network.host/port/backlog/worker-threads` | Settings for the cancached TCP server. | 0.0.0.0 / 11211 / 128 / 16 |
+| `app.memcache.max-item-size-bytes` | Maximum size (bytes) for a single value. | 1048576 |
+| `app.memcache.max-cas-retries` | Retry count for failed CAS operations. | 16 |
+| `app.metrics.report-interval-seconds` | Metrics reporting period; 0 disables the reporter. | 5 |
+
+## Project Layout
+
+| Directory | Contents |
+| --- | --- |
+| `src/main/java/com/can/net` | cancached TCP server and protocol parsers. |
+| `src/main/java/com/can/cluster` | Consistent hash ring, cluster client, and node interfaces. |
+| `src/main/java/com/can/cluster/coordination` | Multicast coordination, remote node proxies, and replication server. |
+| `src/main/java/com/can/core` | Cache engine, segments, TTL queue, and eviction policies. |
+| `src/main/java/com/can/codec` | Key/value codec implementations (UTF-8, Java Serializable). |
+| `src/main/java/com/can/rdb` | Snapshot file and scheduler components. |
+| `src/main/java/com/can/metric` | Counters, timers, and console reporter. |
+| `src/main/java/com/can/pubsub` | In-process publish/subscribe infrastructure. |
+| `src/main/java/com/can/config` | CDI configuration and type-safe configuration interfaces. |
+| `integration-tests/` | End-to-end cancached compatibility tests powered by Docker Compose. |
+| `performance-tests/` | JMeter plans and NFR documentation. |
+| `scripts/` | Helper scripts (e.g. `run-integration-tests.sh`). |
+
+## Roadmap
+
+- [ ] Additional replication strategies (e.g., CRDT research for active-active scenarios)
+- [ ] Optional REST/HTTP management endpoint
+- [ ] Prometheus metrics exporter
+- [ ] Automated benchmarking pipeline (JMeter + GitHub Actions)
+- [ ] Kubernetes deployment via Helm chart
+
+> Got ideas? [Open an issue](../../issues) or send a PR!
+
+## Contributing & Feedback
+
+1. Fork the repository and rebase your changes onto `main`.
+2. Follow the existing code style and write meaningful commit messages.
+3. Verify with `./mvnw test` and, if necessary, `./scripts/run-integration-tests.sh`.
+4. Share your experiences, performance measurements, or new use cases — the project grows with community feedback.
+
+Have questions? [Open an issue](../../issues/new) or come directly with a Pull Request.
+
+## License
+
+This project is dual-licensed under the terms of the MIT License or the Apache License Version 2.0. See [LICENSE-MIT](./LICENSE-MIT) and [LICENSE-APACHE](./LICENSE-APACHE) for details.
+
+Everyone contributing to this repository agrees that their contributions can be used under both licenses.
