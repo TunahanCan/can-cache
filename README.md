@@ -11,6 +11,7 @@
 ---
 
 ## İçindekiler
+- [Animasyonlu Yaşam Döngüsü](#animasyonlu-yaşam-döngüsü)
 - [Öne Çıkan Özellikler](#öne-çıkan-özellikler)
 - [Neden can-cache?](#neden-can-cache)
 - [Mimari Anahat](#mimari-anahat)
@@ -21,6 +22,23 @@
 - [Yol Haritası](#yol-haritası)
 - [Katkı & Geri Bildirim](#katkı--geri-bildirim)
 - [Lisans](#lisans)
+
+## Animasyonlu Yaşam Döngüsü
+
+<p align="center">
+  <img src="docs/assets/cluster-lifecycle.svg" alt="İki node'lu can-cache veri yolculuğu animasyonu" width="860" />
+</p>
+
+Yukarıdaki animasyon, ikinci node kümeye katıldığında bir `set` isteğinin istemciden çıkıp quorum onayına kadar izlediği sekiz karelik rotayı özetler:
+
+1. **Node keşfi:** Multicast heartbeat ile Node B tanınır ve tutarlı hash halkasına eklenir.
+2. **Bootstrap:** `ReplicationServer` snapshot/ipucu akışıyla yeni node'u sıcak yedeğe çevirir.
+3. **İstek kabulü:** `CanCachedServer` protokol satırını ayrıştırır ve `ClusterClient` çağrısını hazırlar.
+4. **Replika seçimi:** Hash halkası lideri (Node A) ve takipçiyi (Node B) belirler.
+5. **Yerel yazım:** Lider `CacheEngine` segmentine yazar, TTL ve metrikler güncellenir.
+6. **Uzak çoğaltma:** `RemoteNode` vekili komutu Node B `ReplicationServer`ına aktarır.
+7. **Quorum cevabı:** Yeterli ACK sonrası `STORED` istemciye döner.
+8. **Art alan:** TTL temizleme, hinted handoff ve anti-entropy döngüsü sürekli işler.
 
 ## Öne Çıkan Özellikler
 
