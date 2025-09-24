@@ -29,16 +29,40 @@
   <img src="docs/assets/cluster-lifecycle.svg" alt="İki node'lu can-cache veri yolculuğu animasyonu" width="860" />
 </p>
 
-Yukarıdaki animasyon, ikinci node kümeye katıldığında bir `set` isteğinin istemciden çıkıp quorum onayına kadar izlediği sekiz karelik rotayı özetler:
+Animasyon, küçük bir kümenin saniyeler içindeki yolculuğunu üç ayrı döngü halinde gösterir: **küme genişlemesi**, **veri mutasyonları** ve **topoloji daralması**. Böylece hem `set/add` gibi yazma hem de `delete` isteklerinin aynı topolojik olaylar üzerinden nasıl yönetildiğini tek bakışta kavrayabilirsiniz.
+
+### 1) Küme Genişlemesi — Node Ekleme Döngüsü
 
 1. **Node keşfi:** Multicast heartbeat ile Node B tanınır ve tutarlı hash halkasına eklenir.
-2. **Bootstrap:** `ReplicationServer` snapshot/ipucu akışıyla yeni node'u sıcak yedeğe çevirir.
-3. **İstek kabulü:** `CanCachedServer` protokol satırını ayrıştırır ve `ClusterClient` çağrısını hazırlar.
-4. **Replika seçimi:** Hash halkası lideri (Node A) ve takipçiyi (Node B) belirler.
-5. **Yerel yazım:** Lider `CacheEngine` segmentine yazar, TTL ve metrikler güncellenir.
-6. **Uzak çoğaltma:** `RemoteNode` vekili komutu Node B `ReplicationServer`ına aktarır.
-7. **Quorum cevabı:** Yeterli ACK sonrası `STORED` istemciye döner.
-8. **Art alan:** TTL temizleme, hinted handoff ve anti-entropy döngüsü sürekli işler.
+2. **Bootstrap hazırlığı:** Lider node, `SnapshotScheduler` tarafından üretilen son anlık görüntüyü ve `HintedHandoffService` üzerinde bekleyen ipuçlarını paylaşmaya hazırlanır.
+3. **Snapshot aktarımı:** `ReplicationServer`, delta ve snapshot parçalarını stream ederek yeni node'u sıcak yedeğe dönüştürür.
+4. **Anti-entropy senkronizasyonu:** Hash halkası üzerindeki segmentler karşılaştırılır; eksik kayıtlar `RemoteNode` vekilleri ile tamamlanır.
+5. **Sağlık kontrolü:** Yeni üyenin kalp atışı belirlenen periyot boyunca tutarlı gelirse küme replikasyon faktörünü günceller.
+
+Bu aşamanın sonunda Node B hem yazma hem okuma trafiği alabilecek kadar güncel hale gelir ve animasyonda turuncu/yeşil hatlarla işaretlenen mutasyon döngüsüne katılır.
+
+### 2) Veri Mutasyon Döngüsü — `set/add/delete`
+
+Kümeye katılan her node aynı mutasyon akışını izler. Animasyondaki `set` isteği bunun sekiz karelik rotasını özetler:
+
+1. **İstek kabulü:** `CanCachedServer` protokol satırını ayrıştırır ve `ClusterClient` çağrısını hazırlar.
+2. **Replika seçimi:** Hash halkası lideri (Node A) ve takipçiyi (Node B) belirler.
+3. **Yerel yazım:** Lider `CacheEngine` segmentine yazar, TTL ve metrikler güncellenir.
+4. **Uzak çoğaltma:** `RemoteNode` vekili komutu Node B `ReplicationServer`ına aktarır.
+5. **Quorum cevabı:** Yeterli ACK sonrası `STORED` istemciye döner.
+6. **Art alan:** TTL temizleme, hinted handoff ve anti-entropy döngüsü sürekli işler.
+
+`add` komutu aynı akışta sadece ön koşul denetimi ekleyerek ilerler; anahtar zaten varsa `NOT_STORED` cevabı verilir. `delete` komutunda ise üçüncü adımda `CacheEngine.remove` tetiklenir, sonrasında replikalara `D` çerçevesi gönderilir ve quorum doğrulaması `DELETED` yanıtı ile tamamlanır. Her iki durumda da art alan süreçleri (TTL süpürme, ipucu yeniden oynatma) tutarlılığı korumak için devrededir.
+
+### 3) Küme Daralması — Node Silme Döngüsü
+
+1. **Kalp atışı kaybı:** `CoordinationService` ardışık timeout'lar sonrası node'u şüpheli olarak işaretler.
+2. **Hash halkasından çıkarma:** Sanal düğümler kaldırılır; liderlik görevleri kalan nodelar arasında yeniden dağıtılır.
+3. **Hint kuyruğu doldurma:** Ulaşılamayan node'a gönderilemeyen mutasyonlar `HintedHandoffService` kuyruğuna alınır.
+4. **Temizlik:** `CacheEngine` üzerindeki replika sayaçları ve metrikler güncellenir, TTL kuyruğu yeni sahiplik bilgisiyle hizalanır.
+5. **Geri dönüş senaryosu:** Node yeniden çevrimiçi olursa bootstrap döngüsü tetiklenir; aksi halde ipuçları anti-entropy turunda kalıcı olarak temizlenir.
+
+Bu döngü, animasyonda silinen node'un turuncudan griye dönen kareleriyle gösterilir ve `delete`/`touch` gibi komutlar sırasında da veri güvenliğini sağlar.
 
 ## Öne Çıkan Özellikler
 
