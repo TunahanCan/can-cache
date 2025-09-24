@@ -10,7 +10,12 @@ import java.io.StringWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.protocol.java.sampler.AbstractJavaSamplerClient;
@@ -30,6 +35,13 @@ public class CancachedRoundTripSampler extends AbstractJavaSamplerClient {
     private static final String PARAM_READ_TIMEOUT = "readTimeoutMillis";
     private static final String PARAM_KEY_PREFIX = "keyPrefix";
     private static final String PARAM_PAYLOAD_SIZE = "payloadSize";
+    private static final String PARAM_PAYLOAD_SIZES = "payloadSizes";
+    private static final String PARAM_PAYLOAD_SELECTION = "payloadSelection";
+
+    private static final String PAYLOAD_SELECTION_CYCLE = "cycle";
+    private static final String PAYLOAD_SELECTION_RANDOM = "random";
+
+    private static final AtomicInteger PAYLOAD_COUNTER = new AtomicInteger();
 
     @Override
     public Arguments getDefaultParameters() {
@@ -41,6 +53,8 @@ public class CancachedRoundTripSampler extends AbstractJavaSamplerClient {
         arguments.addArgument(PARAM_READ_TIMEOUT, "3000");
         arguments.addArgument(PARAM_KEY_PREFIX, "perf-");
         arguments.addArgument(PARAM_PAYLOAD_SIZE, "64");
+        arguments.addArgument(PARAM_PAYLOAD_SIZES, "64,512,2048,8192");
+        arguments.addArgument(PARAM_PAYLOAD_SELECTION, PAYLOAD_SELECTION_CYCLE);
         return arguments;
     }
 
@@ -54,7 +68,7 @@ public class CancachedRoundTripSampler extends AbstractJavaSamplerClient {
         int ttlSeconds = context.getIntParameter(PARAM_TTL_SECONDS, 60);
         int connectTimeout = context.getIntParameter(PARAM_CONNECT_TIMEOUT, 1000);
         int readTimeout = context.getIntParameter(PARAM_READ_TIMEOUT, 3000);
-        int payloadSize = Math.max(0, context.getIntParameter(PARAM_PAYLOAD_SIZE, 64));
+        int payloadSize = determinePayloadSize(context);
         String keyPrefix = context.getParameter(PARAM_KEY_PREFIX, "perf-");
 
         result.sampleStart();
@@ -130,6 +144,46 @@ public class CancachedRoundTripSampler extends AbstractJavaSamplerClient {
         }
 
         return result;
+    }
+
+    private static int determinePayloadSize(JavaSamplerContext context) {
+        List<Integer> parsedSizes = parsePayloadSizes(context.getParameter(PARAM_PAYLOAD_SIZES, ""));
+        if (!parsedSizes.isEmpty()) {
+            String selection = context.getParameter(PARAM_PAYLOAD_SELECTION, PAYLOAD_SELECTION_CYCLE);
+            if (PAYLOAD_SELECTION_RANDOM.equalsIgnoreCase(selection)) {
+                return parsedSizes.get(ThreadLocalRandom.current().nextInt(parsedSizes.size()));
+            }
+
+            int index = Math.floorMod(PAYLOAD_COUNTER.getAndIncrement(), parsedSizes.size());
+            return parsedSizes.get(index);
+        }
+
+        return Math.max(0, context.getIntParameter(PARAM_PAYLOAD_SIZE, 64));
+    }
+
+    private static List<Integer> parsePayloadSizes(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+
+        LinkedHashSet<Integer> sizes = Pattern.compile(",")
+                .splitAsStream(raw)
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(CancachedRoundTripSampler::safeParseInt)
+                .filter(size -> size > 0)
+                .collect(LinkedHashSet::new, LinkedHashSet::add, LinkedHashSet::addAll);
+
+        return List.copyOf(sizes);
+    }
+
+    private static int safeParseInt(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ex) {
+            LOG.warn("Ignoring invalid payload size entry: {}", value, ex);
+            return -1;
+        }
     }
 
     private static void writeLine(BufferedWriter writer, String line) throws IOException {
