@@ -19,7 +19,10 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -63,6 +66,7 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
     private final Set<PooledConnection> allConnections = ConcurrentHashMap.newKeySet();
     private final AtomicInteger openConnections = new AtomicInteger();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final ExecutorService requestExecutor;
 
     public RemoteNode(String id, String host, int port, int connectTimeoutMillis, Vertx vertx)
     {
@@ -83,6 +87,8 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
                 .setTcpNoDelay(true)
                 .setReuseAddress(true);
         this.netClient = vertx.createNetClient(options);
+        this.requestExecutor = Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual().name("remote-node-" + id + "-", 0).factory());
     }
 
     @Override
@@ -154,6 +160,42 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
     }
 
     private <T> T execute(Function<PooledConnection, CompletableFuture<T>> action)
+    {
+        if (Thread.currentThread().isVirtual()) {
+            return executeInternal(action);
+        }
+
+        CompletableFuture<T> result = new CompletableFuture<>();
+        try {
+            requestExecutor.execute(() -> {
+                try {
+                    result.complete(executeInternal(action));
+                } catch (Throwable t) {
+                    result.completeExceptionally(t);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            throw communicationError("Remote node executor rejected task", e);
+        }
+
+        try {
+            return result.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw communicationError("Interrupted while waiting for remote response", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            if (cause instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw communicationError("Remote command failed", cause);
+        }
+    }
+
+    private <T> T executeInternal(Function<PooledConnection, CompletableFuture<T>> action)
     {
         if (closed.get()) {
             throw new IllegalStateException("Remote node " + id + " is closed");
@@ -393,6 +435,7 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
         for (PooledConnection connection : allConnections.toArray(new PooledConnection[0])) {
             discard(connection);
         }
+        requestExecutor.shutdown();
         try {
             netClient.close().toCompletionStage().toCompletableFuture().join();
         } catch (Exception e) {
