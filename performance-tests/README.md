@@ -127,6 +127,8 @@ Varsayılanlar yerel smoke testleri için optimize edilmiştir; üretime benzer 
 | `targetPort` | Cancached TCP port / Cancached TCP portu | `11211` | `-JtargetPort=11211` |
 | `ttlSeconds` | TTL applied to `set` operations / `set` işlemlerine uygulanan TTL | `60` | `-JttlSeconds=120` |
 | `payloadSize` | Payload size in bytes / Payload boyutu (byte) | Plan specific | `-JpayloadSize=1024` |
+| `payloadSizes` | Comma-separated payload sizes cycled or randomised / Virgülle ayrılmış ve döngüsel veya rastgele seçilen payload boyutları | `64,512,2048,8192` | `-JpayloadSizes=128,512,2048` |
+| `payloadSelection` | Selection strategy for `payloadSizes` (`cycle`/`random`) / `payloadSizes` için seçim stratejisi (`cycle`/`random`) | `cycle` | `-JpayloadSelection=random` |
 | `durationSeconds` | Thread group duration / Thread grubu süresi | Plan specific | `-JdurationSeconds=300` |
 | `connectTimeoutMillis` | Socket connect timeout / Socket bağlantı zaman aşımı | `1000` | `-JconnectTimeoutMillis=500` |
 | `readTimeoutMillis` | Socket read timeout / Socket okuma zaman aşımı | `3000` | `-JreadTimeoutMillis=1500` |
@@ -248,6 +250,16 @@ synthetic or anonymised datasets.
 
 CSV veri setlerini `performance-tests/data/` dizininde saklayın ve JMeter CSV Data Set Config elemanından referans verin. Yalnız
 sentetik veya anonimleştirilmiş veri setlerini commit edin.
+
+### Diversifying Payload Sizes / Payload Boyutlarını Çeşitlendirme
+
+The Java sampler now supports comma-separated payload size lists and selection strategies. Define `-JpayloadSizes=64,1024,8192`
+to exercise small and large objects in a single run. Change `-JpayloadSelection=random` to pick a random size per iteration,
+otherwise the sampler cycles deterministically.
+
+Java sampler artık virgülle ayrılmış payload boyutu listeleri ve seçim stratejilerini destekliyor. Tek bir koşuda hem küçük hem
+de büyük objeleri denemek için `-JpayloadSizes=64,1024,8192` parametresini kullanabilirsiniz. `-JpayloadSelection=random`
+yapıldığında her iterasyonda rastgele boyut seçilir; aksi halde sampler belirli bir sırayla döner.
 
 ### CI Integration / CI Entegrasyonu
 
