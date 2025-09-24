@@ -25,100 +25,97 @@
       .step text { font-size: 14px; }
       .step-title { font-size: 16px; font-weight: 600; }
       .step-desc { font-size: 13px; fill: #cbd5f5; }
-      .step { opacity: 0.26; transform-origin: 120px 44px; }
+      .step { opacity: 0; transform-origin: 120px 44px; transform: translateY(8px) scale(0.98); }
       @keyframes spotlight {
-        0%, 6% { opacity: 0.26; transform: scale(1) translateY(0); }
-        10%, 16% { opacity: 0.92; transform: scale(1.05) translateY(-2px); }
-        20%, 100% { opacity: 0.28; transform: scale(1) translateY(0); }
+        0%, 4% { opacity: 0; transform: translateY(8px) scale(0.98); }
+        6%, 16% { opacity: 1; transform: translateY(0) scale(1); }
+        18%, 100% { opacity: 0; transform: translateY(8px) scale(0.98); }
       }
-      .step1 { animation: spotlight 24s ease-in-out infinite; animation-delay: 0s; }
-      .step2 { animation: spotlight 24s ease-in-out infinite; animation-delay: 3s; }
-      .step3 { animation: spotlight 24s ease-in-out infinite; animation-delay: 6s; }
-      .step4 { animation: spotlight 24s ease-in-out infinite; animation-delay: 9s; }
-      .step5 { animation: spotlight 24s ease-in-out infinite; animation-delay: 12s; }
-      .step6 { animation: spotlight 24s ease-in-out infinite; animation-delay: 15s; }
-      .step7 { animation: spotlight 24s ease-in-out infinite; animation-delay: 18s; }
-      .step8 { animation: spotlight 24s ease-in-out infinite; animation-delay: 21s; }
+      .step1 { animation: spotlight 64s ease-in-out infinite; animation-delay: 0s; }
+      .step2 { animation: spotlight 64s ease-in-out infinite; animation-delay: 8s; }
+      .step3 { animation: spotlight 64s ease-in-out infinite; animation-delay: 16s; }
+      .step4 { animation: spotlight 64s ease-in-out infinite; animation-delay: 24s; }
+      .step5 { animation: spotlight 64s ease-in-out infinite; animation-delay: 32s; }
+      .step6 { animation: spotlight 64s ease-in-out infinite; animation-delay: 40s; }
+      .step7 { animation: spotlight 64s ease-in-out infinite; animation-delay: 48s; }
+      .step8 { animation: spotlight 64s ease-in-out infinite; animation-delay: 56s; }
       @keyframes heartbeat {
         0%, 20%, 100% { r: 18; }
         10% { r: 22; }
       }
       .node-pulse { animation: heartbeat 3s ease-in-out infinite; }
       .node { filter: drop-shadow(0 0 0 rgba(56,189,248,0)); transition: filter 0.4s ease; }
-      .node-a { animation: nodeAFocus 24s ease-in-out infinite; }
-      .node-b { animation: nodeBFocus 24s ease-in-out infinite; }
+      .node-a { animation: nodeAFocus 64s ease-in-out infinite; }
+      .node-b { animation: nodeBFocus 64s ease-in-out infinite; }
       @keyframes nodeAFocus {
-        0%, 22% { filter: drop-shadow(0 0 0 rgba(56,189,248,0)); }
-        25%, 62% { filter: drop-shadow(0 0 16px rgba(56,189,248,0.55)); }
-        65%, 100% { filter: drop-shadow(0 0 0 rgba(56,189,248,0)); }
+        0%, 24% { filter: drop-shadow(0 0 0 rgba(56,189,248,0)); }
+        28%, 72% { filter: drop-shadow(0 0 18px rgba(56,189,248,0.55)); }
+        76%, 100% { filter: drop-shadow(0 0 0 rgba(56,189,248,0)); }
       }
       @keyframes nodeBFocus {
-        0%, 6% { filter: drop-shadow(0 0 14px rgba(45,212,191,0.55)); }
-        10%, 42% { filter: drop-shadow(0 0 0 rgba(45,212,191,0)); }
-        46%, 78% { filter: drop-shadow(0 0 18px rgba(45,212,191,0.65)); }
-        82%, 100% { filter: drop-shadow(0 0 0 rgba(45,212,191,0)); }
+        0%, 20% { filter: drop-shadow(0 0 16px rgba(45,212,191,0.6)); }
+        24%, 60% { filter: drop-shadow(0 0 0 rgba(45,212,191,0)); }
+        64%, 84% { filter: drop-shadow(0 0 18px rgba(45,212,191,0.65)); }
+        88%, 100% { filter: drop-shadow(0 0 0 rgba(45,212,191,0)); }
       }
       .node circle { transform-box: fill-box; transform-origin: center; stroke-width: 3; }
-      .node-a circle { stroke: rgba(56,189,248,0.6); animation: nodeACircle 24s ease-in-out infinite; }
-      .node-b circle { stroke: rgba(45,212,191,0.5); animation: nodeBCircle 24s ease-in-out infinite; }
+      .node-a circle { stroke: rgba(56,189,248,0.6); animation: nodeACircle 64s ease-in-out infinite; }
+      .node-b circle { stroke: rgba(45,212,191,0.5); animation: nodeBCircle 64s ease-in-out infinite; }
       @keyframes nodeACircle {
-        0%, 22% { transform: scale(1); stroke-opacity: 0.1; }
-        25%, 62% { transform: scale(1.08); stroke-opacity: 1; }
-        65%, 100% { transform: scale(1); stroke-opacity: 0.1; }
+        0%, 24% { transform: scale(1); stroke-opacity: 0.15; }
+        28%, 72% { transform: scale(1.08); stroke-opacity: 1; }
+        76%, 100% { transform: scale(1); stroke-opacity: 0.15; }
       }
       @keyframes nodeBCircle {
-        0%, 6% { transform: scale(1.06); stroke-opacity: 0.9; }
-        10%, 42% { transform: scale(1); stroke-opacity: 0.15; }
-        46%, 78% { transform: scale(1.08); stroke-opacity: 0.95; }
-        82%, 100% { transform: scale(1); stroke-opacity: 0.15; }
+        0%, 20% { transform: scale(1.06); stroke-opacity: 0.9; }
+        24%, 60% { transform: scale(1); stroke-opacity: 0.2; }
+        64%, 84% { transform: scale(1.08); stroke-opacity: 0.95; }
+        88%, 100% { transform: scale(1); stroke-opacity: 0.2; }
       }
       @keyframes orbit {
-        0%, 20% { offset-distance: 0%; opacity: 0; }
-        24% { opacity: 1; }
-        36% { offset-distance: 36%; }
-        60% { offset-distance: 60%; }
-        78% { offset-distance: 84%; }
-        84%, 94% { offset-distance: 100%; opacity: 1; }
-        100% { offset-distance: 100%; opacity: 0; }
+        0%, 24% { offset-distance: 0%; opacity: 0; }
+        28% { offset-distance: 0%; opacity: 1; }
+        40% { offset-distance: 40%; opacity: 1; }
+        55% { offset-distance: 75%; opacity: 1; }
+        62% { offset-distance: 100%; opacity: 1; }
+        66%, 100% { offset-distance: 100%; opacity: 0; }
       }
-      .packet { offset-path: path('M150 170 C 300 100 380 100 520 170 S 740 240 840 170'); offset-rotate: 0deg; animation: orbit 24s ease-in-out infinite; animation-delay: 6s; }
+      .packet { offset-path: path('M150 170 C 300 100 380 100 520 170 S 740 240 840 170'); offset-rotate: 0deg; animation: orbit 64s ease-in-out infinite; }
       .packet circle { fill: #facc15; stroke: #fde68a; stroke-width: 3; filter: drop-shadow(0 0 8px rgba(250,204,21,0.6)); }
-      .flow { fill: none; stroke-linecap: round; stroke-dasharray: 14 16; stroke-width: 4; opacity: 0.2; animation: flowDash 24s ease-in-out infinite; }
-      .flow-client { stroke: #38bdf8; animation-delay: 6s; }
-      .flow-replica { stroke: #5eead4; animation-delay: 15s; }
-      .flow-ack { stroke: #818cf8; animation-delay: 18s; }
+      .flow { fill: none; stroke-linecap: round; stroke-dasharray: 14 16; stroke-width: 4; opacity: 0.2; animation: flowDash 64s ease-in-out infinite; }
+      .flow-client { stroke: #38bdf8; animation-delay: 12s; }
+      .flow-replica { stroke: #5eead4; animation-delay: 32s; }
+      .flow-ack { stroke: #818cf8; animation-delay: 46s; }
       @keyframes flowDash {
-        0%, 8% { stroke-dashoffset: 120; opacity: 0; }
-        12%, 30% { stroke-dashoffset: 30; opacity: 0.85; }
-        36%, 60% { stroke-dashoffset: 0; opacity: 0.3; }
-        100% { stroke-dashoffset: -120; opacity: 0; }
+        0%, 10% { stroke-dashoffset: 120; opacity: 0; }
+        18%, 40% { stroke-dashoffset: 30; opacity: 0.85; }
+        48%, 60% { stroke-dashoffset: -30; opacity: 0.5; }
+        70%, 100% { stroke-dashoffset: -120; opacity: 0; }
       }
       .timeline-label { font-size: 13px; fill: #94a3b8; text-transform: uppercase; letter-spacing: 0.2em; }
-      .timeline-pointer { transform: translate(-40px, 44px); animation: pointerMove 24s ease-in-out infinite; transform-origin: center; }
+      .timeline-pointer { transform: translate(-40px, 44px); animation: pointerMove 64s ease-in-out infinite; transform-origin: center; }
       .timeline-pointer circle { fill: #facc15; stroke: #fde68a; stroke-width: 3; }
       .timeline-pointer line { stroke: rgba(250,204,21,0.45); stroke-width: 2; stroke-linecap: round; }
       @keyframes pointerMove {
-        0%, 11% { transform: translate(-40px, 44px); }
-        12.5%, 23% { transform: translate(220px, 44px); }
-        25%, 34% { transform: translate(480px, 44px); }
-        37.5%, 46% { transform: translate(-40px, 140px); }
-        50%, 59% { transform: translate(220px, 140px); }
-        62.5%, 71% { transform: translate(480px, 140px); }
-        75%, 84% { transform: translate(90px, 236px); }
-        87.5%, 96% { transform: translate(350px, 236px); }
-        100% { transform: translate(-40px, 44px); }
+        0%, 12.5% { transform: translate(-40px, 44px); }
+        15.5%, 25% { transform: translate(220px, 44px); }
+        28%, 37.5% { transform: translate(480px, 44px); }
+        40.5%, 50% { transform: translate(-40px, 140px); }
+        53%, 62.5% { transform: translate(220px, 140px); }
+        65.5%, 75% { transform: translate(480px, 140px); }
+        78%, 87.5% { transform: translate(90px, 236px); }
+        90.5%, 100% { transform: translate(350px, 236px); }
       }
-      .step-tracker { transform: translate(0, 0); fill: rgba(250,204,21,0.08); stroke: rgba(250,204,21,0.35); stroke-width: 2; animation: trackerMove 24s ease-in-out infinite; }
+      .step-tracker { transform: translate(0, 0); fill: rgba(250,204,21,0.08); stroke: rgba(250,204,21,0.35); stroke-width: 2; animation: trackerMove 64s ease-in-out infinite; }
       @keyframes trackerMove {
-        0%, 11% { transform: translate(0, 0); opacity: 0.9; }
-        12.5%, 23% { transform: translate(260px, 0); opacity: 0.9; }
-        25%, 34% { transform: translate(520px, 0); opacity: 0.9; }
-        37.5%, 46% { transform: translate(0, 96px); opacity: 0.9; }
-        50%, 59% { transform: translate(260px, 96px); opacity: 0.9; }
-        62.5%, 71% { transform: translate(520px, 96px); opacity: 0.9; }
-        75%, 84% { transform: translate(130px, 192px); opacity: 0.9; }
-        87.5%, 96% { transform: translate(390px, 192px); opacity: 0.9; }
-        100% { transform: translate(0, 0); opacity: 0.9; }
+        0%, 12.5% { transform: translate(0, 0); opacity: 0.9; }
+        15.5%, 25% { transform: translate(260px, 0); opacity: 0.9; }
+        28%, 37.5% { transform: translate(520px, 0); opacity: 0.9; }
+        40.5%, 50% { transform: translate(0, 96px); opacity: 0.9; }
+        53%, 62.5% { transform: translate(260px, 96px); opacity: 0.9; }
+        65.5%, 75% { transform: translate(520px, 96px); opacity: 0.9; }
+        78%, 87.5% { transform: translate(130px, 192px); opacity: 0.9; }
+        90.5%, 100% { transform: translate(390px, 192px); opacity: 0.9; }
       }
     </style>
   </defs>
