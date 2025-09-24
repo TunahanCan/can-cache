@@ -105,9 +105,11 @@ JMETER_ADD_CLASSPATH="$(pwd)/performance-tests/java-sampler/target/can-cache-jme
   jmeter -n -t performance-tests/jmeter/can-cache-small.jmx
 ```
 
-The `run-local.sh` script checks for the JAR and automatically builds it when missing, provided the Maven wrapper is executable.
+The `run-local.sh` script checks for the JAR, automatically builds it when missing, and prints the absolute path of the
+resulting artefact so you can add it to custom JMeter setups, provided the Maven wrapper is executable.
 
-`run-local.sh` betiği JAR dosyasını denetler ve eksikse Maven wrapper çalıştırılabilir olduğu sürece otomatik olarak derler.
+`run-local.sh` betiği JAR dosyasını denetler, eksikse Maven wrapper çalıştırılabilir olduğu sürece otomatik olarak derler ve
+ortaya çıkan artefaktın mutlak yolunu özel JMeter kurulumlarına ekleyebilmeniz için gösterir.
 
 ---
 
