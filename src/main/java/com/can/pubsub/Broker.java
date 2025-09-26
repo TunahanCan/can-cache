@@ -41,11 +41,6 @@ public class Broker implements AutoCloseable {
         }
     }
 
-    public AutoCloseable subscribe(String topic, Consumer<byte[]> consumer) {
-        subscriptions.computeIfAbsent(topic, key -> new CopyOnWriteArrayList<>()).add(consumer);
-        ensureExecutor();
-        return () -> subscriptions.getOrDefault(topic, new CopyOnWriteArrayList<>()).remove(consumer);
-    }
 
     public boolean isRunning() {
         ExecutorService current = executor;

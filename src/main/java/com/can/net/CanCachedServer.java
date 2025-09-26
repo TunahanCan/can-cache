@@ -77,9 +77,9 @@ public class CanCachedServer implements AutoCloseable
         this.vertx = Objects.requireNonNull(vertx, "vertx");
         this.clusterClient = Objects.requireNonNull(clusterClient, "clusterClient");
         this.networkConfig = Objects.requireNonNull(properties.network(), "networkConfig");
-        var memcacheConfig = Objects.requireNonNull(properties.memcache(), "memcacheConfig");
-        this.maxItemSize = Math.max(1, memcacheConfig.maxItemSizeBytes());
-        this.maxCasRetries = Math.max(1, memcacheConfig.maxCasRetries());
+        var cancacheConfig = Objects.requireNonNull(properties.cancache(), "cancacheConfig");
+        this.maxItemSize = Math.max(1, cancacheConfig.maxItemSizeBytes());
+        this.maxCasRetries = Math.max(1, cancacheConfig.maxCasRetries());
         this.localEngine = Objects.requireNonNull(localEngine, "localEngine");
     }
 
@@ -789,9 +789,7 @@ public class CanCachedServer implements AutoCloseable
 
         private void handleData(Buffer data)
         {
-            if (closed) {
-                return;
-            }
+            if (closed) return;
             buffer.appendBuffer(data);
             processBuffer();
         }
@@ -805,11 +803,11 @@ public class CanCachedServer implements AutoCloseable
 
         private void processBuffer()
         {
-            while (!closed && !processing) {
-                if (pendingStorage != null) {
-                    if (buffer.length() < pendingStorage.totalLength()) {
-                        return;
-                    }
+            while (!closed && !processing)
+            {
+                if (pendingStorage != null)
+                {
+                    if (buffer.length() < pendingStorage.totalLength()) return;
                     Buffer payload = buffer.getBuffer(0, pendingStorage.totalLength());
                     buffer = buffer.getBuffer(pendingStorage.totalLength(), buffer.length());
                     PendingStorageCommand command = pendingStorage;

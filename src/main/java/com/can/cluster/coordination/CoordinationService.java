@@ -1,9 +1,6 @@
 package com.can.cluster.coordination;
 
-import com.can.cluster.ClusterState;
-import com.can.cluster.ConsistentHashRing;
-import com.can.cluster.HintedHandoffService;
-import com.can.cluster.Node;
+import com.can.cluster.*;
 import com.can.config.AppProperties;
 import com.can.core.CacheEngine;
 import io.vertx.core.Vertx;
@@ -108,7 +105,8 @@ public class CoordinationService implements AutoCloseable
     void start() {
         try {
             setupSockets();
-        } catch (IOException e) {
+        } catch (IOException e)
+        {
             throw new IllegalStateException("Failed to initialise coordination sockets", e);
         }
 
@@ -131,7 +129,8 @@ public class CoordinationService implements AutoCloseable
                 advertisedHost(), replicationConfig.port());
     }
 
-    private void setupSockets() throws IOException {
+    private void setupSockets() throws IOException
+    {
         groupAddress = InetAddress.getByName(discoveryConfig.multicastGroup());
         listenSocket = new MulticastSocket(discoveryConfig.multicastPort());
         listenSocket.setReuseAddress(true);
@@ -328,9 +327,7 @@ public class CoordinationService implements AutoCloseable
 
         if (shouldReplayHints && replayTarget != null) {
             hintedHandoffService.replay(nodeId, replayTarget);
-            if (replayMember != null) {
-                replayMember.markHintReplayed(System.currentTimeMillis());
-            }
+            replayMember.markHintReplayed(System.currentTimeMillis());
         }
 
         if (previousNode != null) {
@@ -502,7 +499,8 @@ public class CoordinationService implements AutoCloseable
         }
     }
 
-    private void broadcastHeartbeat() {
+    private void broadcastHeartbeat()
+    {
         String payload = String.format("HELLO|%s|%s|%d|%d", localNode.id(), advertisedHost(), replicationConfig.port(),
                 clusterState.currentEpoch());
         byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
@@ -514,7 +512,8 @@ public class CoordinationService implements AutoCloseable
         }
     }
 
-    private void submitAntiEntropyTask() {
+    private void submitAntiEntropyTask()
+    {
         if (!running) {
             return;
         }
@@ -694,11 +693,13 @@ public class CoordinationService implements AutoCloseable
             return false;
         }
 
-        private void markHintReplayed(long timestamp) {
+        private void markHintReplayed(long timestamp)
+        {
             lastHintReplay = timestamp;
         }
 
-        private void replace(RemoteNode node, byte[] idBytes, String host, int port, long lastSeen, long epoch) {
+        private void replace(RemoteNode node, byte[] idBytes, String host, int port, long lastSeen, long epoch)
+        {
             this.node = node;
             this.idBytes = idBytes;
             this.host = host;
@@ -707,6 +708,4 @@ public class CoordinationService implements AutoCloseable
             this.epoch = epoch;
         }
     }
-
-    private record JoinHandshakeResult(long epoch, boolean accepted) {}
 }

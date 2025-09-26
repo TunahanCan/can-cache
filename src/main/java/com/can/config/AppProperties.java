@@ -22,7 +22,7 @@ public interface AppProperties
     Cache cache();
     Cluster cluster();
     Network network();
-    Memcache memcache();
+    Cancache cancache();
 
     interface Metrics {
         @WithDefault("5")
@@ -111,7 +111,8 @@ public interface AppProperties
         int workerThreads();
     }
 
-    interface Coordination {
+    interface Coordination
+    {
         @WithDefault("5000")
         long hintReplayIntervalMillis();
 
@@ -119,7 +120,8 @@ public interface AppProperties
         long antiEntropyIntervalMillis();
     }
 
-    interface Memcache {
+    interface Cancache
+    {
         @WithDefault("1048576")
         int maxItemSizeBytes();
 

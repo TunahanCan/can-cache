@@ -26,7 +26,8 @@ public final class Timer
         this.reservoir = new long[this.reservoirSize];
     }
 
-    public void record(long durationNs) {
+    public void record(long durationNs)
+    {
         count.increment();
         totalNs.add(durationNs);
         if (durationNs < minNs) minNs = durationNs;
