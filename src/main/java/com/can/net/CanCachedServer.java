@@ -4,6 +4,7 @@ import com.can.cluster.ClusterClient;
 import com.can.config.AppProperties;
 import com.can.core.CacheEngine;
 import com.can.core.StoredValueCodec;
+import com.can.net.protocol.CancachedProtocol;
 import com.can.net.protocol.CommandAction;
 import com.can.net.protocol.CommandResult;
 import com.can.net.protocol.ImmediateCommand;
@@ -210,7 +211,8 @@ public class CanCachedServer implements AutoCloseable
         }
 
         Duration ttl = parseExpiration(exptime);
-        return new StorageCommand(new PendingStorageCommand(command, parts[1], flags, ttl, (int) bytes, noreply, isCas, casUnique));
+        CancachedProtocol.CacheRequest request = new CancachedProtocol.CacheRequest(command, parts[1], flags, ttl, (int) bytes, noreply, isCas, casUnique);
+        return new StorageCommand(new CancachedProtocol(command, request));
     }
 
     private CommandResult handleStoragePayload(PendingStorageCommand pending, Buffer payload)
