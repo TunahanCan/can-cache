@@ -22,11 +22,11 @@ class ClusterStateTest
     }
 
     @Nested
-    class KimlikBilgisi
+    class IdentityInformation
     {
         // Bu test yerel düğüm kimliğinin ve bayt temsilinin doğru döndüğünü doğrular.
         @Test
-        void local_node_id_ve_baytlarini_doner()
+        void local_node_id_and_bytes_are_returned()
         {
             assertEquals("node-1", state.localNodeId());
             assertArrayEquals("node-1".getBytes(StandardCharsets.UTF_8), state.localNodeIdBytes());
@@ -34,11 +34,11 @@ class ClusterStateTest
     }
 
     @Nested
-    class EpochYonetimi
+    class EpochManagement
     {
         // Bu test bumpEpoch çağrısının değer artırdığını ve metrikleri güncellediğini gösterir.
         @Test
-        void bump_epoch_degeri_arttirir()
+        void bump_epoch_increments_value()
         {
             long initial = state.currentEpoch();
             long next = state.bumpEpoch();
@@ -48,7 +48,7 @@ class ClusterStateTest
 
         // Bu test uzaktan gelen daha büyük epoch değerinin benimsendiğini doğrular.
         @Test
-        void observe_epoch_daha_buyuk_degeri_kabul_eder()
+        void observe_epoch_accepts_higher_value()
         {
             long expected = state.currentEpoch() + 5;
             state.observeEpoch(expected);
@@ -58,7 +58,7 @@ class ClusterStateTest
 
         // Bu test daha küçük veya geçersiz epoch değerlerinin dikkate alınmadığını doğrular.
         @Test
-        void observe_epoch_kucuk_degerleri_yoksayar()
+        void observe_epoch_ignores_lower_values()
         {
             long initial = state.currentEpoch();
             state.observeEpoch(initial - 1);

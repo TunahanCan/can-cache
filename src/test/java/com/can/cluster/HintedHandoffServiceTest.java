@@ -24,11 +24,11 @@ class HintedHandoffServiceTest
     }
 
     @Nested
-    class KaydetmeIslemleri
+    class RecordingOperations
     {
         // Bu test set ipucunun kuyruğa eklendiğini ve metriklerin arttığını doğrular.
         @Test
-        void record_set_kuyrugu_arttirir()
+        void record_set_enqueues_hint()
         {
             service.recordSet("node", "key", "value", Duration.ofSeconds(1));
             assertEquals(1, service.pendingFor("node"));
@@ -37,7 +37,7 @@ class HintedHandoffServiceTest
 
         // Bu test delete ve CAS ipuçlarının da kuyruğa eklendiğini gösterir.
         @Test
-        void record_delete_ve_cas_kuyrugu_doldurur()
+        void record_delete_and_cas_enqueue_hints()
         {
             service.recordDelete("node", "key");
             service.recordCas("node", "key", "value", 5L, Duration.ZERO);
@@ -46,11 +46,11 @@ class HintedHandoffServiceTest
     }
 
     @Nested
-    class ReplayIslemleri
+    class ReplayOperations
     {
         // Bu test başarılı ipuçlarının yeniden oynatılarak kuyruktan silindiğini doğrular.
         @Test
-        void replay_basarili_islemleri_temizler()
+        void replay_cleans_up_successful_hints()
         {
             service.recordSet("node", "key", "value", Duration.ofSeconds(1));
             service.recordDelete("node", "key");
@@ -65,7 +65,7 @@ class HintedHandoffServiceTest
 
         // Bu test yeniden oynatma başarısız olduğunda ipucunun kuyrukta kaldığını ve hata metriğinin arttığını doğrular.
         @Test
-        void replay_basarisiz_olunca_ipucu_kalir()
+        void replay_leaves_hint_on_failure()
         {
             service.recordSet("node", "key", "value", Duration.ZERO);
             node.throwNextSet();

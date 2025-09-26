@@ -10,11 +10,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class MetricsComponentsTest
 {
     @Nested
-    class CounterDavranisi
+    class CounterBehavior
     {
         // Bu test sayaç artışının ve toplamanın değeri doğru güncellediğini doğrular.
         @Test
-        void counter_artis_ve_toplama_yapar()
+        void counter_handles_increment_and_add()
         {
             Counter counter = new Counter("hits");
             counter.inc();
@@ -25,11 +25,11 @@ class MetricsComponentsTest
     }
 
     @Nested
-    class TimerDavranisi
+    class TimerBehavior
     {
         // Bu test süre kayıtlarının istatistiklere yansıtıldığını gösterir.
         @Test
-        void timer_sureleri_toplayip_istatistik_uretir()
+        void timer_aggregates_durations_into_statistics()
         {
             Timer timer = new Timer("latency", 128);
             timer.record(1_000);
@@ -45,11 +45,11 @@ class MetricsComponentsTest
     }
 
     @Nested
-    class RegistryDavranisi
+    class RegistryBehavior
     {
         // Bu test aynı isim için aynı sayaç ve zamanlayıcının döndüğünü doğrular.
         @Test
-        void registry_ayni_adi_paylasan_nesneleri_yeniden_kullanir()
+        void registry_reuses_components_with_same_name()
         {
             MetricsRegistry registry = new MetricsRegistry();
             Counter firstCounter = registry.counter("requests");
@@ -64,11 +64,11 @@ class MetricsComponentsTest
     }
 
     @Nested
-    class ReporterDavranisi
+    class ReporterBehavior
     {
         // Bu test geçerli aralıkla başlatılan raporlama görevlerinin çalıştığını doğrular.
         @Test
-        void reporter_gecerli_aralikla_calisir() throws Exception
+        void reporter_runs_with_valid_interval() throws Exception
         {
             MetricsRegistry registry = new MetricsRegistry();
             Vertx vertx = Vertx.vertx();
@@ -90,7 +90,7 @@ class MetricsComponentsTest
 
         // Bu test geçersiz aralıkta raporlayıcının başlamadığını gösterir.
         @Test
-        void reporter_gecersiz_araligi_yoksayar()
+        void reporter_ignores_invalid_interval()
         {
             MetricsRegistry registry = new MetricsRegistry();
             Vertx vertx = Vertx.vertx();

@@ -11,11 +11,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class EvictionPoliciesTest
 {
     @Nested
-    class TipCozumleme
+    class TypeResolution
     {
         // Bu test yapılandırma değeri boş olduğunda LRU politikasının seçildiğini doğrular.
         @Test
-        void from_config_bos_deger_lru_doner()
+        void from_config_returns_lru_for_blank_value()
         {
             assertEquals(EvictionPolicyType.LRU, EvictionPolicyType.fromConfig(null));
             assertEquals(EvictionPolicyType.LRU, EvictionPolicyType.fromConfig(" "));
@@ -23,7 +23,7 @@ class EvictionPoliciesTest
 
         // Bu test farklı yazımlarla verilen TinyLFU değerinin doğru çözümlendiğini gösterir.
         @Test
-        void from_config_tiny_lfu_normalize_edilir()
+        void from_config_normalizes_tiny_lfu()
         {
             assertEquals(EvictionPolicyType.TINY_LFU, EvictionPolicyType.fromConfig("tiny-lfu"));
             assertEquals(EvictionPolicyType.TINY_LFU, EvictionPolicyType.fromConfig("Tiny_Lfu"));
@@ -31,18 +31,18 @@ class EvictionPoliciesTest
 
         // Bu test bilinmeyen politika değerinde istisna fırlatıldığını doğrular.
         @Test
-        void from_config_bilinmeyen_deger_hata_firlatir()
+        void from_config_throws_for_unknown_value()
         {
             assertThrows(IllegalArgumentException.class, () -> EvictionPolicyType.fromConfig("unknown"));
         }
     }
 
     @Nested
-    class LruDavranisi
+    class LruBehavior
     {
         // Bu test kapasite dolmadığında yeni anahtarın doğrudan kabul edildiğini gösterir.
         @Test
-        void lru_bos_kapasitede_adayi_kabul_eder()
+        void lru_admits_candidate_when_capacity_available()
         {
             LruEvictionPolicy<String> policy = new LruEvictionPolicy<>();
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
@@ -53,7 +53,7 @@ class EvictionPoliciesTest
 
         // Bu test kapasite dolduğunda en eski girdinin kurban seçildiğini doğrular.
         @Test
-        void lru_dolulukta_en_eskisini_kurban_secer()
+        void lru_evicts_oldest_when_full()
         {
             LruEvictionPolicy<String> policy = new LruEvictionPolicy<>();
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
@@ -66,11 +66,11 @@ class EvictionPoliciesTest
     }
 
     @Nested
-    class TinyLfuDavranisi
+    class TinyLfuBehavior
     {
         // Bu test boş kapasitede TinyLFU'nun adayı kabul ettiğini doğrular.
         @Test
-        void tiny_lfu_bos_kapasitede_adayi_kabul_eder()
+        void tiny_lfu_admits_candidate_with_free_capacity()
         {
             TinyLfuEvictionPolicy<String> policy = new TinyLfuEvictionPolicy<>(2);
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
@@ -81,7 +81,7 @@ class EvictionPoliciesTest
 
         // Bu test adayın frekansı kurbandan yüksek olduğunda kabul edildiğini gösterir.
         @Test
-        void tiny_lfu_yuksek_frekansli_adayi_kabul_eder()
+        void tiny_lfu_admits_candidate_with_higher_frequency()
         {
             TinyLfuEvictionPolicy<String> policy = new TinyLfuEvictionPolicy<>(1);
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
@@ -97,7 +97,7 @@ class EvictionPoliciesTest
 
         // Bu test adayın frekansı düşük olduğunda reddedildiğini doğrular.
         @Test
-        void tiny_lfu_dusuk_frekansli_adayi_reddeder()
+        void tiny_lfu_rejects_low_frequency_candidate()
         {
             TinyLfuEvictionPolicy<String> policy = new TinyLfuEvictionPolicy<>(1);
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();

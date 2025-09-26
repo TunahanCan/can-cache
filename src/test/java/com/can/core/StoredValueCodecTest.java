@@ -10,11 +10,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class StoredValueCodecTest
 {
     @Nested
-    class DecodeDavranisi
+    class DecodeBehavior
     {
         // Bu test encode edilmiş verinin çözümlenerek aynı alanları ürettiğini doğrular.
         @Test
-        void decode_gecerli_veriyi_cozer()
+        void decode_decodes_valid_value()
         {
             StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
                     "veri".getBytes(StandardCharsets.UTF_8), 7, 99L, 1_234L);
@@ -29,7 +29,7 @@ class StoredValueCodecTest
 
         // Bu test bozuk Base64 girdisinin legacy formatı olarak ele alındığını gösterir.
         @Test
-        void decode_hatali_veriyi_legacy_olarak_yorumlar()
+        void decode_interprets_invalid_value_as_legacy()
         {
             StoredValueCodec.StoredValue decoded = StoredValueCodec.decode("not-base64");
             assertArrayEquals("not-base64".getBytes(StandardCharsets.UTF_8), decoded.value());
@@ -40,7 +40,7 @@ class StoredValueCodecTest
 
         // Bu test expireAt geçmiş olduğunda expired metodunun true döndüğünü doğrular.
         @Test
-        void expired_metodu_suresi_gecmis_degerde_true_doner()
+        void expired_returns_true_for_past_value()
         {
             long past = System.currentTimeMillis() - 1_000L;
             StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
@@ -50,11 +50,11 @@ class StoredValueCodecTest
     }
 
     @Nested
-    class MutasyonDavranisi
+    class MutationBehavior
     {
         // Bu test withValue çağrısının yeni değer ve CAS ürettiğini gösterir.
         @Test
-        void with_value_yeni_deger_ve_cas_atar()
+        void with_value_updates_value_and_cas()
         {
             StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
                     "eski".getBytes(StandardCharsets.UTF_8), 2, 10L, 0L);
@@ -67,7 +67,7 @@ class StoredValueCodecTest
 
         // Bu test withMeta çağrısının tüm alanları güncellediğini doğrular.
         @Test
-        void with_meta_tum_alanlari_gunceller()
+        void with_meta_updates_all_fields()
         {
             StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
                     "veri".getBytes(StandardCharsets.UTF_8), 1, 3L, 4L);
@@ -81,7 +81,7 @@ class StoredValueCodecTest
 
         // Bu test withExpireAt çağrısının yalnızca süre bilgisini güncellediğini gösterir.
         @Test
-        void with_expire_at_sadece_sureyi_degistirir()
+        void with_expire_at_only_changes_expiration()
         {
             StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
                     "veri".getBytes(StandardCharsets.UTF_8), 1, 3L, 4L);

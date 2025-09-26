@@ -20,11 +20,11 @@ class ConsistentHashRingTest
     }
 
     @Nested
-    class NodeYonetimi
+    class NodeManagement
     {
         // Bu test düğüm eklendiğinde benzersiz liste olarak döndürüldüğünü doğrular.
         @Test
-        void add_node_benzersiz_liste_doner()
+        void add_node_returns_unique_list()
         {
             ring.addNode("A", bytes("A"));
             ring.addNode("B", bytes("B"));
@@ -33,7 +33,7 @@ class ConsistentHashRingTest
 
         // Bu test düğüm kaldırıldığında replika listesinden çıkarıldığını gösterir.
         @Test
-        void remove_node_tum_sanal_dugumleri_temizler()
+        void remove_node_clears_virtual_nodes()
         {
             ring.addNode("A", bytes("A"));
             ring.addNode("B", bytes("B"));
@@ -44,11 +44,11 @@ class ConsistentHashRingTest
     }
 
     @Nested
-    class ReplicaSecimi
+    class ReplicaSelection
     {
         // Bu test replikaların belirlenen sırada ve tekrar etmeden döndüğünü doğrular.
         @Test
-        void get_replicas_belirlenen_dugumleri_siralar()
+        void get_replicas_returns_requested_nodes_in_order()
         {
             ring.addNode("A", bytes("A"));
             ring.addNode("B", bytes("B"));
@@ -59,7 +59,7 @@ class ConsistentHashRingTest
 
         // Bu test istenen replika sayısından az düğüm olduğunda mevcut düğümlerin döndürüldüğünü gösterir.
         @Test
-        void get_replicas_dugum_sayisindan_buyuk_istegi_kirar()
+        void get_replicas_limits_to_available_nodes()
         {
             ring.addNode("A", bytes("A"));
             ring.addNode("B", bytes("B"));
@@ -69,7 +69,7 @@ class ConsistentHashRingTest
 
         // Bu test boş halkada replika isteğinin boş liste ürettiğini doğrular.
         @Test
-        void get_replicas_bos_halkada_bos_liste_doner()
+        void get_replicas_returns_empty_list_for_empty_ring()
         {
             assertTrue(ring.getReplicas(bytes("key"), 2).isEmpty());
         }

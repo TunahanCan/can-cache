@@ -28,11 +28,11 @@ class CacheSegmentTest
     }
 
     @Nested
-    class PutIslemleri
+    class PutOperations
     {
         // Bu test politika izin verdiğinde yeni girdinin eklendiğini doğrular.
         @Test
-        void put_yeni_anahtar_onaylandiginda_basarili_olur()
+        void put_succeeds_when_key_is_admitted()
         {
             assertTrue(segment.put("a", value("1")));
             assertEquals(1, segment.size());
@@ -41,7 +41,7 @@ class CacheSegmentTest
 
         // Bu test politika reddettiğinde put çağrısının başarısız döndüğünü gösterir.
         @Test
-        void put_politika_reddederse_false_doner()
+        void put_returns_false_when_policy_rejects()
         {
             policy.rejectNext();
             assertFalse(segment.put("b", value("2")));
@@ -50,7 +50,7 @@ class CacheSegmentTest
 
         // Bu test mevcut anahtar tekrar yazıldığında değerin güncellendiğini ispatlar.
         @Test
-        void put_mevcut_anahtari_gunceller()
+        void put_updates_existing_key()
         {
             assertTrue(segment.put("a", value("1")));
             assertTrue(segment.put("a", value("2")));
@@ -59,7 +59,7 @@ class CacheSegmentTest
 
         // Bu test kurban anahtar belirlendiğinde dinleyicinin bilgilendirildiğini doğrular.
         @Test
-        void put_victim_belirlenince_dinleyici_tetiklenir()
+        void put_notifies_listener_when_victim_selected()
         {
             assertTrue(segment.put("a", value("1")));
             assertTrue(segment.put("b", value("2")));
@@ -71,7 +71,7 @@ class CacheSegmentTest
 
         // Bu test force eklemenin kapasite dolu olsa bile en eski girdiyi attığını gösterir.
         @Test
-        void put_force_dolulukta_en_eskisini_siler()
+        void put_force_evicts_oldest_when_full()
         {
             assertTrue(segment.put("a", value("1")));
             assertTrue(segment.put("b", value("2")));
@@ -82,11 +82,11 @@ class CacheSegmentTest
     }
 
     @Nested
-    class SilmeIslemleri
+    class RemoveOperations
     {
         // Bu test remove çağrısının değeri döndürüp politikayı bilgilendirdiğini doğrular.
         @Test
-        void remove_varsa_degeri_doner()
+        void remove_returns_value_when_present()
         {
             assertTrue(segment.put("a", value("1")));
             CacheValue removed = segment.remove("a");
@@ -96,7 +96,7 @@ class CacheSegmentTest
 
         // Bu test expireAt eşleştiğinde koşullu silmenin başarılı olduğunu ispatlar.
         @Test
-        void remove_if_matches_zaman_eslesirse_siler()
+        void remove_if_matches_deletes_when_timestamp_matches()
         {
             assertTrue(segment.put("a", new CacheValue("v".getBytes(StandardCharsets.UTF_8), 123L)));
             assertFalse(segment.removeIfMatches("a", 999L));
@@ -106,7 +106,7 @@ class CacheSegmentTest
 
         // Bu test clear çağrısının tüm girdileri temizlediğini doğrular.
         @Test
-        void clear_tum_girdileri_temizler()
+        void clear_removes_all_entries()
         {
             assertTrue(segment.put("a", value("1")));
             assertTrue(segment.put("b", value("2")));
@@ -117,11 +117,11 @@ class CacheSegmentTest
     }
 
     @Nested
-    class CasIslemleri
+    class CasOperations
     {
         // Bu test CAS kararı başarı olduğunda yeni değerin yazıldığını gösterir.
         @Test
-        void compare_and_swap_basarili_oldugunda_yeni_deger_yazilir()
+        void compare_and_swap_writes_new_value_on_success()
         {
             assertTrue(segment.put("a", value("old")));
             var result = segment.compareAndSwap("a", existing -> CasDecision.success(value("new")));
@@ -132,7 +132,7 @@ class CacheSegmentTest
 
         // Bu test CAS kararı mevcut girdiyi kaldırdığında dinleyicinin çağrıldığını doğrular.
         @Test
-        void compare_and_swap_silme_karari_alirsa_dinleyici_tetiklenir()
+        void compare_and_swap_notifies_listener_on_delete()
         {
             assertTrue(segment.put("a", value("old")));
             var result = segment.compareAndSwap("a", existing -> CasDecision.expired());
@@ -143,11 +143,11 @@ class CacheSegmentTest
     }
 
     @Nested
-    class DigerIslemler
+    class OtherOperations
     {
         // Bu test forEach çağrısının snapshot üzerinden güvenle çalıştığını doğrular.
         @Test
-        void for_each_snapshot_uzerinden_calismaya_devam_eder()
+        void for_each_continues_operating_on_snapshot()
         {
             assertTrue(segment.put("a", value("1")));
             assertTrue(segment.put("b", value("2")));
