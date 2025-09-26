@@ -1,6 +1,10 @@
 # can-cache
 
 <p align="center">
+  <img src="docs/assets/logo.png" alt="can-cache logo" width="280" />
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/quarkus-3.x-4695EB?logo=quarkus&logoColor=white" alt="Built with Quarkus 3" />
   <img src="https://img.shields.io/badge/protocol-cancached-orange" alt="Protocol compatible" />
   <img src="https://img.shields.io/badge/distribution-consistent%20hashing-4c1" alt="Consistent hashing" />
