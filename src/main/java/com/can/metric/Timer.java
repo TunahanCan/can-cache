@@ -36,7 +36,8 @@ public final class Timer
         reservoir[i] = durationNs;
     }
 
-    public Sample snapshot() {
+    public Sample snapshot()
+    {
         long c = count.sum();
         long t = totalNs.sum();
         double avg = c == 0 ? 0.0 : (double) t / c;
@@ -47,7 +48,6 @@ public final class Timer
         Arrays.sort(copy);
         long p50 = copy[(int)(0.50 * (copy.length - 1))];
         long p95 = copy[(int)(0.95 * (copy.length - 1))];
-
         return new Sample(name, c, t, avg, min, max, p50, p95);
     }
 

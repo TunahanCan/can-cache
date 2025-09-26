@@ -64,8 +64,9 @@ public class MetricsReporter implements AutoCloseable
 
     private void dump() {
         System.out.println("=== METRICS ====");
-        registry.counters().values().forEach(counter ->
-                System.out.printf("counter %s = %d%n", counter.name(), counter.get())
+        registry.counters().values()
+                .forEach(counter ->
+                    System.out.printf("counter %s = %d%n", counter.name(), counter.get())
         );
         registry.timers().values().forEach(timer -> {
             var sample = timer.snapshot();
