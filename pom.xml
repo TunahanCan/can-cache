@@ -27,6 +27,8 @@
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.version>3.28.1</quarkus.platform.version>
+        <quarkus.package.type>mutable-jar</quarkus.package.type>
+        <quarkus.package.jar.enabled>true</quarkus.package.jar.enabled>
         <compiler-plugin.version>3.11.0</compiler-plugin.version>
         <maven.compiler.release>24</maven.compiler.release>
         <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
