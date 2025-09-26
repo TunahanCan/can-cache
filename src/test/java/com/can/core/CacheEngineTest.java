@@ -59,11 +59,11 @@ class CacheEngineTest
     }
 
     @Nested
-    class SetVeGetDavranisi
+    class SetAndGetBehavior
     {
         // Bu test set ve get çağrılarının değeri koruduğunu ve metriklerin güncellendiğini doğrular.
         @Test
-        void set_ve_get_degeri_korur_ve_metrikleri_gunceller()
+        void set_and_get_preserve_value_and_update_metrics()
         {
             assertTrue(engine.set("key", "value"));
             assertEquals("value", engine.get("key"));
@@ -79,7 +79,7 @@ class CacheEngineTest
 
         // Bu test TTL dolduğunda get çağrısının girdiyi sildiğini gösterir.
         @Test
-        void ttl_suresi_gecince_get_cagrisi_kaydi_siler()
+        void get_removes_entry_after_ttl_expires()
         {
             assertTrue(engine.set("expire", "value", Duration.ofMillis(15)));
             sleep(40);
@@ -92,7 +92,7 @@ class CacheEngineTest
 
         // Bu test çok büyük TTL değerlerinin taşma oluşturmadan saklandığını kontrol eder.
         @Test
-        void asiri_uzun_ttl_tasma_yapmadan_saklanir()
+        void extreme_ttl_is_stored_without_overflow()
         {
             long now = System.currentTimeMillis();
             Duration ttl = Duration.ofMillis(Long.MAX_VALUE - now - 1);
@@ -103,11 +103,11 @@ class CacheEngineTest
     }
 
     @Nested
-    class CompareAndSwapDavranisi
+    class CompareAndSwapBehavior
     {
         // Bu test CAS beklentisi sağlandığında değerin ve TTL'nin güncellendiğini ispatlar.
         @Test
-        void compare_and_swap_eslesen_cas_ile_degeri_gunceller()
+        void compare_and_swap_updates_value_when_cas_matches()
         {
             StoredValueCodec.StoredValue base = new StoredValueCodec.StoredValue("v1".getBytes(StandardCharsets.UTF_8), 1, 9L, 0L);
             String encoded = StoredValueCodec.encode(base);
@@ -125,7 +125,7 @@ class CacheEngineTest
 
         // Bu test CAS beklentisi tutmadığında değerin değişmediğini doğrular.
         @Test
-        void compare_and_swap_cas_uyusmadiginda_basarisiz_olur()
+        void compare_and_swap_fails_when_cas_mismatch()
         {
             StoredValueCodec.StoredValue base = new StoredValueCodec.StoredValue("v1".getBytes(StandardCharsets.UTF_8), 1, 7L, 0L);
             String encoded = StoredValueCodec.encode(base);
@@ -137,7 +137,7 @@ class CacheEngineTest
 
         // Bu test süresi dolmuş girdide CAS denemesi yapıldığında kaydın temizlendiğini doğrular.
         @Test
-        void compare_and_swap_suresi_bitmis_girdiyi_siler()
+        void compare_and_swap_removes_expired_entry()
         {
             assertTrue(engine.set("stale", "plain", Duration.ofMillis(10)));
             sleep(30);
@@ -149,11 +149,11 @@ class CacheEngineTest
     }
 
     @Nested
-    class ReplayDavranisi
+    class ReplayBehavior
     {
         // Bu test kalıcı logdan gelen set kaydının belleğe geri yüklendiğini gösterir.
         @Test
-        void replay_set_komutu_degeri_yeniden_yukler()
+        void replay_set_command_restores_value()
         {
             engine.replay(new byte[]{'S'}, StringCodec.UTF8.encode("key"), StringCodec.UTF8.encode("value"), 0L);
             assertEquals("value", engine.get("key"));
@@ -161,7 +161,7 @@ class CacheEngineTest
 
         // Bu test süresi geçmiş bir replay girdisinin dikkate alınmadığını kontrol eder.
         @Test
-        void replay_suresi_gecmis_kaydi_yoksayar()
+        void replay_ignores_expired_record()
         {
             engine.replay(new byte[]{'S'}, StringCodec.UTF8.encode("late"), StringCodec.UTF8.encode("value"), System.currentTimeMillis() - 1_000);
             assertNull(engine.get("late"));
@@ -169,7 +169,7 @@ class CacheEngineTest
 
         // Bu test replay delete kaydının ilgili anahtarı kaldırdığını doğrular.
         @Test
-        void replay_delete_komutu_kaydi_siler()
+        void replay_delete_command_removes_entry()
         {
             assertTrue(engine.set("gone", "value"));
             engine.replay(new byte[]{'D'}, StringCodec.UTF8.encode("gone"), new byte[0], 0L);
@@ -178,11 +178,11 @@ class CacheEngineTest
     }
 
     @Nested
-    class SilmeBildirimleri
+    class RemovalNotifications
     {
         // Bu test manuel silme yapıldığında dinleyicinin bilgilendirildiğini doğrular.
         @Test
-        void manual_silme_dinleyiciye_haber_verir() throws Exception
+        void manual_delete_notifies_listener() throws Exception
         {
             List<String> removed = new ArrayList<>();
             AutoCloseable handle = engine.onRemoval(removed::add);
@@ -194,7 +194,7 @@ class CacheEngineTest
 
         // Bu test TTL dolduğunda dinleyiciye haber gönderildiğini ispatlar.
         @Test
-        void ttl_bitirince_dinleyici_tetiklenir()
+        void ttl_expiration_notifies_listener()
         {
             List<String> removed = new ArrayList<>();
             engine.onRemoval(removed::add);
@@ -205,11 +205,11 @@ class CacheEngineTest
     }
 
     @Nested
-    class IterasyonVeOzet
+    class IterationAndSummary
     {
         // Bu test forEach çağrısının yalnızca süresi geçmemiş kayıtları aktardığını doğrular.
         @Test
-        void for_each_sadece_gecerli_kayitlari_doner()
+        void for_each_returns_only_valid_entries()
         {
             assertTrue(engine.set("kal", "value"));
             assertTrue(engine.set("git", "value", Duration.ofMillis(10)));
@@ -222,7 +222,7 @@ class CacheEngineTest
 
         // Bu test clear işleminin tüm segmentleri boşalttığını gösterir.
         @Test
-        void clear_butun_segmentleri_temizler()
+        void clear_removes_all_segments()
         {
             assertTrue(engine.set("a", "1"));
             assertTrue(engine.set("b", "2"));
@@ -236,7 +236,7 @@ class CacheEngineTest
 
         // Bu test fingerprint sonucunun ekleme sırası değişse bile sabit kaldığını doğrular.
         @Test
-        void fingerprint_sirali_degisimde_sabit_kalir()
+        void fingerprint_remains_stable_across_reorder()
         {
             assertTrue(engine.set("one", "1"));
             assertTrue(engine.set("two", "2"));

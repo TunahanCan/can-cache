@@ -11,11 +11,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class ExpiringKeyTest
 {
     @Nested
-    class ZamanDavranisi
+    class TimingBehavior
     {
         // Bu test gelecekteki zamanlar için bekleme süresinin pozitif olduğunu doğrular.
         @Test
-        void get_delay_gelecek_zaman_icin_pozitif_doner()
+        void get_delay_returns_positive_for_future_time()
         {
             long expireAt = System.currentTimeMillis() + 200L;
             ExpiringKey key = new ExpiringKey("k", 0, expireAt);
@@ -25,7 +25,7 @@ class ExpiringKeyTest
 
         // Bu test compareTo'nun en erken süresi olan anahtarı önce sıraladığını gösterir.
         @Test
-        void compare_to_sureye_gore_siralama_yapar()
+        void compare_to_orders_by_expiration_time()
         {
             long now = System.currentTimeMillis();
             ExpiringKey early = new ExpiringKey("a", 0, now + 10);

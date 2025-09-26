@@ -10,25 +10,25 @@ import static org.junit.jupiter.api.Assertions.*;
 class CodecsTest
 {
     @Nested
-    class StringCodecDavranisi
+    class StringCodecBehavior
     {
         // Bu test null değerin boş diziye dönüştürüldüğünü doğrular.
         @Test
-        void encode_null_bos_dizi_doner()
+        void encode_null_returns_empty_array()
         {
             assertArrayEquals(new byte[0], StringCodec.UTF8.encode(null));
         }
 
         // Bu test boş dizinin boş stringe çözüldüğünü gösterir.
         @Test
-        void decode_bos_dizi_bos_string_doner()
+        void decode_empty_array_returns_empty_string()
         {
             assertEquals("", StringCodec.UTF8.decode(new byte[0]));
         }
 
         // Bu test encode-decode işleminin yuvarlak tur sağladığını doğrular.
         @Test
-        void encode_decode_tam_tur_calismaya_devam_eder()
+        void encode_decode_performs_round_trip()
         {
             String original = "Merhaba dünya";
             byte[] encoded = StringCodec.UTF8.encode(original);
@@ -37,11 +37,11 @@ class CodecsTest
     }
 
     @Nested
-    class JavaSerializerCodecDavranisi
+    class JavaSerializerCodecBehavior
     {
         // Bu test serileştirilebilir nesnenin aynı içerikle geri döndüğünü doğrular.
         @Test
-        void serialize_ve_deserialize_ayni_nesneyi_doner()
+        void serialize_and_deserialize_return_same_object()
         {
             JavaSerializerCodec<Sample> codec = new JavaSerializerCodec<>();
             Sample original = new Sample("data", 42);
@@ -52,7 +52,7 @@ class CodecsTest
 
         // Bu test boş diziden null döndüğünü gösterir.
         @Test
-        void decode_bos_dizi_null_doner()
+        void decode_empty_array_returns_null()
         {
             JavaSerializerCodec<Sample> codec = new JavaSerializerCodec<>();
             assertNull(codec.decode(new byte[0]));

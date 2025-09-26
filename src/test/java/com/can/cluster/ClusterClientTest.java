@@ -35,11 +35,11 @@ class ClusterClientTest
     }
 
     @Nested
-    class SetIslemleri
+    class SetOperations
     {
         // Bu test halka boş olduğunda set çağrısının başarısız döndüğünü doğrular.
         @Test
-        void set_bos_halkada_false_doner()
+        void set_returns_false_on_empty_ring()
         {
             ConsistentHashRing<Node<String, String>> emptyRing = new ConsistentHashRing<>(new ControlledHash(), 1);
             ClusterClient emptyClient = new ClusterClient(emptyRing, 3, StringCodec.UTF8, handoff);
@@ -48,7 +48,7 @@ class ClusterClientTest
 
         // Bu test çoğunluk başarı sağladığında true döndüğünü ve hatalı düğümün kuyruğa eklendiğini gösterir.
         @Test
-        void set_cogunluk_saglaninca_true_doner()
+        void set_returns_true_when_quorum_reached()
         {
             replica1.failNextSet();
             assertTrue(client.set("clientKey", "value", Duration.ofSeconds(1)));
@@ -59,7 +59,7 @@ class ClusterClientTest
 
         // Bu test lider düğüm hata verip çoğunluk sağlanamadığında istisna fırlatıldığını doğrular.
         @Test
-        void set_lider_hata_verince_istisna_firlatir()
+        void set_throws_when_leader_fails_and_no_quorum()
         {
             leader.throwNextSet();
             replica1.failNextSet();
@@ -73,11 +73,11 @@ class ClusterClientTest
     }
 
     @Nested
-    class OkumaIslemleri
+    class ReadOperations
     {
         // Bu test ilk başarılı replikanın değerini döndürdüğünü doğrular.
         @Test
-        void get_ilk_basarili_replikadan_deger_doner()
+        void get_returns_value_from_first_successful_replica()
         {
             replica1.preset("value");
             assertEquals("value", client.get("clientKey"));
@@ -85,18 +85,18 @@ class ClusterClientTest
 
         // Bu test hiçbir replika değer döndürmezse null geldiğini gösterir.
         @Test
-        void get_tum_replikalar_bos_ise_null_doner()
+        void get_returns_null_when_all_replicas_empty()
         {
             assertNull(client.get("clientKey"));
         }
     }
 
     @Nested
-    class SilmeIslemleri
+    class DeleteOperations
     {
         // Bu test iki replika silmeyi başarıyla tamamladığında true döndüğünü doğrular.
         @Test
-        void delete_cogunlukla_true_doner()
+        void delete_returns_true_with_quorum()
         {
             replica2.failNextDelete();
             assertTrue(client.delete("clientKey"));
@@ -105,7 +105,7 @@ class ClusterClientTest
 
         // Bu test çoğunluk sağlanamadığında false döndüğünü ve ipucu kaydedildiğini gösterir.
         @Test
-        void delete_cogunluk_saglanmazsa_false_doner()
+        void delete_returns_false_without_quorum()
         {
             leader.failNextDelete();
             replica1.failNextDelete();
@@ -116,11 +116,11 @@ class ClusterClientTest
     }
 
     @Nested
-    class CasIslemleri
+    class CasOperations
     {
         // Bu test çoğunluk sağlandığında CAS operasyonunun true döndürdüğünü doğrular.
         @Test
-        void compare_and_swap_cogunlukla_true_doner()
+        void compare_and_swap_returns_true_with_quorum()
         {
             replica2.failNextCas();
             assertTrue(client.compareAndSwap("clientKey", "v", 1L, Duration.ofSeconds(1)));
@@ -129,7 +129,7 @@ class ClusterClientTest
 
         // Bu test lider hata verdiğinde ve çoğunluk sağlanamadığında istisna fırlatıldığını gösterir.
         @Test
-        void compare_and_swap_lider_hata_verince_istisna()
+        void compare_and_swap_throws_when_leader_fails()
         {
             leader.throwNextCas();
             replica1.failNextCas();
@@ -141,11 +141,11 @@ class ClusterClientTest
     }
 
     @Nested
-    class BakimIslemleri
+    class MaintenanceOperations
     {
         // Bu test clear çağrısının tüm düğümlerde yürütüldüğünü doğrular.
         @Test
-        void clear_tum_dugumleri_temizler()
+        void clear_invokes_all_nodes()
         {
             client.clear();
             assertEquals(1, leader.clearCalls);
