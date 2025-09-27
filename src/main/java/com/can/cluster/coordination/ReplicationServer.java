@@ -2,6 +2,7 @@ package com.can.cluster.coordination;
 
 import com.can.cluster.ClusterState;
 import com.can.config.AppProperties;
+import com.can.constants.NodeProtocol;
 import com.can.core.CacheEngine;
 import io.quarkus.runtime.Startup;
 import io.vertx.core.Vertx;
@@ -212,14 +213,14 @@ public class ReplicationServer implements AutoCloseable
         private CommandDecoder decoderFor(byte command)
         {
             return switch (command) {
-                case 'S' -> new SetCommandDecoder();
-                case 'G' -> new GetCommandDecoder();
-                case 'D' -> new DeleteCommandDecoder();
-                case 'C' -> new ClearCommandDecoder();
-                case 'X' -> new CasCommandDecoder();
-                case 'J' -> new JoinCommandDecoder();
-                case 'R' -> new StreamCommandDecoder();
-                case 'H' -> new DigestCommandDecoder();
+                case NodeProtocol.CMD_SET -> new SetCommandDecoder();
+                case NodeProtocol.CMD_GET -> new GetCommandDecoder();
+                case NodeProtocol.CMD_DELETE -> new DeleteCommandDecoder();
+                case NodeProtocol.CMD_CLEAR -> new ClearCommandDecoder();
+                case NodeProtocol.CMD_CAS -> new CasCommandDecoder();
+                case NodeProtocol.CMD_JOIN -> new JoinCommandDecoder();
+                case NodeProtocol.CMD_STREAM -> new StreamCommandDecoder();
+                case NodeProtocol.CMD_DIGEST -> new DigestCommandDecoder();
                 default -> null;
             };
         }
@@ -509,7 +510,7 @@ public class ReplicationServer implements AutoCloseable
                 stored = engine.set(key, value, Duration.ofMillis(ttlMillis));
             }
 
-            return Buffer.buffer(1).appendByte(stored ? (byte) 'T' : (byte) 'F');
+            return Buffer.buffer(1).appendByte(stored ? NodeProtocol.RESP_TRUE : NodeProtocol.RESP_FALSE);
         }
 
         private Buffer handleGet(byte[] keyBytes)
@@ -517,11 +518,11 @@ public class ReplicationServer implements AutoCloseable
             String key = new String(keyBytes, StandardCharsets.UTF_8);
             String value = engine.get(key);
             if (value == null) {
-                return Buffer.buffer(1).appendByte((byte) 'M');
+                return Buffer.buffer(1).appendByte(NodeProtocol.RESP_MISS);
             }
             byte[] valueBytes = value.getBytes(StandardCharsets.UTF_8);
             return Buffer.buffer(1 + 4 + valueBytes.length)
-                    .appendByte((byte) 'H')
+                    .appendByte(NodeProtocol.RESP_HIT)
                     .appendInt(valueBytes.length)
                     .appendBytes(valueBytes);
         }
@@ -530,13 +531,13 @@ public class ReplicationServer implements AutoCloseable
         {
             String key = new String(keyBytes, StandardCharsets.UTF_8);
             boolean removed = engine.delete(key);
-            return Buffer.buffer(1).appendByte(removed ? (byte) 'T' : (byte) 'F');
+            return Buffer.buffer(1).appendByte(removed ? NodeProtocol.RESP_TRUE : NodeProtocol.RESP_FALSE);
         }
 
         private Buffer handleClear()
         {
             engine.clear();
-            return Buffer.buffer(1).appendByte((byte) 'O');
+            return Buffer.buffer(1).appendByte(NodeProtocol.RESP_OK);
         }
 
         private Buffer handleCas(byte[] keyBytes, byte[] valueBytes, long expireAt, long expectedCas)
@@ -556,7 +557,7 @@ public class ReplicationServer implements AutoCloseable
                 stored = engine.compareAndSwap(key, value, expectedCas, Duration.ofMillis(ttlMillis));
             }
 
-            return Buffer.buffer(1).appendByte(stored ? (byte) 'T' : (byte) 'F');
+            return Buffer.buffer(1).appendByte(stored ? NodeProtocol.RESP_TRUE : NodeProtocol.RESP_FALSE);
         }
 
         private Buffer handleJoin(byte[] joinerIdBytes, long joinerEpoch)
@@ -564,12 +565,12 @@ public class ReplicationServer implements AutoCloseable
             clusterState.observeEpoch(joinerEpoch);
             String joinerId = new String(joinerIdBytes, StandardCharsets.UTF_8);
             if (Objects.equals(joinerId, clusterState.localNodeId())) {
-                return Buffer.buffer(1).appendByte((byte) 'R');
+                return Buffer.buffer(1).appendByte(NodeProtocol.RESP_REJECT);
             }
 
             byte[] idBytes = clusterState.localNodeIdBytes();
             return Buffer.buffer(1 + 4 + idBytes.length + 8)
-                    .appendByte((byte) 'A')
+                    .appendByte(NodeProtocol.RESP_ACCEPT)
                     .appendInt(idBytes.length)
                     .appendBytes(idBytes)
                     .appendLong(clusterState.currentEpoch());
@@ -582,7 +583,7 @@ public class ReplicationServer implements AutoCloseable
                     try {
                         byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
                         Buffer chunk = Buffer.buffer(1 + 4 + 4 + 8 + keyBytes.length + value.length);
-                        chunk.appendByte((byte) 1);
+                        chunk.appendByte(NodeProtocol.STREAM_CHUNK_MARKER);
                         chunk.appendInt(keyBytes.length);
                         chunk.appendInt(value.length);
                         chunk.appendLong(expireAt);
@@ -597,7 +598,7 @@ public class ReplicationServer implements AutoCloseable
             } catch (StreamWriteException e) {
                 throw e.unwrap();
             }
-            return Buffer.buffer(1).appendByte((byte) 0);
+            return Buffer.buffer(1).appendByte(NodeProtocol.STREAM_END_MARKER);
         }
 
         private Buffer handleDigest()

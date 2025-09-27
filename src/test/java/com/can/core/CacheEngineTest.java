@@ -1,6 +1,7 @@
 package com.can.core;
 
 import com.can.codec.StringCodec;
+import com.can.constants.NodeProtocol;
 import com.can.metric.MetricsRegistry;
 import com.can.metric.Timer;
 import com.can.pubsub.Broker;
@@ -155,7 +156,7 @@ class CacheEngineTest
         @Test
         void replay_set_command_restores_value()
         {
-            engine.replay(new byte[]{'S'}, StringCodec.UTF8.encode("key"), StringCodec.UTF8.encode("value"), 0L);
+            engine.replay(new byte[]{NodeProtocol.CMD_SET}, StringCodec.UTF8.encode("key"), StringCodec.UTF8.encode("value"), 0L);
             assertEquals("value", engine.get("key"));
         }
 
@@ -163,7 +164,7 @@ class CacheEngineTest
         @Test
         void replay_ignores_expired_record()
         {
-            engine.replay(new byte[]{'S'}, StringCodec.UTF8.encode("late"), StringCodec.UTF8.encode("value"), System.currentTimeMillis() - 1_000);
+            engine.replay(new byte[]{NodeProtocol.CMD_SET}, StringCodec.UTF8.encode("late"), StringCodec.UTF8.encode("value"), System.currentTimeMillis() - 1_000);
             assertNull(engine.get("late"));
         }
 
@@ -172,7 +173,7 @@ class CacheEngineTest
         void replay_delete_command_removes_entry()
         {
             assertTrue(engine.set("gone", "value"));
-            engine.replay(new byte[]{'D'}, StringCodec.UTF8.encode("gone"), new byte[0], 0L);
+            engine.replay(new byte[]{NodeProtocol.CMD_DELETE}, StringCodec.UTF8.encode("gone"), new byte[0], 0L);
             assertNull(engine.get("gone"));
         }
     }

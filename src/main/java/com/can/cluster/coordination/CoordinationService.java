@@ -2,6 +2,7 @@ package com.can.cluster.coordination;
 
 import com.can.cluster.*;
 import com.can.config.AppProperties;
+import com.can.constants.NodeProtocol;
 import com.can.core.CacheEngine;
 import io.vertx.core.Vertx;
 import jakarta.annotation.PostConstruct;
@@ -346,14 +347,14 @@ public class CoordinationService implements AutoCloseable
             DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
 
             byte[] idBytes = clusterState.localNodeIdBytes();
-            out.writeByte('J');
+            out.writeByte(NodeProtocol.CMD_JOIN);
             out.writeInt(idBytes.length);
             out.write(idBytes);
             out.writeLong(clusterState.currentEpoch());
             out.flush();
 
             byte response = in.readByte();
-            if (response != 'A') {
+            if (response != NodeProtocol.RESP_ACCEPT) {
                 LOG.debugf("Join handshake rejected by %s:%d", host, port);
                 return new JoinHandshakeResult(0L, false);
             }
@@ -390,7 +391,7 @@ public class CoordinationService implements AutoCloseable
             DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
             DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
 
-            out.writeByte('R');
+            out.writeByte(NodeProtocol.CMD_STREAM);
             out.flush();
 
             long now = System.currentTimeMillis();
@@ -401,10 +402,10 @@ public class CoordinationService implements AutoCloseable
                 } catch (EOFException eof) {
                     break;
                 }
-                if (marker == 0) {
+                if (marker == NodeProtocol.STREAM_END_MARKER) {
                     break;
                 }
-                if (marker != 1) {
+                if (marker != NodeProtocol.STREAM_CHUNK_MARKER) {
                     throw new IOException("Unexpected stream marker: " + marker);
                 }
 
@@ -452,7 +453,7 @@ public class CoordinationService implements AutoCloseable
             socket.setTcpNoDelay(true);
             DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
             DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-            out.writeByte('H');
+            out.writeByte(NodeProtocol.CMD_DIGEST);
             out.flush();
             return in.readLong();
         }

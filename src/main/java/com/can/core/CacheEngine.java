@@ -1,6 +1,7 @@
 package com.can.core;
 
 import com.can.codec.Codec;
+import com.can.constants.NodeProtocol;
 import com.can.core.model.CacheValue;
 import com.can.core.model.CasDecision;
 import com.can.core.model.CasResult;
@@ -280,9 +281,9 @@ public final class CacheEngine<K,V> implements AutoCloseable
     // Replay entry from persistence layer
     public void replay(byte[] op, byte[] k, byte[] v, long expireAt){
         K key = keyCodec.decode(k);
-        if (op[0] == 'S') {
+        if (op[0] == NodeProtocol.CMD_SET) {
             applyReplayEntry(key, v, expireAt);
-        } else if (op[0] == 'D') {
+        } else if (op[0] == NodeProtocol.CMD_DELETE) {
             applyReplayDelete(key);
         }
     }
