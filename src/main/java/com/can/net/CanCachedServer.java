@@ -2,6 +2,7 @@ package com.can.net;
 
 import com.can.cluster.ClusterClient;
 import com.can.config.AppProperties;
+import com.can.constants.CanCachedProtocol;
 import com.can.core.CacheEngine;
 import com.can.core.StoredValueCodec;
 import com.can.net.protocol.CommandAction;
@@ -140,7 +141,7 @@ public class CanCachedServer implements AutoCloseable
         }
         String command = parts[0].toLowerCase(Locale.ROOT);
         return switch (command) {
-            case "set", "add", "replace", "append", "prepend", "cas" -> prepareStorageCommand(command, parts);
+            case CanCachedProtocol.SET, "add", "replace", "append", "prepend", "cas" -> prepareStorageCommand(command, parts);
             case "get" -> new ImmediateCommand(() -> handleGet(parts, false));
             case "gets" -> new ImmediateCommand(() -> handleGet(parts, true));
             case "delete" -> new ImmediateCommand(() -> handleDelete(parts));

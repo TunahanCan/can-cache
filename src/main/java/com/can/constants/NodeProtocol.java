@@ -1,6 +1,6 @@
 package com.can.constants;
 
-public final class NodeProtocol
+public interface NodeProtocol
 {
     // 'S' komutu, remote node'a gelen veriyi SET işlemi ile saklamak için gönderilir.
     public static final byte CMD_SET = 'S';
