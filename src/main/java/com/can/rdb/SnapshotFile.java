@@ -1,6 +1,7 @@
 package com.can.rdb;
 
 import com.can.codec.Codec;
+import com.can.constants.NodeProtocol;
 import com.can.core.CacheEngine;
 
 import java.io.BufferedReader;
@@ -31,7 +32,7 @@ public record SnapshotFile<K, V>(File file, Codec<K> keyCodec) {
                 try {
                     engine.forEachEntry((key, value, expireAt) -> {
                         try {
-                            writer.write('S');
+                            writer.write(NodeProtocol.CMD_SET);
                             writer.write(' ');
                             writer.write(Base64.getEncoder().encodeToString(keyCodec.encode(key)));
                             writer.write(' ');
