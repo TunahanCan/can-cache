@@ -13,7 +13,9 @@ import com.can.pubsub.Broker;
 import io.vertx.core.Vertx;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.DelayQueue;
@@ -269,13 +271,20 @@ public final class CacheEngine<K,V> implements AutoCloseable
 
     public long fingerprint()
     {
-        final long[] hash = {1125899906842597L};
+        ArrayList<Long> entryHashes = new ArrayList<>();
         forEachEntry((key, value, expireAt) -> {
             long entryHash = 31L * key.hashCode() + Arrays.hashCode(value);
             entryHash = 31L * entryHash + Long.hashCode(expireAt);
-            hash[0] = 31L * hash[0] + entryHash;
+            entryHashes.add(entryHash);
         });
-        return hash[0];
+        Collections.sort(entryHashes);
+        long hash = 1125899906842597L;
+        for (long entryHash : entryHashes)
+        {
+            hash = 31L * hash + entryHash;
+        }
+        hash = 31L * hash + entryHashes.size();
+        return hash;
     }
 
     // Replay entry from persistence layer
