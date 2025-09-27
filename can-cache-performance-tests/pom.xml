@@ -8,11 +8,11 @@
         <groupId>com.can</groupId>
         <artifactId>can-cache-parent</artifactId>
         <version>0.0.1-SNAPSHOT</version>
-        <relativePath>../../pom.xml</relativePath>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>can-cache-jmeter-sampler</artifactId>
-    <name>Can Cache JMeter Java Sampler</name>
+    <artifactId>can-cache-performance-test</artifactId>
+    <name>can-cache-performance-test</name>
     <description>Java-based sampler used by the Can Cache performance test plans.</description>
 
     <properties>

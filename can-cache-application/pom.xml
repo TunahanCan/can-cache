@@ -10,8 +10,7 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>can-cache</artifactId>
-    <name>can-cache</name>
+    <artifactId>can-cache-application</artifactId>
 
     <licenses>
         <license>

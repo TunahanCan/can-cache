@@ -9,12 +9,13 @@
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>can-cache Parent</name>
-    <description>Parent aggregator for the can-cache application, integration, and performance test modules.</description>
+    <name>can-cache-parent</name>
+    <description>Parent aggregator for the can-cache application, integration,
+        and performance test modules.</description>
 
     <modules>
-        <module>application</module>
-        <module>integration-tests</module>
-        <module>performance-tests/java-sampler</module>
+        <module>can-cache-application</module>
+        <module>can-cache-integration-tests</module>
+        <module>can-cache-performance-tests</module>
     </modules>
 </project>

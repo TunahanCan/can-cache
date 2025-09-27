@@ -24,7 +24,8 @@ import org.apache.jmeter.samplers.SampleResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class CancachedRoundTripSampler extends AbstractJavaSamplerClient {
+public class CancachedRoundTripSampler extends AbstractJavaSamplerClient
+{
 
     private static final Logger LOG = LoggerFactory.getLogger(CancachedRoundTripSampler.class);
 
