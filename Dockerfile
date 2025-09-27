@@ -6,20 +6,20 @@ WORKDIR /workspace/app
 COPY pom.xml ./
 COPY mvnw ./
 COPY .mvn .mvn
-COPY application/pom.xml application/pom.xml
-COPY integration-tests/pom.xml integration-tests/pom.xml
-COPY performance-tests/java-sampler/pom.xml performance-tests/java-sampler/pom.xml
+COPY can-cache-application/pom.xml can-cache-application/pom.xml
+COPY can-cache-integration-tests/pom.xml can-cache-integration-tests/pom.xml
+COPY can-cache-performance-tests/java-sampler/pom.xml can-cache-performance-tests/java-sampler/pom.xml
 RUN chmod +x mvnw
-RUN ./mvnw -B -pl application -am dependency:go-offline
+RUN ./mvnw -B -pl can-cache-application -am dependency:go-offline
 
-COPY application/src application/src
-RUN ./mvnw -B -pl application -am package -DskipTests
+COPY can-cache-application/src can-cache-application/src
+RUN ./mvnw -B -pl can-cache-application -am package -DskipTests
 
 # Teşhis: target içeriğini ve varsa quarkus-app klasörünü listele
-RUN ls -la application/target && (ls -la application/target/quarkus-app || true)
+RUN ls -la can-cache-application/target && (ls -la can-cache-application/target/quarkus-app || true)
 
 FROM eclipse-temurin:24-jre
 WORKDIR /opt/can-cache
-COPY --from=build /workspace/app/application/target/*-runner.jar ./app.jar
+COPY --from=build /workspace/app/can-cache-application/target/*-runner.jar ./app.jar
 EXPOSE 11211
 ENTRYPOINT ["java","-jar","/opt/can-cache/app.jar"]
