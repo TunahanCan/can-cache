@@ -307,15 +307,6 @@ public class CanCachedServer implements AutoCloseable
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR cas conflict");
                 }
             }
-            case CanCachedProtocol.SET -> {
-                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(valueBytes, pending.flags(), nextCas(), computeExpireAt(ttl));
-                if (!storeEntry(key, entry, ttl)) {
-                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
-                }
-                if (existing == null) {
-                    incrementItems();
-                }
-            }
             default -> {
                 StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(valueBytes, pending.flags(), nextCas(), computeExpireAt(ttl));
                 if (!storeEntry(key, entry, ttl)) {
