@@ -14,10 +14,12 @@ public record CasDecision(boolean success,
     }
 
     public static CasDecision fail() {
-        return new CasDecision(false, null, false, false, false);
+        return
+                new CasDecision(false, null, false, false, false);
     }
 
     public static CasDecision expired() {
-        return new CasDecision(false, null, true, true, false);
+        return
+                new CasDecision(false, null, true, true, false);
     }
 }

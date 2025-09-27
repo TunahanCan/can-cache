@@ -279,7 +279,8 @@ public final class CacheEngine<K,V> implements AutoCloseable
     }
 
     // Replay entry from persistence layer
-    public void replay(byte[] op, byte[] k, byte[] v, long expireAt){
+    public void replay(byte[] op, byte[] k, byte[] v, long expireAt)
+    {
         K key = keyCodec.decode(k);
         if (op[0] == NodeProtocol.CMD_SET) {
             applyReplayEntry(key, v, expireAt);
