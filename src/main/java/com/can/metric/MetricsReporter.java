@@ -51,9 +51,9 @@ public class MetricsReporter implements AutoCloseable
         }
         long periodMillis = TimeUnit.SECONDS.toMillis(intervalSeconds);
         timerId = vertx.setPeriodic(periodMillis, id ->
-                workerExecutor.executeBlocking(promise -> {
+                workerExecutor.executeBlocking(() -> {
                     dump();
-                    promise.complete();
+                    return null;
                 })
         );
     }

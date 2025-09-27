@@ -850,13 +850,7 @@ public class CanCachedServer implements AutoCloseable
         private void executeCommand(Supplier<CommandResult> executor)
         {
             processing = true;
-            vertx.<CommandResult>executeBlocking(promise -> {
-                try {
-                    promise.complete(executor.get());
-                } catch (Throwable t) {
-                    promise.fail(t);
-                }
-            }, false, ar -> {
+            vertx.<CommandResult>executeBlocking(() -> executor.get(), false).onComplete(ar -> {
                 processing = false;
                 if (closed) {
                     return;
