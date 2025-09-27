@@ -67,16 +67,16 @@ public class SnapshotScheduler implements AutoCloseable
             return;
         }
         started.set(true);
-        workerExecutor.executeBlocking(promise -> {
+        workerExecutor.executeBlocking(() -> {
             safeSnapshot();
-            promise.complete();
+            return null;
         });
         if (intervalSeconds > 0) {
             long delay = TimeUnit.SECONDS.toMillis(intervalSeconds);
             periodicTimerId = vertx.setPeriodic(delay, id ->
-                    workerExecutor.executeBlocking(promise -> {
+                    workerExecutor.executeBlocking(() -> {
                         safeSnapshot();
-                        promise.complete();
+                        return null;
                     })
             );
         }

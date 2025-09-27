@@ -101,9 +101,9 @@ public final class CacheEngine<K,V> implements AutoCloseable
 
     private void startCleaner() {
         cleanerTimerId = vertx.setPeriodic(cleanerPollMillis, id ->
-                vertx.executeBlocking(promise -> {
+                vertx.executeBlocking(() -> {
                     runCleaner();
-                    promise.complete();
+                    return null;
                 })
         );
     }

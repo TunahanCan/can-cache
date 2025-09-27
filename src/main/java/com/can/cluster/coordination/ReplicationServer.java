@@ -182,14 +182,7 @@ public class ReplicationServer implements AutoCloseable
         private void executeCommand(CommandAction action)
         {
             processing = true;
-            workerExecutor.<Buffer>executeBlocking(promise -> {
-                try {
-                    Buffer response = action.execute();
-                    promise.complete(response);
-                } catch (Throwable t) {
-                    promise.fail(t);
-                }
-            }, false, ar -> {
+            workerExecutor.<Buffer>executeBlocking(() -> action.execute(), false).onComplete(ar -> {
                 processing = false;
                 if (closed) {
                     return;
