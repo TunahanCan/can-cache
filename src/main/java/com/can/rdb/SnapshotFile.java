@@ -25,6 +25,13 @@ import java.util.Base64;
  */
 public record SnapshotFile<K, V>(File file, Codec<K> keyCodec) {
 
+    /**
+     * Tab karakteri Base64 çıktılarında bulunmadığı için alan ayırıcı olarak güvenle kullanılabilir.
+     */
+    private static final char FIELD_SEPARATOR = '\t';
+    private static final String FIELD_SEPARATOR_STRING = String.valueOf(FIELD_SEPARATOR);
+    private static final String FIELD_SEPARATOR_REGEX = java.util.regex.Pattern.quote(FIELD_SEPARATOR_STRING);
+
     public synchronized void write(CacheEngine<K, V> engine) {
         try {
             Path temp = createTempFile();
@@ -32,13 +39,16 @@ public record SnapshotFile<K, V>(File file, Codec<K> keyCodec) {
                 try {
                     engine.forEachEntry((key, value, expireAt) -> {
                         try {
-                            writer.write(NodeProtocol.CMD_SET);
-                            writer.write(' ');
-                            writer.write(Base64.getEncoder().encodeToString(keyCodec.encode(key)));
-                            writer.write(' ');
-                            writer.write(Base64.getEncoder().encodeToString(value));
-                            writer.write(' ');
-                            writer.write(Long.toString(expireAt));
+                            String encodedKey = Base64.getEncoder().encodeToString(keyCodec.encode(key));
+                            String encodedValue = Base64.getEncoder().encodeToString(value);
+                            String line = String.join(
+                                FIELD_SEPARATOR_STRING,
+                                Character.toString((char) NodeProtocol.CMD_SET),
+                                encodedKey,
+                                encodedValue,
+                                Long.toString(expireAt)
+                            );
+                            writer.write(line);
                             writer.newLine();
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
@@ -69,7 +79,7 @@ public record SnapshotFile<K, V>(File file, Codec<K> keyCodec) {
                 if (line.isBlank()) {
                     continue;
                 }
-                String[] parts = line.split(" ");
+                String[] parts = line.split(FIELD_SEPARATOR_REGEX, 4);
                 if (parts.length < 4) {
                     continue;
                 }
