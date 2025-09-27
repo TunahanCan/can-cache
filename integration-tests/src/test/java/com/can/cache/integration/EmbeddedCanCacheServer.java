@@ -1,5 +1,7 @@
 package com.can.cache.integration;
 
+import com.can.constants.CanCachedProtocol;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.EOFException;
@@ -123,31 +125,36 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
         }
         String command = parts[0].toLowerCase(Locale.ROOT);
         return switch (command) {
-            case "set", "add", "replace", "append", "prepend", "cas" -> handleStorage(command, parts, in, out);
-            case "get" -> {
+            case CanCachedProtocol.SET,
+                    CanCachedProtocol.ADD,
+                    CanCachedProtocol.REPLACE,
+                    CanCachedProtocol.APPEND,
+                    CanCachedProtocol.PREPEND,
+                    CanCachedProtocol.CAS -> handleStorage(command, parts, in, out);
+            case CanCachedProtocol.GET -> {
                 handleGet(parts, false, out);
                 yield true;
             }
-            case "gets" -> {
+            case CanCachedProtocol.GETS -> {
                 handleGet(parts, true, out);
                 yield true;
             }
-            case "delete" -> handleDelete(parts, out);
-            case "incr", "decr" -> handleIncrDecr(command, parts, out);
-            case "touch" -> handleTouch(parts, out);
-            case "flush_all" -> handleFlushAll(parts, out);
-            case "stats" -> {
+            case CanCachedProtocol.DELETE -> handleDelete(parts, out);
+            case CanCachedProtocol.INCR, CanCachedProtocol.DECR -> handleIncrDecr(command, parts, out);
+            case CanCachedProtocol.TOUCH -> handleTouch(parts, out);
+            case CanCachedProtocol.FLUSH_ALL -> handleFlushAll(parts, out);
+            case CanCachedProtocol.STATS -> {
                 handleStats(out);
                 yield true;
             }
-            case "version" -> {
+            case CanCachedProtocol.VERSION -> {
                 writeLine(out, "VERSION " + versionString());
                 out.flush();
                 yield true;
             }
-            case "quit" -> false;
+            case CanCachedProtocol.QUIT -> false;
             default -> {
-                writeLine(out, "ERROR");
+                writeLine(out, CanCachedProtocol.ERROR);
                 out.flush();
                 yield true;
             }
@@ -155,7 +162,7 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
     }
 
     private boolean handleStorage(String command, String[] parts, BufferedInputStream in, BufferedOutputStream out) throws IOException {
-        boolean isCas = "cas".equals(command);
+        boolean isCas = CanCachedProtocol.CAS.equals(command);
         int minArgs = isCas ? 6 : 5;
         if (parts.length < minArgs) {
             writeLine(out, "CLIENT_ERROR bad command line format");
@@ -211,13 +218,13 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
         }
 
         String response = switch (command) {
-            case "set" -> storeSet(key, value, flags, expiration, now);
-            case "add" -> storeAdd(key, value, flags, expiration, now);
-            case "replace" -> storeReplace(key, value, flags, expiration, now);
-            case "append" -> storeAppend(key, value);
-            case "prepend" -> storePrepend(key, value);
-            case "cas" -> storeCas(key, value, flags, expiration, now, casToken);
-            default -> "ERROR";
+            case CanCachedProtocol.SET -> storeSet(key, value, flags, expiration, now);
+            case CanCachedProtocol.ADD -> storeAdd(key, value, flags, expiration, now);
+            case CanCachedProtocol.REPLACE -> storeReplace(key, value, flags, expiration, now);
+            case CanCachedProtocol.APPEND -> storeAppend(key, value);
+            case CanCachedProtocol.PREPEND -> storePrepend(key, value);
+            case CanCachedProtocol.CAS -> storeCas(key, value, flags, expiration, now, casToken);
+            default -> CanCachedProtocol.ERROR;
         };
 
         if (!noreply) {
@@ -341,7 +348,7 @@ final class EmbeddedCanCacheServer implements AutoCloseable {
                 response = "NOT_FOUND";
             } else {
                 long currentValue = parseUnsignedLong(entry.value);
-                long updated = "incr".equals(command) ? currentValue + delta : Math.max(0L, currentValue - delta);
+                long updated = CanCachedProtocol.INCR.equals(command) ? currentValue + delta : Math.max(0L, currentValue - delta);
                 entry.value = Long.toUnsignedString(updated);
                 entry.cas = casCounter.getAndIncrement();
                 response = entry.value;

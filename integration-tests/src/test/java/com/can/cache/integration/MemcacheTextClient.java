@@ -1,5 +1,7 @@
 package com.can.cache.integration;
 
+import com.can.constants.CanCachedProtocol;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
@@ -167,45 +169,45 @@ public class MemcacheTextClient implements AutoCloseable {
     }
 
     public String set(String key, String value, int flags, int exptime) throws IOException {
-        return storageCommand("set", key, value, flags, exptime);
+        return storageCommand(CanCachedProtocol.SET, key, value, flags, exptime);
     }
 
     public String add(String key, String value, int flags, int exptime) throws IOException {
-        return storageCommand("add", key, value, flags, exptime);
+        return storageCommand(CanCachedProtocol.ADD, key, value, flags, exptime);
     }
 
     public String replace(String key, String value, int flags, int exptime) throws IOException {
-        return storageCommand("replace", key, value, flags, exptime);
+        return storageCommand(CanCachedProtocol.REPLACE, key, value, flags, exptime);
     }
 
     public String append(String key, String value) throws IOException {
-        return storageCommand("append", key, value, 0, 0);
+        return storageCommand(CanCachedProtocol.APPEND, key, value, 0, 0);
     }
 
     public String prepend(String key, String value) throws IOException {
-        return storageCommand("prepend", key, value, 0, 0);
+        return storageCommand(CanCachedProtocol.PREPEND, key, value, 0, 0);
     }
 
     public String cas(String key, String value, long casToken, int flags, int exptime) throws IOException {
         byte[] payload = value.getBytes(StandardCharsets.UTF_8);
-        String command = String.format("cas %s %d %d %d %d", key, flags, exptime, payload.length, casToken);
+        String command = String.format("%s %s %d %d %d %d", CanCachedProtocol.CAS, key, flags, exptime, payload.length, casToken);
         sendLine(command);
         sendDataBlock(payload);
         return readLine();
     }
 
     public String delete(String key) throws IOException {
-        sendLine("delete " + key);
+        sendLine(CanCachedProtocol.DELETE + " " + key);
         return readLine();
     }
 
     public Long incr(String key, long delta) throws IOException {
-        sendLine("incr " + key + " " + delta);
+        sendLine(CanCachedProtocol.INCR + " " + key + " " + delta);
         return parseNumericResponse(readLine());
     }
 
     public Long decr(String key, long delta) throws IOException {
-        sendLine("decr " + key + " " + delta);
+        sendLine(CanCachedProtocol.DECR + " " + key + " " + delta);
         return parseNumericResponse(readLine());
     }
 
@@ -222,7 +224,7 @@ public class MemcacheTextClient implements AutoCloseable {
     }
 
     public String touch(String key, int exptime) throws IOException {
-        sendLine("touch " + key + " " + exptime);
+        sendLine(CanCachedProtocol.TOUCH + " " + key + " " + exptime);
         return readLine();
     }
 
@@ -235,7 +237,7 @@ public class MemcacheTextClient implements AutoCloseable {
     }
 
     public String flushAll(long delaySeconds, boolean noreply) throws IOException {
-        StringBuilder builder = new StringBuilder("flush_all");
+        StringBuilder builder = new StringBuilder(CanCachedProtocol.FLUSH_ALL);
         if (delaySeconds > 0L) {
             builder.append(' ').append(delaySeconds);
         }
@@ -250,7 +252,7 @@ public class MemcacheTextClient implements AutoCloseable {
     }
 
     public Map<String, String> stats() throws IOException {
-        sendLine("stats");
+        sendLine(CanCachedProtocol.STATS);
         Map<String, String> stats = new LinkedHashMap<>();
         while (true) {
             String line = readLine();
@@ -265,16 +267,16 @@ public class MemcacheTextClient implements AutoCloseable {
     }
 
     public String version() throws IOException {
-        sendLine("version");
+        sendLine(CanCachedProtocol.VERSION);
         return readLine();
     }
 
     public Map<String, ValueRecord> get(String... keys) throws IOException {
-        return getMany("get", keys);
+        return getMany(CanCachedProtocol.GET, keys);
     }
 
     public Map<String, ValueRecord> gets(String... keys) throws IOException {
-        return getMany("gets", keys);
+        return getMany(CanCachedProtocol.GETS, keys);
     }
 
     private Map<String, ValueRecord> getMany(String command, String... keys) throws IOException {
