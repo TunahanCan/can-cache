@@ -141,29 +141,34 @@ public class CanCachedServer implements AutoCloseable
         }
         String command = parts[0].toLowerCase(Locale.ROOT);
         return switch (command) {
-            case CanCachedProtocol.SET, "add", "replace", "append", "prepend", "cas" -> prepareStorageCommand(command, parts);
-            case "get" -> new ImmediateCommand(() -> handleGet(parts, false));
-            case "gets" -> new ImmediateCommand(() -> handleGet(parts, true));
-            case "delete" -> new ImmediateCommand(() -> handleDelete(parts));
-            case "incr", "decr" -> new ImmediateCommand(() -> handleIncrDecr(command, parts));
-            case "touch" -> new ImmediateCommand(() -> handleTouch(parts));
-            case "flush_all" -> new ImmediateCommand(() -> handleFlushAll(parts));
-            case "stats" -> new ImmediateCommand(this::handleStats);
-            case "version" -> new ImmediateCommand(this::handleVersion);
-            case "quit" -> new ImmediateCommand(() -> {
+            case CanCachedProtocol.SET,
+                    CanCachedProtocol.ADD,
+                    CanCachedProtocol.REPLACE,
+                    CanCachedProtocol.APPEND,
+                    CanCachedProtocol.PREPEND,
+                    CanCachedProtocol.CAS -> prepareStorageCommand(command, parts);
+            case CanCachedProtocol.GET -> new ImmediateCommand(() -> handleGet(parts, false));
+            case CanCachedProtocol.GETS -> new ImmediateCommand(() -> handleGet(parts, true));
+            case CanCachedProtocol.DELETE -> new ImmediateCommand(() -> handleDelete(parts));
+            case CanCachedProtocol.INCR, CanCachedProtocol.DECR -> new ImmediateCommand(() -> handleIncrDecr(command, parts));
+            case CanCachedProtocol.TOUCH -> new ImmediateCommand(() -> handleTouch(parts));
+            case CanCachedProtocol.FLUSH_ALL -> new ImmediateCommand(() -> handleFlushAll(parts));
+            case CanCachedProtocol.STATS -> new ImmediateCommand(this::handleStats);
+            case CanCachedProtocol.VERSION -> new ImmediateCommand(this::handleVersion);
+            case CanCachedProtocol.QUIT -> new ImmediateCommand(() -> {
                 maybeApplyDelayedFlush();
                 return CommandResult.terminate();
             });
             default -> new ImmediateCommand(() -> {
                 maybeApplyDelayedFlush();
-                return handleSimpleLine("ERROR");
+                return handleSimpleLine(CanCachedProtocol.ERROR);
             });
         };
     }
 
     private CommandAction prepareStorageCommand(String command, String[] parts)
     {
-        boolean isCas = "cas".equals(command);
+        boolean isCas = CanCachedProtocol.CAS.equals(command);
         int minParts = isCas ? 6 : 5;
         if (parts.length < minParts) {
             return new ImmediateCommand(() -> {
@@ -247,7 +252,7 @@ public class CanCachedServer implements AutoCloseable
         }
 
         switch (pending.command()) {
-            case "add" -> {
+            case CanCachedProtocol.ADD -> {
                 if (existing != null) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
@@ -257,7 +262,7 @@ public class CanCachedServer implements AutoCloseable
                 }
                 incrementItems();
             }
-            case "replace" -> {
+            case CanCachedProtocol.REPLACE -> {
                 if (existing == null) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
@@ -266,7 +271,7 @@ public class CanCachedServer implements AutoCloseable
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
             }
-            case "append" -> {
+            case CanCachedProtocol.APPEND -> {
                 if (existing == null) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
@@ -284,7 +289,7 @@ public class CanCachedServer implements AutoCloseable
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR cas conflict");
                 }
             }
-            case "prepend" -> {
+            case CanCachedProtocol.PREPEND -> {
                 if (existing == null) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
@@ -300,6 +305,15 @@ public class CanCachedServer implements AutoCloseable
                 }
                 if (status == CasUpdateStatus.CONFLICT) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR cas conflict");
+                }
+            }
+            case CanCachedProtocol.SET -> {
+                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(valueBytes, pending.flags(), nextCas(), computeExpireAt(ttl));
+                if (!storeEntry(key, entry, ttl)) {
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
+                }
+                if (existing == null) {
+                    incrementItems();
                 }
             }
             default -> {
@@ -460,7 +474,7 @@ public class CanCachedServer implements AutoCloseable
                 return handleSimpleLine("CLIENT_ERROR cannot increment or decrement non-numeric value");
             }
             BigInteger numeric = new BigInteger(currentValue);
-            BigInteger updated = "incr".equals(command) ? numeric.add(delta) : numeric.subtract(delta);
+            BigInteger updated = CanCachedProtocol.INCR.equals(command) ? numeric.add(delta) : numeric.subtract(delta);
             if (updated.signum() < 0) {
                 updated = BigInteger.ZERO;
             }
