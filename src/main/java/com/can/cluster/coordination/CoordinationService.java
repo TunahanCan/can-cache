@@ -106,7 +106,8 @@ public class CoordinationService implements AutoCloseable
     void start() {
         try {
             setupSockets();
-        } catch (IOException e)
+        }
+        catch (IOException e)
         {
             throw new IllegalStateException("Failed to initialise coordination sockets", e);
         }
@@ -263,9 +264,7 @@ public class CoordinationService implements AutoCloseable
         if (!handshakeRequired) {
             if (shouldReplayHints && replayTarget != null) {
                 hintedHandoffService.replay(nodeId, replayTarget);
-                if (replayMember != null) {
-                    replayMember.markHintReplayed(System.currentTimeMillis());
-                }
+                replayMember.markHintReplayed(System.currentTimeMillis());
             }
             return;
         }

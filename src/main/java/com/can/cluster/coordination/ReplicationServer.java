@@ -148,7 +148,8 @@ public class ReplicationServer implements AutoCloseable
 
         private void processBuffer()
         {
-            while (!closed && !processing) {
+            while (!closed && !processing)
+            {
                 if (decoder == null) {
                     if (!reader.has(1)) {
                         return;
@@ -182,7 +183,7 @@ public class ReplicationServer implements AutoCloseable
         private void executeCommand(CommandAction action)
         {
             processing = true;
-            workerExecutor.<Buffer>executeBlocking(() -> action.execute(), false).onComplete(ar -> {
+            workerExecutor.executeBlocking(action::execute, false).onComplete(ar -> {
                 processing = false;
                 if (closed) {
                     return;
@@ -583,8 +584,9 @@ public class ReplicationServer implements AutoCloseable
                         chunk.appendBytes(keyBytes);
                         chunk.appendBytes(value);
                         socket.write(chunk);
-                    } catch (Exception e) {
-                        IOException io = e instanceof IOException ? (IOException) e : new IOException(e);
+                    }
+                    catch (Exception e) {
+                        IOException io = new IOException(e);
                         throw new StreamWriteException(io);
                     }
                 });
