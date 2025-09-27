@@ -100,7 +100,8 @@ public class SnapshotScheduler implements AutoCloseable
     }
 
     @Override
-    public synchronized void close() {
+    public synchronized void close()
+    {
         if (!started.getAndSet(false)) {
             return;
         }

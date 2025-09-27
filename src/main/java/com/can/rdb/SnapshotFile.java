@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Base64;
+import java.util.regex.Pattern;
 
 /**
  * Önbellek içeriğini kalıcı hale getirmek amacıyla RDB benzeri düz dosya formatı
@@ -23,14 +24,11 @@ import java.util.Base64;
  * yeniden başladığında ise aynı dosyayı okuyup {@link CacheEngine} üzerinde
  * komutları tekrar oynatarak belleği geri yükler.
  */
-public record SnapshotFile<K, V>(File file, Codec<K> keyCodec) {
-
-    /**
-     * Tab karakteri Base64 çıktılarında bulunmadığı için alan ayırıcı olarak güvenle kullanılabilir.
-     */
+public record SnapshotFile<K, V>(File file, Codec<K> keyCodec)
+{
     private static final char FIELD_SEPARATOR = '\t';
     private static final String FIELD_SEPARATOR_STRING = String.valueOf(FIELD_SEPARATOR);
-    private static final String FIELD_SEPARATOR_REGEX = java.util.regex.Pattern.quote(FIELD_SEPARATOR_STRING);
+    private static final String FIELD_SEPARATOR_REGEX = Pattern.quote(FIELD_SEPARATOR_STRING);
 
     public synchronized void write(CacheEngine<K, V> engine) {
         try {
