@@ -140,7 +140,8 @@ public class CoordinationService implements AutoCloseable
         sendSocket.setReuseAddress(true);
     }
 
-    private NetworkInterface selectInterface() throws SocketException {
+    private NetworkInterface selectInterface() throws SocketException
+    {
         // Önce bind host'u deneyelim, değilse multicast destekleyen ilk arayüzü seçelim.
         try {
             InetAddress bindAddress = InetAddress.getByName(replicationConfig.bindHost());
@@ -165,7 +166,8 @@ public class CoordinationService implements AutoCloseable
         throw new SocketException("No multicast-capable network interface found");
     }
 
-    private void listenLoop() {
+    private void listenLoop()
+    {
         byte[] buffer = new byte[MAX_PACKET_SIZE];
         while (running) {
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
@@ -180,7 +182,8 @@ public class CoordinationService implements AutoCloseable
         }
     }
 
-    private void handlePacket(byte[] data, int length) {
+    private void handlePacket(byte[] data, int length)
+    {
         String message = new String(data, 0, length, StandardCharsets.UTF_8);
         String[] parts = message.split("\\|");
         if (parts.length < 4 || !Objects.equals(parts[0], "HELLO")) {

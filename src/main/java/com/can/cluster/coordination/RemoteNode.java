@@ -1,6 +1,7 @@
 package com.can.cluster.coordination;
 
 import com.can.cluster.Node;
+import com.can.constants.NodeProtocol;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -41,17 +42,6 @@ import java.util.function.Function;
 public final class RemoteNode implements Node<String, String>, AutoCloseable
 {
     private static final Logger LOG = Logger.getLogger(RemoteNode.class);
-
-    private static final byte CMD_SET = 'S';
-    private static final byte CMD_CAS = 'X';
-    private static final byte CMD_GET = 'G';
-    private static final byte CMD_DELETE = 'D';
-    private static final byte CMD_CLEAR = 'C';
-    private static final byte RESP_OK = 'O';
-    private static final byte RESP_HIT = 'H';
-    private static final byte RESP_MISS = 'M';
-    private static final byte RESP_TRUE = 'T';
-    private static final byte RESP_FALSE = 'F';
 
     private final String id;
     private final String host;
@@ -98,13 +88,14 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
         byte[] valueBytes = value.getBytes(StandardCharsets.UTF_8);
         long expireAt = expiryMillis(ttl);
         Buffer request = Buffer.buffer(1 + 4 + 4 + 8 + keyBytes.length + valueBytes.length)
-                .appendByte(CMD_SET)
+                .appendByte(NodeProtocol.CMD_SET)
                 .appendInt(keyBytes.length)
                 .appendInt(valueBytes.length)
                 .appendLong(expireAt)
                 .appendBytes(keyBytes)
                 .appendBytes(valueBytes);
-        return execute(connection -> send(connection, request, new BooleanResponseParser(RESP_TRUE, RESP_FALSE)));
+        return execute(connection -> send(connection, request, new BooleanResponseParser(NodeProtocol.RESP_TRUE,
+                NodeProtocol.RESP_FALSE)));
     }
 
     @Override
@@ -112,7 +103,7 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
     {
         byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
         Buffer request = Buffer.buffer(1 + 4 + keyBytes.length)
-                .appendByte(CMD_GET)
+                .appendByte(NodeProtocol.CMD_GET)
                 .appendInt(keyBytes.length)
                 .appendBytes(keyBytes);
         return execute(connection -> send(connection, request, new GetResponseParser()));
@@ -123,10 +114,11 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
     {
         byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
         Buffer request = Buffer.buffer(1 + 4 + keyBytes.length)
-                .appendByte(CMD_DELETE)
+                .appendByte(NodeProtocol.CMD_DELETE)
                 .appendInt(keyBytes.length)
                 .appendBytes(keyBytes);
-        return execute(connection -> send(connection, request, new BooleanResponseParser(RESP_TRUE, RESP_FALSE)));
+        return execute(connection -> send(connection, request,
+                new BooleanResponseParser(NodeProtocol.RESP_TRUE, NodeProtocol.RESP_FALSE)));
     }
 
     @Override
@@ -136,20 +128,21 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
         byte[] valueBytes = value.getBytes(StandardCharsets.UTF_8);
         long expireAt = expiryMillis(ttl);
         Buffer request = Buffer.buffer(1 + 4 + 4 + 8 + 8 + keyBytes.length + valueBytes.length)
-                .appendByte(CMD_CAS)
+                .appendByte(NodeProtocol.CMD_CAS)
                 .appendInt(keyBytes.length)
                 .appendInt(valueBytes.length)
                 .appendLong(expireAt)
                 .appendLong(expectedCas)
                 .appendBytes(keyBytes)
                 .appendBytes(valueBytes);
-        return execute(connection -> send(connection, request, new BooleanResponseParser(RESP_TRUE, RESP_FALSE)));
+        return execute(connection -> send(connection, request,
+                new BooleanResponseParser(NodeProtocol.RESP_TRUE, NodeProtocol.RESP_FALSE)));
     }
 
     @Override
     public void clear()
     {
-        Buffer request = Buffer.buffer(1).appendByte(CMD_CLEAR);
+        Buffer request = Buffer.buffer(1).appendByte(NodeProtocol.CMD_CLEAR);
         execute(connection -> send(connection, request, new ClearResponseParser()));
     }
 
@@ -574,7 +567,7 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
                 return;
             }
             byte response = reader.readByte();
-            if (response != RESP_OK) {
+            if (response != NodeProtocol.RESP_OK) {
                 throw new IOException("unexpected response to clear: " + (char) response);
             }
             complete = true;
@@ -598,12 +591,12 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
                             return;
                         }
                         byte response = reader.readByte();
-                        if (response == RESP_MISS) {
+                        if (response == NodeProtocol.RESP_MISS) {
                             result = null;
                             complete = true;
                             return;
                         }
-                        if (response != RESP_HIT) {
+                        if (response != NodeProtocol.RESP_HIT) {
                             throw new IOException("unexpected response to get: " + (char) response);
                         }
                         state = State.LENGTH;
