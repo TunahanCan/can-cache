@@ -66,15 +66,16 @@ final class CacheSegment<K>
                     return false;
                 }
                 K victim = decision.evictKey();
-                if (victim != null) {
-                    if (map.remove(victim) != null) {
-                        policy.onRemove(victim);
-                        notifyRemoval(victim);
-                    }
+                if (victim != null && map.remove(victim) != null) {
+                    policy.onRemove(victim);
+                    notifyRemoval(victim);
                 }
-            } else if (map.size() >= capacity) {
-                Iterator<Map.Entry<K, CacheValue>> it = map.entrySet().iterator();
-                if (it.hasNext()) {
+            } else {
+                while (map.size() >= capacity) {
+                    Iterator<Map.Entry<K, CacheValue>> it = map.entrySet().iterator();
+                    if (!it.hasNext()) {
+                        break;
+                    }
                     K victim = it.next().getKey();
                     it.remove();
                     policy.onRemove(victim);
@@ -83,15 +84,6 @@ final class CacheSegment<K>
             }
 
             map.put(key, v);
-            while (map.size() > capacity) {
-                Iterator<Map.Entry<K, CacheValue>> it = map.entrySet().iterator();
-                if (!it.hasNext()) break;
-                Map.Entry<K, CacheValue> eldest = it.next();
-                it.remove();
-                K victim = eldest.getKey();
-                policy.onRemove(victim);
-                notifyRemoval(victim);
-            }
             return true;
         } finally { lock.unlock(); }
     }
@@ -99,7 +91,10 @@ final class CacheSegment<K>
         lock.lock();
         try {
             CacheValue removed = map.remove(key);
-            if (removed != null) policy.onRemove(key);
+            if (removed != null) {
+                policy.onRemove(key);
+                notifyRemoval(key);
+            }
             return removed;
         }
         finally { lock.unlock(); }
