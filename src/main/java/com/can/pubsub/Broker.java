@@ -20,9 +20,12 @@ import java.util.function.Consumer;
  */
 @Startup
 @Singleton
-public class Broker implements AutoCloseable {
+public class Broker implements AutoCloseable
+{
 
-    private final ConcurrentMap<String, CopyOnWriteArrayList<Consumer<byte[]>>> subscriptions = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, CopyOnWriteArrayList<Consumer<byte[]>>> subscriptions =
+            new ConcurrentHashMap<>();
+
     private volatile ExecutorService executor;
 
     @PostConstruct
@@ -30,7 +33,8 @@ public class Broker implements AutoCloseable {
         ensureExecutor();
     }
 
-    public void publish(String topic, byte[] payload) {
+    public void publish(String topic, byte[] payload)
+    {
         var list = subscriptions.get(topic);
         if (list == null || list.isEmpty()) {
             return;
@@ -53,7 +57,8 @@ public class Broker implements AutoCloseable {
     }
 
     @Override
-    public synchronized void close() {
+    public synchronized void close()
+    {
         ExecutorService current = executor;
         if (current != null) {
             current.shutdownNow();
@@ -62,11 +67,11 @@ public class Broker implements AutoCloseable {
         subscriptions.clear();
     }
 
-    private synchronized ExecutorService ensureExecutor() {
-        ExecutorService current = executor;
-        if (current == null || current.isShutdown()) {
-            executor = current = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
-        }
-        return current;
+    private synchronized ExecutorService ensureExecutor()
+    {
+        if (executor == null || executor.isShutdown())
+            executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
+
+         return executor;
     }
 }
