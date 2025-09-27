@@ -8,6 +8,7 @@ COPY mvnw ./
 COPY .mvn .mvn
 COPY application/pom.xml application/pom.xml
 COPY integration-tests/pom.xml integration-tests/pom.xml
+COPY performance-tests/pom.xml performance-tests/pom.xml
 COPY performance-tests/java-sampler/pom.xml performance-tests/java-sampler/pom.xml
 RUN chmod +x mvnw
 RUN ./mvnw -B -pl application -am dependency:go-offline

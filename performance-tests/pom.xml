@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.can</groupId>
+        <artifactId>can-cache-parent</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>performance-tests</artifactId>
+    <packaging>pom</packaging>
+    <name>Can Cache Performance Tests</name>
+    <description>Aggregator module for Can Cache performance testing artefacts.</description>
+
+    <modules>
+        <module>java-sampler</module>
+    </modules>
+</project>
