@@ -3,13 +3,13 @@ services:
   can-cache:
     build:
       context: ..
-      dockerfile: ../Dockerfile
+      dockerfile: Dockerfile
     image: can-cache:integration
     ports:
       - "11211:11211"
   integration-tests:
     build:
-      context: integration-tests
+      context: .
     depends_on:
       - can-cache
     environment:
