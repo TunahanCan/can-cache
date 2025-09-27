@@ -318,7 +318,8 @@ public class CanCachedServer implements AutoCloseable
             }
         }
 
-        return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("STORED");
+        return pending.noreply() ?
+                CommandResult.continueWithoutResponse() : handleSimpleLine("STORED");
     }
 
     private CommandResult handleCasCommand(String key,
@@ -850,7 +851,7 @@ public class CanCachedServer implements AutoCloseable
         private void executeCommand(Supplier<CommandResult> executor)
         {
             processing = true;
-            vertx.<CommandResult>executeBlocking(() -> executor.get(), false).onComplete(ar -> {
+            vertx.executeBlocking(executor::get, false).onComplete(ar -> {
                 processing = false;
                 if (closed) {
                     return;

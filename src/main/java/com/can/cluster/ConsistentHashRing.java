@@ -21,16 +21,20 @@ public final class ConsistentHashRing<N>
     private final int vnodes;
 
     public ConsistentHashRing(HashFn hash, int virtualNodes) {
-        this.hash = hash; this.vnodes = Math.max(1, virtualNodes);
+        this.hash = hash;
+        this.vnodes = Math.max(1, virtualNodes);
     }
 
     public synchronized void addNode(N node, byte[] idBytes) {
-        for (int i = 0; i < vnodes; i++) ring.put(hash.hash(join(idBytes, i)), node);
+        for (int i = 0; i < vnodes; i++)
+            ring.put(hash.hash(join(idBytes, i)), node);
     }
     public synchronized void removeNode(N node, byte[] idBytes) {
-        for (int i = 0; i < vnodes; i++) ring.remove(hash.hash(join(idBytes, i)));
+        for (int i = 0; i < vnodes; i++)
+            ring.remove(hash.hash(join(idBytes, i)));
     }
-    public synchronized List<N> getReplicas(byte[] key, int rf) {
+    public synchronized List<N> getReplicas(byte[] key, int rf)
+    {
         var out = new ArrayList<N>(Math.max(0, Math.min(rf, ring.size())));
         if (rf <= 0 || ring.isEmpty()) return out;
 
