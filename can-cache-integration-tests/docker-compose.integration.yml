@@ -2,8 +2,8 @@
 services:
   can-cache:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: ../Dockerfile
     image: can-cache:integration
     ports:
       - "11211:11211"
