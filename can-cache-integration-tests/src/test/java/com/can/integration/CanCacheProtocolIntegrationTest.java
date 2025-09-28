@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
@@ -74,17 +75,65 @@ class CanCacheProtocolIntegrationTest
     }
 
     @Test
+    void shouldRetrieveMultipleKeysWithConsistentMetadata() throws Exception
+    {
+        // Senaryo: Çoklu get isteğinde birden fazla anahtarın aynı anda okunurken bayrak ve değer bilgilerinin doğru döndüğünü doğruluyoruz.
+        assertEquals("STORED", client.set("multi:one", 123, 0, "deger-1"));
+        assertEquals("STORED", client.set("multi:two", 321, 0, "deger-2"));
+
+        Map<String, CanCacheClient.CacheValue> values = client.getValues("multi:one", "multi:two", "multi:missing");
+        assertEquals(2, values.size());
+        assertTrue(values.containsKey("multi:one"));
+        assertTrue(values.containsKey("multi:two"));
+        assertEquals("deger-1", values.get("multi:one").asString());
+        assertEquals("deger-2", values.get("multi:two").asString());
+        assertEquals(123, values.get("multi:one").flags());
+        assertEquals(321, values.get("multi:two").flags());
+
+        Map<String, CanCacheClient.CacheValue> casValues = client.gets("multi:one", "multi:two");
+        assertEquals(2, casValues.size());
+        assertNotNull(casValues.get("multi:one").cas());
+        assertNotNull(casValues.get("multi:two").cas());
+    }
+
+    @Test
     void shouldSupportCasOperations() throws Exception
     {
         String key = "cas:key";
         assertEquals("STORED", client.set(key, 0, 0, "v1"));
-        long cas = client.gets(key).get(key).cas();
+        long originalCas = client.gets(key).get(key).cas();
 
-        assertEquals("EXISTS", client.cas(key, 0, 0, "v2", cas + 1));
-        assertEquals("NOT_FOUND", client.cas("cas:missing", 0, 0, "v", cas));
+        assertEquals("EXISTS", client.cas(key, 0, 0, "v2", originalCas + 1));
+        assertEquals("v1", client.getValue(key).orElseThrow().asString(),
+                "Başarısız CAS denemesi değeri değiştirmemeli");
 
-        assertEquals("STORED", client.cas(key, 0, 0, "v2", cas));
+        long currentCas = client.gets(key).get(key).cas();
+        assertEquals(originalCas, currentCas, "Başarısız CAS yeni bir token üretmemeli");
+        assertEquals("NOT_FOUND", client.cas("cas:missing", 0, 0, "v", currentCas));
+
+        assertEquals("STORED", client.cas(key, 0, 0, "v2", currentCas));
         assertEquals("v2", client.getValue(key).orElseThrow().asString());
+    }
+
+    @Test
+    void shouldUpdateCasTokensAfterMutation() throws Exception
+    {
+        // Senaryo: Aynı anahtar üzerinde güncelleme yapıldığında CAS bilgisinin değiştiğini ve eski token ile güncellemenin reddedildiğini kontrol ediyoruz.
+        String key = "cas:tracking";
+        assertEquals("STORED", client.set(key, 0, 0, "once"));
+
+        long firstCas = client.gets(key).get(key).cas();
+        assertNotNull(firstCas);
+
+        assertEquals("STORED", client.set(key, 0, 0, "iki"));
+
+        long secondCas = client.gets(key).get(key).cas();
+        assertNotNull(secondCas);
+        assertNotEquals(firstCas, secondCas);
+
+        assertEquals("EXISTS", client.cas(key, 0, 0, "uc", firstCas));
+        assertEquals("STORED", client.cas(key, 0, 0, "uc", secondCas));
+        assertEquals("uc", client.getValue(key).orElseThrow().asString());
     }
 
     @Test
@@ -99,6 +148,18 @@ class CanCacheProtocolIntegrationTest
 
         assertEquals("NOT_FOUND", client.incr("num:missing", 1));
         assertEquals("CLIENT_ERROR cannot increment or decrement non-numeric value", client.incr("num:string", 1));
+    }
+
+    @Test
+    void shouldRespectExpirationTimes() throws Exception
+    {
+        // Senaryo: Kısa yaşam süresi ile yazılan bir değerin süre sonunda otomatik olarak silindiğini gözlemliyoruz.
+        String key = "expire:key";
+        assertEquals("STORED", client.set(key, 0, 1, "gecici"));
+        assertTrue(client.getValue(key).isPresent());
+
+        TimeUnit.MILLISECONDS.sleep(1200);
+        assertTrue(client.getValue(key).isEmpty(), "Değer süre sonunda otomatik düşmelidir");
     }
 
     @Test
@@ -134,6 +195,13 @@ class CanCacheProtocolIntegrationTest
     }
 
     @Test
+    void shouldHandleTouchForMissingKeys() throws Exception
+    {
+        // Senaryo: Olmayan bir anahtar üzerinde touch çağrısı yapıldığında NOT_FOUND yanıtının döndüğünü test ediyoruz.
+        assertEquals("NOT_FOUND", client.touch("touch:missing", 100));
+    }
+
+    @Test
     void shouldExposeStatsAndVersion() throws Exception
     {
         Map<String, String> before = client.stats();
@@ -158,6 +226,25 @@ class CanCacheProtocolIntegrationTest
 
         String version = client.version();
         assertTrue(version.startsWith("VERSION "));
+    }
+
+    @Test
+    void shouldPreserveBinaryPayloads() throws Exception
+    {
+        // Senaryo: Binary içerikli verinin saklanıp tekrar okunurken hiçbir byte kaybı yaşanmadığını doğruluyoruz.
+        byte[] payload = new byte[256];
+        for (int i = 0; i < payload.length; i++) {
+            payload[i] = (byte) i;
+        }
+
+        String key = "bin:key";
+        assertEquals("STORED", client.set(key, 0, 0, new String(payload, StandardCharsets.ISO_8859_1)));
+
+        CanCacheClient.CacheValue value = client.getValue(key).orElseThrow();
+        assertEquals(payload.length, value.data().length);
+        for (int i = 0; i < payload.length; i++) {
+            assertEquals(payload[i], value.data()[i]);
+        }
     }
 
     private long parseLong(Map<String, String> stats, String key)
