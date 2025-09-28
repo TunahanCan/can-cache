@@ -1,6 +1,8 @@
 package com.can.integration;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -18,6 +20,13 @@ import static org.junit.jupiter.api.Assertions.*;
 class CanCacheProtocolIntegrationTest
 {
     private CanCacheClient client;
+
+    @BeforeAll
+    static void requireConfiguredTarget()
+    {
+        Assumptions.assumeTrue(System.getenv("CAN_CACHE_HOST") != null,
+                "CAN_CACHE_HOST must be provided by the integration environment");
+    }
 
     @BeforeEach
     void setUp() throws IOException

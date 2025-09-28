@@ -21,5 +21,5 @@ RUN ls -la can-cache-application/target && (ls -la can-cache-application/target/
 FROM eclipse-temurin:24-jre
 WORKDIR /opt/can-cache
 COPY --from=build /workspace/app/can-cache-application/target/quarkus-app ./quarkus-app
-EXPOSE 11211
+EXPOSE 11211 9000
 ENTRYPOINT ["java","-jar","/opt/can-cache/quarkus-app/quarkus-run.jar"]
