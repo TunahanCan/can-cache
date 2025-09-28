@@ -5,9 +5,12 @@ import jakarta.inject.Singleton;
 import org.jboss.logging.Logger;
 
 import java.io.IOException;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketAddress;
 import java.net.UnknownHostException;
 import java.util.Objects;
 import java.util.regex.Matcher;
@@ -149,12 +152,20 @@ public class PortAllocator
     {
         for (SocketCandidate candidate : candidateSocketAddresses(host, port)) {
             try (ServerSocket socket = new ServerSocket()) {
+                socket.setReuseAddress(false);
                 socket.bind(candidate.address());
             } catch (IOException e) {
                 if (!candidate.required() && !(e instanceof java.net.BindException)) {
                     continue;
                 }
                 return false;
+            }
+        }
+        for (SocketAddress probe : probeSocketAddresses(host, port)) {
+            try (Socket socket = new Socket()) {
+                socket.connect(probe, 200);
+                return false;
+            } catch (IOException ignored) {
             }
         }
         return true;
@@ -245,6 +256,23 @@ public class PortAllocator
         return addresses;
     }
 
+    private Iterable<SocketAddress> probeSocketAddresses(String host, int port)
+    {
+        String normalized = normalizeHost(host);
+        var addresses = new java.util.ArrayList<SocketAddress>(2);
+        if (normalized == null || isWildcardHost(normalized)) {
+            addresses.add(new InetSocketAddress(loopbackIpv4(), port));
+            InetAddress ipv6 = loopbackIpv6();
+            if (ipv6 != null) {
+                addresses.add(new InetSocketAddress(ipv6, port));
+            }
+        }
+        else {
+            addresses.add(new InetSocketAddress(normalized, port));
+        }
+        return addresses;
+    }
+
     private InetAddress anyIpv4()
     {
         try {
@@ -260,6 +288,26 @@ public class PortAllocator
             return InetAddress.getByName("::");
         } catch (UnknownHostException e) {
             return null;
+        }
+    }
+
+    private InetAddress loopbackIpv4()
+    {
+        try {
+            return InetAddress.getByName("127.0.0.1");
+        } catch (UnknownHostException e) {
+            return InetAddress.getLoopbackAddress();
+        }
+    }
+
+    private InetAddress loopbackIpv6()
+    {
+        try {
+            InetAddress loopback = InetAddress.getByName("::1");
+            return loopback.isLoopbackAddress() ? loopback : null;
+        } catch (UnknownHostException e) {
+            InetAddress loopback = InetAddress.getLoopbackAddress();
+            return (loopback != null && loopback instanceof Inet6Address) ? loopback : null;
         }
     }
 

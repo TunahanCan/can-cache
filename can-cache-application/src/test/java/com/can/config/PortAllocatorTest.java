@@ -2,6 +2,7 @@ package com.can.config;
 
 import org.junit.jupiter.api.Test;
 
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.util.Optional;
 
@@ -13,6 +14,22 @@ class PortAllocatorTest
     void assignsNextPortWhenConfiguredPortBusy() throws Exception
     {
         try (ServerSocket socket = new ServerSocket(0)) {
+            socket.setReuseAddress(true);
+            int busyPort = socket.getLocalPort();
+            FakeAppProperties properties = new FakeAppProperties(busyPort);
+
+            PortAllocator allocator = new PortAllocator(properties);
+
+            assertTrue(allocator.networkPort() > busyPort,
+                    () -> "Expected allocated port > " + busyPort + " but was " + allocator.networkPort());
+        }
+    }
+
+    @Test
+    void assignsNextPortWhenLoopbackPortBusyAndHostWildcard() throws Exception
+    {
+        InetAddress loopback = InetAddress.getByName("127.0.0.1");
+        try (ServerSocket socket = new ServerSocket(0, 50, loopback)) {
             socket.setReuseAddress(true);
             int busyPort = socket.getLocalPort();
             FakeAppProperties properties = new FakeAppProperties(busyPort);
