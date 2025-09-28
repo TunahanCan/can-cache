@@ -11,6 +11,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import org.jboss.logging.Logger;
 
 import java.util.Locale;
 import java.util.Map;
@@ -29,6 +30,7 @@ import java.util.function.Supplier;
 public class MetricsReporter implements AutoCloseable
 {
     private static final String CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
+    private static final Logger LOG = Logger.getLogger(MetricsReporter.class);
 
     private final MetricsRegistry registry;
     private final Supplier<String> nodeIdSupplier;
@@ -99,6 +101,8 @@ public class MetricsReporter implements AutoCloseable
 
         this.httpServer = server;
         this.actualPort = server.actualPort();
+
+        LOG.infof("Metrics endpoint started on %s:%d%s", listenHost, actualPort, metricsPath);
         running.set(true);
     }
 
