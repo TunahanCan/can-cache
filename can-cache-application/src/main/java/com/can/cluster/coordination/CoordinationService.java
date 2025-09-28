@@ -2,6 +2,7 @@ package com.can.cluster.coordination;
 
 import com.can.cluster.*;
 import com.can.config.AppProperties;
+import com.can.config.PortAllocator;
 import com.can.constants.NodeProtocol;
 import com.can.core.CacheEngine;
 import io.vertx.core.Vertx;
@@ -64,6 +65,7 @@ public class CoordinationService implements AutoCloseable
     private final long antiEntropyIntervalMillis;
     private final Vertx vertx;
     private final ExecutorService taskExecutor;
+    private final int localReplicationPort;
 
     private final Map<String, RemoteMember> members = new ConcurrentHashMap<>();
     private final Object membershipLock = new Object();
@@ -84,7 +86,8 @@ public class CoordinationService implements AutoCloseable
                                HintedHandoffService hintedHandoffService,
                                CacheEngine<String, String> localEngine,
                                AppProperties properties,
-                               Vertx vertx) {
+                               Vertx vertx,
+                               PortAllocator portAllocator) {
         this.ring = ring;
         this.localNode = localNode;
         this.clusterState = clusterState;
@@ -100,6 +103,7 @@ public class CoordinationService implements AutoCloseable
         this.vertx = vertx;
         ThreadFactory threadFactory = Thread.ofVirtual().name("coordination-task-", 0).factory();
         this.taskExecutor = Executors.newThreadPerTaskExecutor(threadFactory);
+        this.localReplicationPort = Objects.requireNonNull(portAllocator, "portAllocator").replicationPort();
     }
 
     @PostConstruct
@@ -128,7 +132,7 @@ public class CoordinationService implements AutoCloseable
         repairTimerId = vertx.setPeriodic(repairInterval, id -> submitAntiEntropyTask());
 
         LOG.infof("Coordination service started for node %s, announcing %s:%d", localNode.id(),
-                advertisedHost(), replicationConfig.port());
+                advertisedHost(), localReplicationPort);
     }
 
     private void setupSockets() throws IOException
@@ -504,7 +508,7 @@ public class CoordinationService implements AutoCloseable
 
     private void broadcastHeartbeat()
     {
-        String payload = String.format("HELLO|%s|%s|%d|%d", localNode.id(), advertisedHost(), replicationConfig.port(),
+        String payload = String.format("HELLO|%s|%s|%d|%d", localNode.id(), advertisedHost(), localReplicationPort,
                 clusterState.currentEpoch());
         byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
         DatagramPacket packet = new DatagramPacket(bytes, bytes.length, groupAddress, discoveryConfig.multicastPort());

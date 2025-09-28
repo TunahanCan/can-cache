@@ -2,6 +2,7 @@ package com.can.metric;
 
 import com.can.cluster.ClusterState;
 import com.can.config.AppProperties;
+import com.can.config.PortAllocator;
 import io.quarkus.runtime.Startup;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpServer;
@@ -15,6 +16,7 @@ import org.jboss.logging.Logger;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
@@ -49,17 +51,20 @@ public class MetricsReporter implements AutoCloseable
     public MetricsReporter(MetricsRegistry registry,
                            AppProperties properties,
                            ClusterState clusterState,
-                           Vertx vertx)
+                           Vertx vertx,
+                           PortAllocator portAllocator)
     {
         this(registry,
                 properties.metrics(),
                 clusterState != null ? clusterState::localNodeId : () -> "unknown",
+                resolveMetricsPort(portAllocator),
                 vertx);
     }
 
     MetricsReporter(MetricsRegistry registry,
                     AppProperties.Metrics metricsConfig,
                     Supplier<String> nodeIdSupplier,
+                    int resolvedPort,
                     Vertx vertx)
     {
         this.registry = registry;
@@ -67,9 +72,14 @@ public class MetricsReporter implements AutoCloseable
         this.replicationRole = sanitizeLabelValue(metricsConfig.replicationRole());
         this.metricsPath = normalisePath(metricsConfig.endpointPath());
         this.listenHost = metricsConfig.endpointHost();
-        this.listenPort = metricsConfig.endpointPort();
+        this.listenPort = resolvedPort;
         this.enabled = metricsConfig.endpointEnabled();
         this.vertx = vertx;
+    }
+
+    private static int resolveMetricsPort(PortAllocator portAllocator)
+    {
+        return Objects.requireNonNull(portAllocator, "portAllocator").metricsPort();
     }
 
     @PostConstruct

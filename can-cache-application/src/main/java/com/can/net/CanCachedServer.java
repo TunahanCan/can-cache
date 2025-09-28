@@ -2,6 +2,7 @@ package com.can.net;
 
 import com.can.cluster.ClusterClient;
 import com.can.config.AppProperties;
+import com.can.config.PortAllocator;
 import com.can.constants.CanCachedProtocol;
 import com.can.core.CacheEngine;
 import com.can.core.StoredValueCodec;
@@ -50,6 +51,7 @@ public class CanCachedServer implements AutoCloseable
     private final int maxItemSize;
     private final int maxCasRetries;
     private final CacheEngine<String, String> localEngine;
+    private final int listenPort;
 
     private final AtomicLong casCounter = new AtomicLong(1L);
     private final AtomicLong cmdGet = new AtomicLong();
@@ -73,7 +75,8 @@ public class CanCachedServer implements AutoCloseable
     public CanCachedServer(Vertx vertx,
                            ClusterClient clusterClient,
                            AppProperties properties,
-                           CacheEngine<String, String> localEngine)
+                           CacheEngine<String, String> localEngine,
+                           PortAllocator portAllocator)
     {
         this.vertx = Objects.requireNonNull(vertx, "vertx");
         this.clusterClient = Objects.requireNonNull(clusterClient, "clusterClient");
@@ -82,6 +85,7 @@ public class CanCachedServer implements AutoCloseable
         this.maxItemSize = Math.max(1, cancacheConfig.maxItemSizeBytes());
         this.maxCasRetries = Math.max(1, cancacheConfig.maxCasRetries());
         this.localEngine = Objects.requireNonNull(localEngine, "localEngine");
+        this.listenPort = Objects.requireNonNull(portAllocator, "portAllocator").networkPort();
     }
 
     @PostConstruct
@@ -89,7 +93,7 @@ public class CanCachedServer implements AutoCloseable
     {
         NetServerOptions options = new NetServerOptions()
                 .setHost(networkConfig.host())
-                .setPort(networkConfig.port())
+                .setPort(listenPort)
                 .setTcpNoDelay(true)
                 .setReuseAddress(true)
                 .setAcceptBacklog(Math.max(1, networkConfig.backlog()));
@@ -758,7 +762,7 @@ public class CanCachedServer implements AutoCloseable
 
     public int port()
     {
-        return netServer != null ? netServer.actualPort() : networkConfig.port();
+        return netServer != null ? netServer.actualPort() : listenPort;
     }
 
     @PreDestroy
