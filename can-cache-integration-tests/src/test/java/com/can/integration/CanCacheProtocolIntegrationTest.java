@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -151,6 +153,28 @@ class CanCacheProtocolIntegrationTest
     }
 
     @Test
+    void shouldCacheArrayListOfDtoPayloads() throws Exception
+    {
+        // Senaryo: Örnek DTO nesnelerinden oluşan bir ArrayList'i JSON'a çevirerek saklayıp tekrar okuduğumuzda veri bütünlüğü
+        // korunuyor mu kontrol ediyoruz.
+        List<ExampleDto> originalDtos = new ArrayList<>();
+        originalDtos.add(new ExampleDto(101, "ilk", true));
+        originalDtos.add(new ExampleDto(102, "ikinci", false));
+        originalDtos.add(new ExampleDto(103, "ucuncu", true));
+
+        String jsonPayload = toJson(originalDtos);
+        String key = "dto:list";
+
+        assertEquals("STORED", client.set(key, 0, 0, jsonPayload));
+
+        String cachedJson = client.getValue(key).orElseThrow().asString();
+        List<ExampleDto> cachedDtos = fromJson(cachedJson);
+
+        assertEquals(jsonPayload, cachedJson, "Serileştirilmiş JSON metni cache tarafından eksiksiz korunmalıdır");
+        assertEquals(originalDtos, cachedDtos, "Cache'ten dönen DTO listesi orijinal listeyle birebir aynı olmalıdır");
+    }
+
+    @Test
     void shouldRespectExpirationTimes() throws Exception
     {
         // Senaryo: Kısa yaşam süresi ile yazılan bir değerin süre sonunda otomatik olarak silindiğini gözlemliyoruz.
@@ -247,8 +271,63 @@ class CanCacheProtocolIntegrationTest
         }
     }
 
+    private String toJson(List<ExampleDto> dtos)
+    {
+        StringBuilder builder = new StringBuilder();
+        builder.append('[');
+        for (int i = 0; i < dtos.size(); i++) {
+            ExampleDto dto = dtos.get(i);
+            builder.append('{')
+                    .append("\"id\":").append(dto.id())
+                    .append(",\"name\":\"").append(dto.name()).append('"')
+                    .append(",\"active\":").append(dto.active())
+                    .append('}');
+            if (i < dtos.size() - 1) {
+                builder.append(',');
+            }
+        }
+        builder.append(']');
+        return builder.toString();
+    }
+
+    private List<ExampleDto> fromJson(String json)
+    {
+        String trimmed = json.trim();
+        List<ExampleDto> result = new ArrayList<>();
+        if (trimmed.equals("[]")) {
+            return result;
+        }
+
+        String inner = trimmed.substring(1, trimmed.length() - 1);
+        String[] entries = inner.split("\\},\\{");
+        for (String entry : entries) {
+            String normalized = entry.replace("{", "").replace("}", "");
+            String[] fields = normalized.split(",");
+            int id = 0;
+            String name = "";
+            boolean active = false;
+            for (String field : fields) {
+                String[] keyValue = field.split(":", 2);
+                String key = keyValue[0].replace("\"", "").trim();
+                String value = keyValue[1].replace("\"", "").trim();
+                switch (key) {
+                    case "id" -> id = Integer.parseInt(value);
+                    case "name" -> name = value;
+                    case "active" -> active = Boolean.parseBoolean(value);
+                    default -> throw new IllegalStateException("Unexpected key: " + key);
+                }
+            }
+            result.add(new ExampleDto(id, name, active));
+        }
+        return result;
+    }
+
     private long parseLong(Map<String, String> stats, String key)
     {
         return Long.parseLong(stats.getOrDefault(key, "0"));
+    }
+
+    private record ExampleDto(int id, String name, boolean active)
+    {
     }
 }
