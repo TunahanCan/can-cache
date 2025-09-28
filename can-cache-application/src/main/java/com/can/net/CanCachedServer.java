@@ -94,8 +94,10 @@ public class CanCachedServer implements AutoCloseable
     @PostConstruct
     void start()
     {
+        String configuredHost = networkConfig.host();
+        String host = firstNonBlank(listenHost, configuredHost);
         NetServerOptions options = new NetServerOptions()
-                .setHost(listenHost != null ? listenHost : networkConfig.host())
+                .setHost(host)
                 .setPort(listenPort)
                 .setTcpNoDelay(true)
                 .setReuseAddress(true)
@@ -110,9 +112,19 @@ public class CanCachedServer implements AutoCloseable
         }
 
         running = true;
-        String host = listenHost != null ? listenHost : networkConfig.host();
         LOG.infof("cancached-compatible server listening on %s:%d", host, netServer.actualPort());
         removalSubscription = localEngine.onRemoval(key -> decrementCurrItems());
+    }
+
+    private String firstNonBlank(String first, String second)
+    {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        if (second != null && !second.isBlank()) {
+            return second;
+        }
+        return "0.0.0.0";
     }
 
     private void onClientConnected(NetSocket socket)

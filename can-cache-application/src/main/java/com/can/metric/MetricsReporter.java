@@ -73,7 +73,7 @@ public class MetricsReporter implements AutoCloseable
         this.nodeIdSupplier = nodeIdSupplier != null ? nodeIdSupplier : () -> "unknown";
         this.replicationRole = sanitizeLabelValue(metricsConfig.replicationRole());
         this.metricsPath = normalisePath(metricsConfig.endpointPath());
-        this.listenHost = resolvedHost != null ? resolvedHost : metricsConfig.endpointHost();
+        this.listenHost = chooseHost(resolvedHost, metricsConfig.endpointHost());
         this.listenPort = resolvedPort;
         this.enabled = metricsConfig.endpointEnabled();
         this.vertx = vertx;
@@ -87,6 +87,17 @@ public class MetricsReporter implements AutoCloseable
     private static int resolveMetricsPort(PortAllocator portAllocator)
     {
         return Objects.requireNonNull(portAllocator, "portAllocator").metricsPort();
+    }
+
+    private static String chooseHost(String resolvedHost, String configuredHost)
+    {
+        if (resolvedHost != null && !resolvedHost.isBlank()) {
+            return resolvedHost;
+        }
+        if (configuredHost != null && !configuredHost.isBlank()) {
+            return configuredHost;
+        }
+        return "0.0.0.0";
     }
 
     @PostConstruct

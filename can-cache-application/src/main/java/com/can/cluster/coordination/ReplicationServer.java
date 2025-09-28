@@ -19,6 +19,7 @@ import jakarta.inject.Singleton;
 import org.jboss.logging.Logger;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
@@ -74,8 +75,9 @@ public class ReplicationServer implements AutoCloseable
     @PostConstruct
     void start()
     {
+        String effectiveBindHost = firstNonBlank(bindHost, config.bindHost(), "0.0.0.0");
         NetServerOptions options = new NetServerOptions()
-                .setHost(bindHost != null ? bindHost : config.bindHost())
+                .setHost(effectiveBindHost)
                 .setPort(listenPort)
                 .setTcpNoDelay(true)
                 .setReuseAddress(true);
@@ -89,10 +91,21 @@ public class ReplicationServer implements AutoCloseable
         }
 
         running = true;
-        String effectiveBindHost = bindHost != null ? bindHost : config.bindHost();
-        String effectiveAdvertiseHost = advertisedHost != null ? advertisedHost : config.advertiseHost();
+        String effectiveAdvertiseHost = firstNonBlank(advertisedHost, config.advertiseHost(),
+                InetAddress.getLoopbackAddress().getHostAddress());
         LOG.infof("Replication server listening on %s:%d (advertised as %s:%d)",
                 effectiveBindHost, netServer.actualPort(), effectiveAdvertiseHost, listenPort);
+    }
+
+    private String firstNonBlank(String first, String second, String fallback)
+    {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        if (second != null && !second.isBlank()) {
+            return second;
+        }
+        return fallback;
     }
 
     private void onClientConnected(NetSocket socket)
