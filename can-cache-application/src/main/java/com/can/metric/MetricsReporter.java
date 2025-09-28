@@ -156,6 +156,7 @@ public class MetricsReporter implements AutoCloseable
             String name = entry.getKey();
             Counter counter = entry.getValue();
             String prometheusName = formatCounterName(name);
+            appendHelpLine(sb, prometheusName, helpForCounter(name));
             sb.append("# TYPE ").append(prometheusName).append(" counter\n");
             sb.append(prometheusName)
                     .append(formatLabels(additionalLabelsForCounter(name)))
@@ -168,6 +169,7 @@ public class MetricsReporter implements AutoCloseable
         for (Timer timer : timers.values()) {
             Timer.Sample sample = timer.snapshot();
             String prometheusName = formatTimerName(sample.name());
+            appendHelpLine(sb, prometheusName, helpForTimer(sample.name()));
             sb.append("# TYPE ").append(prometheusName).append(" summary\n");
             sb.append(prometheusName)
                     .append(formatLabels(Map.of("quantile", "0.5")))
@@ -194,6 +196,28 @@ public class MetricsReporter implements AutoCloseable
         return sb.toString();
     }
 
+    private void appendHelpLine(StringBuilder sb, String prometheusName, String help)
+    {
+        if (help == null || help.isBlank()) {
+            return;
+        }
+        sb.append("# HELP ")
+                .append(prometheusName)
+                .append(' ')
+                .append(help)
+                .append('\n');
+    }
+
+    private String helpForCounter(String name)
+    {
+        return COUNTER_HELP.get(name);
+    }
+
+    private String helpForTimer(String name)
+    {
+        return TIMER_HELP.get(name);
+    }
+
     private Map<String, String> additionalLabelsForCounter(String name)
     {
         if ("hinted_handoff_replayed_total".equals(name)) {
@@ -204,6 +228,23 @@ public class MetricsReporter implements AutoCloseable
         }
         return Map.of();
     }
+
+    private static final Map<String, String> COUNTER_HELP = Map.ofEntries(
+            Map.entry("cache_hits", "Önbellekten yapılan okumalarda kaç kez isabet sağlandığını gösterir."),
+            Map.entry("cache_misses", "İstenen anahtarın önbellekte bulunamadığı istek sayısıdır."),
+            Map.entry("cache_evictions", "Önbellekten çıkarılan kayıtların toplam adedidir."),
+            Map.entry("cluster_epoch_increments", "Yerel düğümün küme epoch değerini kaç kez artırdığını izler."),
+            Map.entry("cluster_epoch_observed_updates", "Diğer düğümlerden algılanan epoch güncellemelerinin sayısıdır."),
+            Map.entry("hinted_handoff_enqueued_total", "Başarısız düğümler için kuyruklanan ipuçlarının toplamı."),
+            Map.entry("hinted_handoff_replayed_total", "Başarılı şekilde tekrar gönderilen ipuçlarının toplamı."),
+            Map.entry("hinted_handoff_failures_total", "Tekrar gönderimi başarısız olan ipuçlarının toplamı.")
+    );
+
+    private static final Map<String, String> TIMER_HELP = Map.ofEntries(
+            Map.entry("cache_get", "cache.get işlemlerinin tamamlanma süresini saniye cinsinden ölçer."),
+            Map.entry("cache_set", "cache.set çağrılarının ne kadar sürdüğünü saniye cinsinden izler."),
+            Map.entry("cache_del", "cache.del isteklerinin tamamlanma süresini saniye cinsinden raporlar.")
+    );
 
     private String formatLabels(Map<String, String> extra)
     {
