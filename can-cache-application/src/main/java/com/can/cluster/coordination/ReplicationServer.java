@@ -2,6 +2,7 @@ package com.can.cluster.coordination;
 
 import com.can.cluster.ClusterState;
 import com.can.config.AppProperties;
+import com.can.config.PortAllocator;
 import com.can.constants.NodeProtocol;
 import com.can.core.CacheEngine;
 import io.quarkus.runtime.Startup;
@@ -43,6 +44,9 @@ public class ReplicationServer implements AutoCloseable
     private final ClusterState clusterState;
     private final WorkerExecutor workerExecutor;
     private final Vertx vertx;
+    private final String bindHost;
+    private final String advertisedHost;
+    private final int listenPort;
 
     private volatile boolean running;
     private NetServer netServer;
@@ -53,21 +57,26 @@ public class ReplicationServer implements AutoCloseable
                              ClusterState clusterState,
                              AppProperties properties,
                              WorkerExecutor workerExecutor,
-                             Vertx vertx)
+                             Vertx vertx,
+                             PortAllocator portAllocator)
     {
         this.engine = engine;
         this.clusterState = clusterState;
         this.config = properties.cluster().replication();
         this.workerExecutor = workerExecutor;
         this.vertx = vertx;
+        Objects.requireNonNull(portAllocator, "portAllocator");
+        this.bindHost = portAllocator.replicationHost();
+        this.advertisedHost = portAllocator.replicationAdvertiseHost();
+        this.listenPort = portAllocator.replicationPort();
     }
 
     @PostConstruct
     void start()
     {
         NetServerOptions options = new NetServerOptions()
-                .setHost(config.bindHost())
-                .setPort(config.port())
+                .setHost(bindHost != null ? bindHost : config.bindHost())
+                .setPort(listenPort)
                 .setTcpNoDelay(true)
                 .setReuseAddress(true);
 
@@ -80,8 +89,10 @@ public class ReplicationServer implements AutoCloseable
         }
 
         running = true;
+        String effectiveBindHost = bindHost != null ? bindHost : config.bindHost();
+        String effectiveAdvertiseHost = advertisedHost != null ? advertisedHost : config.advertiseHost();
         LOG.infof("Replication server listening on %s:%d (advertised as %s:%d)",
-                config.bindHost(), netServer.actualPort(), config.advertiseHost(), config.port());
+                effectiveBindHost, netServer.actualPort(), effectiveAdvertiseHost, listenPort);
     }
 
     private void onClientConnected(NetSocket socket)

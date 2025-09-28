@@ -83,7 +83,8 @@ class MetricsComponentsTest
 
             Vertx vertx = Vertx.vertx();
             FakeMetricsConfig config = new FakeMetricsConfig();
-            MetricsReporter reporter = new MetricsReporter(registry, config, () -> "node-1", vertx);
+            MetricsReporter reporter = new MetricsReporter(registry, config, () -> "node-1",
+                    config.endpointHost(), config.endpointPort(), vertx);
 
             try
             {
@@ -121,7 +122,8 @@ class MetricsComponentsTest
             Vertx vertx = Vertx.vertx();
             FakeMetricsConfig config = new FakeMetricsConfig();
             config.enabled = false;
-            MetricsReporter reporter = new MetricsReporter(registry, config, () -> "node-1", vertx);
+            MetricsReporter reporter = new MetricsReporter(registry, config, () -> "node-1",
+                    config.endpointHost(), config.endpointPort(), vertx);
             try
             {
                 reporter.start();

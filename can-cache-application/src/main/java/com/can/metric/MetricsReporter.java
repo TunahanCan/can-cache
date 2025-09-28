@@ -2,6 +2,7 @@ package com.can.metric;
 
 import com.can.cluster.ClusterState;
 import com.can.config.AppProperties;
+import com.can.config.PortAllocator;
 import io.quarkus.runtime.Startup;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpServer;
@@ -15,6 +16,7 @@ import org.jboss.logging.Logger;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
@@ -49,27 +51,42 @@ public class MetricsReporter implements AutoCloseable
     public MetricsReporter(MetricsRegistry registry,
                            AppProperties properties,
                            ClusterState clusterState,
-                           Vertx vertx)
+                           Vertx vertx,
+                           PortAllocator portAllocator)
     {
         this(registry,
                 properties.metrics(),
                 clusterState != null ? clusterState::localNodeId : () -> "unknown",
+                resolveMetricsHost(portAllocator),
+                resolveMetricsPort(portAllocator),
                 vertx);
     }
 
     MetricsReporter(MetricsRegistry registry,
                     AppProperties.Metrics metricsConfig,
                     Supplier<String> nodeIdSupplier,
+                    String resolvedHost,
+                    int resolvedPort,
                     Vertx vertx)
     {
         this.registry = registry;
         this.nodeIdSupplier = nodeIdSupplier != null ? nodeIdSupplier : () -> "unknown";
         this.replicationRole = sanitizeLabelValue(metricsConfig.replicationRole());
         this.metricsPath = normalisePath(metricsConfig.endpointPath());
-        this.listenHost = metricsConfig.endpointHost();
-        this.listenPort = metricsConfig.endpointPort();
+        this.listenHost = resolvedHost != null ? resolvedHost : metricsConfig.endpointHost();
+        this.listenPort = resolvedPort;
         this.enabled = metricsConfig.endpointEnabled();
         this.vertx = vertx;
+    }
+
+    private static String resolveMetricsHost(PortAllocator portAllocator)
+    {
+        return Objects.requireNonNull(portAllocator, "portAllocator").metricsHost();
+    }
+
+    private static int resolveMetricsPort(PortAllocator portAllocator)
+    {
+        return Objects.requireNonNull(portAllocator, "portAllocator").metricsPort();
     }
 
     @PostConstruct

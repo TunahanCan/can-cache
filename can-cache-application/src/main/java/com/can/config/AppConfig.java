@@ -24,6 +24,7 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Objects;
 
 import java.io.File;
 import java.time.Duration;
@@ -170,21 +171,21 @@ public class AppConfig {
 
     @Produces
     @Singleton
-    public Node<String, String> localNode(CacheEngine<String, String> engine)
+    public Node<String, String> localNode(CacheEngine<String, String> engine, PortAllocator portAllocator)
     {
+        Objects.requireNonNull(portAllocator, "portAllocator");
         var discovery = properties.cluster().discovery();
-        var replication = properties.cluster().replication();
         String nodeId = discovery.nodeId()
                 .filter(id -> !id.isBlank())
                 .orElseGet(() -> {
-                    String host = replication.advertiseHost();
+                    String host = portAllocator.replicationAdvertiseHost();
                     if (host == null || host.isBlank() || "0.0.0.0".equals(host)) {
-                        host = replication.bindHost();
+                        host = portAllocator.replicationHost();
                     }
                     if (host == null || host.isBlank() || "0.0.0.0".equals(host)) {
                         host = "127.0.0.1";
                     }
-                    return host + ":" + replication.port();
+                    return host + ":" + portAllocator.replicationPort();
                 });
         final String resolvedId = nodeId;
         return new Node<>() {
