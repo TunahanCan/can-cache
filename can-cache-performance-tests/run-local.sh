@@ -47,7 +47,7 @@ if [[ ${1:-} == "--" ]]; then
   shift
 fi
 
-sampler_module="${repo_root}/performance-tests/java-sampler"
+sampler_module="${repo_root}/can-cache-performance-tests"
 mvnw_path="${repo_root}/mvnw"
 
 build_sampler_jar() {
@@ -69,7 +69,7 @@ build_sampler_jar() {
 
 build_sampler_jar
 
-readarray -t sampler_jars < <(find "${sampler_module}/target" -maxdepth 1 -type f -name 'can-cache-jmeter-sampler-*.jar' | sort)
+readarray -t sampler_jars < <(find "${sampler_module}/target" -maxdepth 1 -type f -name 'can-cache-performance-test-*.jar' | sort)
 if [[ ${#sampler_jars[@]} -eq 0 ]]; then
   echo "Java sampler JAR was not produced under ${sampler_module}/target." >&2
   exit 1
