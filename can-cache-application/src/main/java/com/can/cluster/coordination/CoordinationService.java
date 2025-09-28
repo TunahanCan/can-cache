@@ -161,7 +161,7 @@ public class CoordinationService implements AutoCloseable
                 return ni;
             }
         }
-        NetworkInterface loopback = NetworkInterface.getByInetAddress(InetAddress.getLoopbackAddress());
+        var loopback = NetworkInterface.getByInetAddress(InetAddress.getLoopbackAddress());
         if (loopback != null) {
             return loopback;
         }
@@ -172,7 +172,7 @@ public class CoordinationService implements AutoCloseable
     {
         byte[] buffer = new byte[MAX_PACKET_SIZE];
         while (running) {
-            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+            var packet = new DatagramPacket(buffer, buffer.length);
             try {
                 listenSocket.receive(packet);
                 handlePacket(packet.getData(), packet.getLength());

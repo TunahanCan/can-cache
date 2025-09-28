@@ -15,4 +15,6 @@ services:
     environment:
       CAN_CACHE_HOST: can-cache
       CAN_CACHE_PORT: "11211"
+      CAN_CACHE_METRICS_PORT: "9000"
+      CAN_CACHE_METRICS_PATH: "/metrics"
     command: ["mvn", "-B", "test"]

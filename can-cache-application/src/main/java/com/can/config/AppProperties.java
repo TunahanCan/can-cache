@@ -27,6 +27,21 @@ public interface AppProperties
     interface Metrics {
         @WithDefault("5")
         long reportIntervalSeconds();
+
+        @WithDefault("true")
+        boolean endpointEnabled();
+
+        @WithDefault("0.0.0.0")
+        String endpointHost();
+
+        @WithDefault("9000")
+        int endpointPort();
+
+        @WithDefault("/metrics")
+        String endpointPath();
+
+        @WithDefault("coordinator")
+        String replicationRole();
     }
 
     interface Rdb {

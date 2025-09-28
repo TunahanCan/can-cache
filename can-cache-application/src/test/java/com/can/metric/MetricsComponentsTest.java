@@ -1,9 +1,14 @@
 package com.can.metric;
 
+import com.can.config.AppProperties;
 import io.vertx.core.Vertx;
-import io.vertx.core.WorkerExecutor;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -66,46 +71,109 @@ class MetricsComponentsTest
     @Nested
     class ReporterBehavior
     {
-        // Bu test geçerli aralıkla başlatılan raporlama görevlerinin çalıştığını doğrular.
+        // Bu test HTTP üzerinden sayaç ve zamanlayıcı metriklerinin dışa vurulduğunu doğrular.
         @Test
-        void reporter_runs_with_valid_interval() throws Exception
+        void reporter_exposes_metrics_over_http() throws Exception
         {
             MetricsRegistry registry = new MetricsRegistry();
+            registry.counter("cache_hits").add(3);
+            registry.counter("hinted_handoff_replayed_total").add(2);
+            registry.counter("hinted_handoff_failures_total").add(1);
+            registry.timer("latency").record(1_000_000);
+
             Vertx vertx = Vertx.vertx();
-            WorkerExecutor worker = vertx.createSharedWorkerExecutor("metrics-test");
+            FakeMetricsConfig config = new FakeMetricsConfig();
+            MetricsReporter reporter = new MetricsReporter(registry, config, () -> "node-1", vertx);
+
             try
             {
-                MetricsReporter reporter = new MetricsReporter(registry, 1, vertx, worker);
-                reporter.start(1);
+                reporter.start();
                 assertTrue(reporter.isRunning());
-                reporter.close();
-                assertFalse(reporter.isRunning());
+
+                HttpClient client = HttpClient.newHttpClient();
+                int port = reporter.actualPort();
+                HttpRequest request = HttpRequest.newBuilder(URI.create("http://" + config.endpointHost() + ":" + port + config.endpointPath()))
+                        .GET()
+                        .build();
+                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+                assertEquals(200, response.statusCode());
+                String body = response.body();
+                assertTrue(body.contains("# TYPE cache_hits_total counter"));
+                assertTrue(body.contains("cache_hits_total{node_id=\"node-1\",role=\"coordinator\"} 3"));
+                assertTrue(body.contains("hinted_handoff_replayed_total{hint_replay_result=\"success\",node_id=\"node-1\",role=\"coordinator\"} 2"));
+                assertTrue(body.contains("hinted_handoff_failures_total{hint_replay_result=\"failure\",node_id=\"node-1\",role=\"coordinator\"} 1"));
+                assertTrue(body.contains("latency_seconds_count{node_id=\"node-1\",role=\"coordinator\"}"));
+                assertTrue(body.contains("latency_seconds_sum{node_id=\"node-1\",role=\"coordinator\"}"));
             }
             finally
             {
-                worker.close();
+                reporter.close();
                 vertx.close().toCompletionStage().toCompletableFuture().join();
             }
         }
 
-        // Bu test geçersiz aralıkta raporlayıcının başlamadığını gösterir.
+        // Bu test uç nokta devre dışı bırakıldığında sunucunun başlatılmadığını gösterir.
         @Test
-        void reporter_ignores_invalid_interval()
+        void reporter_respects_disabled_endpoint()
         {
             MetricsRegistry registry = new MetricsRegistry();
             Vertx vertx = Vertx.vertx();
-            WorkerExecutor worker = vertx.createSharedWorkerExecutor("metrics-test");
+            FakeMetricsConfig config = new FakeMetricsConfig();
+            config.enabled = false;
+            MetricsReporter reporter = new MetricsReporter(registry, config, () -> "node-1", vertx);
             try
             {
-                MetricsReporter reporter = new MetricsReporter(registry, 0, vertx, worker);
-                reporter.start(0);
+                reporter.start();
                 assertFalse(reporter.isRunning());
             }
             finally
             {
-                worker.close();
+                reporter.close();
                 vertx.close().toCompletionStage().toCompletableFuture().join();
             }
+        }
+    }
+
+    private static final class FakeMetricsConfig implements AppProperties.Metrics
+    {
+        private boolean enabled = true;
+        private int port = 0;
+
+        @Override
+        public long reportIntervalSeconds()
+        {
+            return 1;
+        }
+
+        @Override
+        public boolean endpointEnabled()
+        {
+            return enabled;
+        }
+
+        @Override
+        public String endpointHost()
+        {
+            return "127.0.0.1";
+        }
+
+        @Override
+        public int endpointPort()
+        {
+            return port;
+        }
+
+        @Override
+        public String endpointPath()
+        {
+            return "/metrics";
+        }
+
+        @Override
+        public String replicationRole()
+        {
+            return "coordinator";
         }
     }
 }
