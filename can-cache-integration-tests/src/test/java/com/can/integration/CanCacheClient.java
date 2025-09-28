@@ -46,32 +46,32 @@ final class CanCacheClient implements Closeable
 
     String set(String key, int flags, long exptimeSeconds, String value) throws IOException
     {
-        return store("set", key, flags, exptimeSeconds, value.getBytes(StandardCharsets.UTF_8), null);
+        return store("set", key, flags, exptimeSeconds, encodePayload(value), null);
     }
 
     String add(String key, int flags, long exptimeSeconds, String value) throws IOException
     {
-        return store("add", key, flags, exptimeSeconds, value.getBytes(StandardCharsets.UTF_8), null);
+        return store("add", key, flags, exptimeSeconds, encodePayload(value), null);
     }
 
     String replace(String key, int flags, long exptimeSeconds, String value) throws IOException
     {
-        return store("replace", key, flags, exptimeSeconds, value.getBytes(StandardCharsets.UTF_8), null);
+        return store("replace", key, flags, exptimeSeconds, encodePayload(value), null);
     }
 
     String append(String key, String value) throws IOException
     {
-        return store("append", key, 0, 0L, value.getBytes(StandardCharsets.UTF_8), null);
+        return store("append", key, 0, 0L, encodePayload(value), null);
     }
 
     String prepend(String key, String value) throws IOException
     {
-        return store("prepend", key, 0, 0L, value.getBytes(StandardCharsets.UTF_8), null);
+        return store("prepend", key, 0, 0L, encodePayload(value), null);
     }
 
     String cas(String key, int flags, long exptimeSeconds, String value, long cas) throws IOException
     {
-        return store("cas", key, flags, exptimeSeconds, value.getBytes(StandardCharsets.UTF_8), cas);
+        return store("cas", key, flags, exptimeSeconds, encodePayload(value), cas);
     }
 
     String delete(String key) throws IOException
@@ -218,6 +218,11 @@ final class CanCacheClient implements Closeable
         output.write(command.getBytes(StandardCharsets.US_ASCII));
         output.write(CRLF);
         output.flush();
+    }
+
+    private byte[] encodePayload(String value)
+    {
+        return value == null ? new byte[0] : value.getBytes(StandardCharsets.ISO_8859_1);
     }
 
     private String readLine() throws IOException
