@@ -281,11 +281,6 @@ final class CanCacheClient implements Closeable
             return new String(data, StandardCharsets.UTF_8);
         }
 
-        long asLong()
-        {
-            return Long.parseLong(asString());
-        }
-
         @Override
         public String toString()
         {

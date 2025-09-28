@@ -8,7 +8,7 @@ COPY mvnw ./
 COPY .mvn .mvn
 COPY can-cache-application/pom.xml can-cache-application/pom.xml
 COPY can-cache-integration-tests/pom.xml can-cache-integration-tests/pom.xml
-COPY can-cache-performance-tests/java-sampler/pom.xml can-cache-performance-tests/java-sampler/pom.xml
+COPY can-cache-performance-tests/pom.xml  can-cache-performance-tests/pom.xml
 RUN chmod +x mvnw
 RUN ./mvnw -B -pl can-cache-application -am dependency:go-offline
 
