@@ -143,7 +143,7 @@ flowchart LR
 
 ## Demo in 2 Minutes
 
-> Requirements: Maven Wrapper (`./mvnw`) and JDK 21.
+> Requirements: Maven Wrapper (`./mvnw`) and JDK 24.
 
 ```bash
 # 1) Start the server in development mode
@@ -374,7 +374,7 @@ flowchart LR
 
 ## 2 Dakikada Demo
 
-> Gereksinimler: Maven Wrapper (`./mvnw`) ve JDK 21.
+> Gereksinimler: Maven Wrapper (`./mvnw`) ve JDK 24.
 
 ```bash
 # 1) Geliştirme modunda sunucuyu başlatın
