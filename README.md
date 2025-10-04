@@ -112,6 +112,7 @@ The animation shows this loop with the removed node fading from orange to grey, 
 - **Built for serious production scenarios:** Latency-aware replication, hinted handoff, and anti-entropy loops tolerate network partitions.
 - **Leverages modern JVM capabilities:** Makes use of virtual threads, reactive IO, and the speed of the Quarkus ecosystem.
 - **Simple to deploy, quick to scale:** Comes online with a single command; new nodes join the cluster automatically via multicast.
+- **Automatic load-balancer discovery:** Every cache instance periodically emits multicast `HELLO` beacons with its client host/port, so the external load balancer refreshes its backend list without manual registration.
 - **Extensible core:** New codecs, eviction strategies, and observers can be added with ease.
 
 ## Architecture Outline
@@ -343,6 +344,7 @@ Bu döngü, animasyonda silinen node'un turuncudan griye dönen kareleriyle gös
 - **Ciddi üretim senaryoları için tasarlandı:** Gecikmeye duyarlı replikasyon, hinted handoff ve anti-entropy döngüleri ile ağ kesintilerini tolere eder.
 - **Modern JVM özelliklerinden faydalanır:** Sanal thread'ler, reaktif IO ve Quarkus ekosisteminin hızını kullanır.
 - **Basit kurulum, hızlı ölçekleme:** Tek bir komutla ayağa kalkar; yeni node'lar multicast ile kümeye otomatik katılır.
+- **Yük dengeleyici için otomatik keşif:** Her cache instanceları istemci host ve port bilgisini içeren multicast `HELLO` paketleri yayar; dış yük dengeleyici bu sinyallerle arka uç listesini elle kayıt gerektirmeden günceller.
 - **Genişletilebilir çekirdek:** Yeni codec'ler, tahliye stratejileri ve gözlemleyiciler kolayca eklenebilir.
 
 ## Mimari Anahat
