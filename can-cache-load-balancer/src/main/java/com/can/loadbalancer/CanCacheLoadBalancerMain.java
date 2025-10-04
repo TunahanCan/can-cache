@@ -2,7 +2,7 @@ package com.can.loadbalancer;
 
 import io.quarkus.runtime.Quarkus;
 import io.quarkus.runtime.QuarkusApplication;
-import io.quarkus.runtime.QuarkusMain;
+import io.quarkus.runtime.annotations.QuarkusMain;
 import org.jboss.logging.Logger;
 
 /**
