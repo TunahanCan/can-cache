@@ -143,4 +143,5 @@ public interface AppProperties
         @WithDefault("16")
         int maxCasRetries();
     }
+
 }

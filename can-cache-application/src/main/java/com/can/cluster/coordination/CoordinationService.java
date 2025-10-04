@@ -59,11 +59,14 @@ public class CoordinationService implements AutoCloseable
     private final CacheEngine<String, String> localEngine;
     private final AppProperties.Discovery discoveryConfig;
     private final AppProperties.Replication replicationConfig;
+    private final AppProperties.Network networkConfig;
     private final int replicationFactor;
     private final long hintReplayIntervalMillis;
     private final long antiEntropyIntervalMillis;
     private final Vertx vertx;
     private final ExecutorService taskExecutor;
+    private final String clientAdvertisedHost;
+    private final int clientPort;
 
     private final Map<String, RemoteMember> members = new ConcurrentHashMap<>();
     private final Object membershipLock = new Object();
@@ -93,6 +96,7 @@ public class CoordinationService implements AutoCloseable
         var cluster = properties.cluster();
         this.discoveryConfig = cluster.discovery();
         this.replicationConfig = cluster.replication();
+        this.networkConfig = properties.network();
         this.replicationFactor = Math.max(1, cluster.replicationFactor());
         var coordination = cluster.coordination();
         this.hintReplayIntervalMillis = Math.max(0L, coordination.hintReplayIntervalMillis());
@@ -100,6 +104,8 @@ public class CoordinationService implements AutoCloseable
         this.vertx = vertx;
         ThreadFactory threadFactory = Thread.ofVirtual().name("coordination-task-", 0).factory();
         this.taskExecutor = Executors.newThreadPerTaskExecutor(threadFactory);
+        this.clientPort = Math.max(1, networkConfig.port());
+        this.clientAdvertisedHost = resolveClientAdvertisedHost();
     }
 
     @PostConstruct
@@ -504,8 +510,8 @@ public class CoordinationService implements AutoCloseable
 
     private void broadcastHeartbeat()
     {
-        String payload = String.format("HELLO|%s|%s|%d|%d", localNode.id(), advertisedHost(), replicationConfig.port(),
-                clusterState.currentEpoch());
+        String payload = String.format("HELLO|%s|%s|%d|%d|%d", localNode.id(), clientAdvertisedHost,
+                replicationConfig.port(), clusterState.currentEpoch(), clientPort);
         byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
         DatagramPacket packet = new DatagramPacket(bytes, bytes.length, groupAddress, discoveryConfig.multicastPort());
         try {
@@ -546,6 +552,17 @@ public class CoordinationService implements AutoCloseable
                 return false;
             });
         }
+    }
+
+    private String resolveClientAdvertisedHost() {
+        String host = networkConfig.host();
+        if (host == null || host.isBlank() || Objects.equals(host, "0.0.0.0")) {
+            host = replicationConfig.advertiseHost();
+        }
+        if (host == null || host.isBlank() || Objects.equals(host, "0.0.0.0")) {
+            return InetAddress.getLoopbackAddress().getHostAddress();
+        }
+        return host;
     }
 
     private String advertisedHost() {
