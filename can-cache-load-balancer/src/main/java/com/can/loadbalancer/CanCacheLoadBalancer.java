@@ -84,19 +84,40 @@ public class CanCacheLoadBalancer implements AutoCloseable
 
     private void handleClientConnection(NetSocket clientSocket)
     {
-        BackendEndpoint backend = selectBackend();
-        if (backend == null) {
+        List<BackendEndpoint> endpoints = membershipView.snapshot();
+        if (endpoints.isEmpty()) {
             LOG.warn("Aktif can-cache düğümü bulunamadı, bağlantı sonlandırılıyor");
-            clientSocket.write("SERVER_ERROR no backend available\r\n").onComplete(v -> clientSocket.close());
+            failClient(clientSocket, "SERVER_ERROR no backend available\r\n");
             return;
         }
+
+        int startIndex = rrCounter.getAndIncrement();
+        attemptBackendConnection(clientSocket, endpoints, startIndex, 0);
+    }
+
+    private void attemptBackendConnection(NetSocket clientSocket,
+                                          List<BackendEndpoint> endpoints,
+                                          int startIndex,
+                                          int attempt)
+    {
+        if (clientSocket.isClosed()) {
+            return;
+        }
+        if (endpoints.isEmpty() || attempt >= endpoints.size()) {
+            LOG.warn("Uygun backend bulunamadı, tüm adaylar denendi");
+            failClient(clientSocket, "SERVER_ERROR backend unavailable\r\n");
+            return;
+        }
+
+        int index = Math.floorMod(startIndex + attempt, endpoints.size());
+        BackendEndpoint backend = endpoints.get(index);
 
         netClient.connect(backend.port(), backend.host(), ar -> {
             if (ar.failed()) {
                 if (LOG.isDebugEnabled()) {
                     LOG.debugf(ar.cause(), "Backend %s:%d bağlantısı kurulamadı", backend.host(), backend.port());
                 }
-                clientSocket.write("SERVER_ERROR backend unavailable\r\n").onComplete(v -> clientSocket.close());
+                attemptBackendConnection(clientSocket, endpoints, startIndex, attempt + 1);
                 return;
             }
 
@@ -122,14 +143,16 @@ public class CanCacheLoadBalancer implements AutoCloseable
         });
     }
 
-    private BackendEndpoint selectBackend()
+    private void failClient(NetSocket clientSocket, String message)
     {
-        List<BackendEndpoint> endpoints = membershipView.snapshot();
-        if (endpoints.isEmpty()) {
-            return null;
+        if (clientSocket.isClosed()) {
+            return;
         }
-        int index = Math.floorMod(rrCounter.getAndIncrement(), endpoints.size());
-        return endpoints.get(index);
+        clientSocket.write(message).onComplete(v -> {
+            if (!clientSocket.isClosed()) {
+                clientSocket.close();
+            }
+        });
     }
 
     @PreDestroy

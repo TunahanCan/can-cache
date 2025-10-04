@@ -96,25 +96,26 @@ public class ClusterAnnouncementListener implements AutoCloseable
         while (running) {
             try {
                 socket.receive(packet);
-                handlePacket(packet.getData(), packet.getLength());
+                handlePacket(packet);
             } catch (IOException e) {
                 if (running) {
                     LOG.debug("Multicast paketini alırken hata oluştu", e);
                 }
             }
+            packet.setLength(buffer.length);
         }
     }
 
-    private void handlePacket(byte[] data, int length)
+    private void handlePacket(DatagramPacket packet)
     {
-        String message = new String(data, 0, length, StandardCharsets.UTF_8);
+        String message = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8);
         String[] parts = message.split("\\|");
         if (parts.length < 6 || !Objects.equals(parts[0], "HELLO")) {
             return;
         }
 
         String nodeId = parts[1];
-        String host = normaliseHost(parts[2]);
+        String host = normaliseHost(parts[2], packet.getAddress());
         int clientPort;
         try {
             clientPort = Integer.parseInt(parts[5]);
@@ -130,18 +131,32 @@ public class ClusterAnnouncementListener implements AutoCloseable
         lastSeen.put(nodeId, System.currentTimeMillis());
     }
 
-    private String normaliseHost(String host)
+    private String normaliseHost(String host, InetAddress sourceAddress)
     {
-        if (host == null || host.isBlank() || Objects.equals(host, "0.0.0.0")) {
-            host = config.network().host();
+        if (isUsableHost(host)) {
+            return host;
         }
-        if (host == null || host.isBlank() || Objects.equals(host, "0.0.0.0")) {
-            host = config.cluster().replication().advertiseHost();
+
+        String networkHost = config.network().host();
+        if (isUsableHost(networkHost)) {
+            return networkHost;
         }
-        if (host == null || host.isBlank() || Objects.equals(host, "0.0.0.0")) {
-            return InetAddress.getLoopbackAddress().getHostAddress();
+
+        if (sourceAddress != null && !sourceAddress.isAnyLocalAddress()) {
+            return sourceAddress.getHostAddress();
         }
-        return host;
+
+        String advertised = config.cluster().replication().advertiseHost();
+        if (isUsableHost(advertised)) {
+            return advertised;
+        }
+
+        return InetAddress.getLoopbackAddress().getHostAddress();
+    }
+
+    private boolean isUsableHost(String candidate)
+    {
+        return candidate != null && !candidate.isBlank() && !Objects.equals(candidate, "0.0.0.0");
     }
 
     private void pruneExpiredMembers()
