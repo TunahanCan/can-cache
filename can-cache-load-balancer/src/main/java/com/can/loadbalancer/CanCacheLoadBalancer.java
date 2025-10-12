@@ -87,7 +87,6 @@ public class CanCacheLoadBalancer implements AutoCloseable
         List<BackendEndpoint> endpoints = membershipView.snapshot();
         if (endpoints.isEmpty()) {
             LOG.warn("Aktif can-cache düğümü bulunamadı, bağlantı sonlandırılıyor");
-            failClient(clientSocket, "SERVER_ERROR no backend available\r\n");
             return;
         }
 
@@ -100,12 +99,8 @@ public class CanCacheLoadBalancer implements AutoCloseable
                                           int startIndex,
                                           int attempt)
     {
-        if (clientSocket.isClosed()) {
-            return;
-        }
         if (endpoints.isEmpty() || attempt >= endpoints.size()) {
             LOG.warn("Uygun backend bulunamadı, tüm adaylar denendi");
-            failClient(clientSocket, "SERVER_ERROR backend unavailable\r\n");
             return;
         }
 
@@ -122,17 +117,16 @@ public class CanCacheLoadBalancer implements AutoCloseable
             }
 
             NetSocket backendSocket = ar.result();
-
-            backendSocket.handler(buffer -> clientSocket.write(buffer));
+            backendSocket.handler(clientSocket::write);
             backendSocket.exceptionHandler(e -> {
-                if (LOG.isDebugEnabled()) {
+               if (LOG.isDebugEnabled()) {
                     LOG.debugf(e, "Backend soket hatası %s:%d", backend.host(), backend.port());
                 }
                 backendSocket.close();
             });
             backendSocket.closeHandler(v -> clientSocket.close());
 
-            clientSocket.handler(buffer -> backendSocket.write(buffer));
+            clientSocket.handler(backendSocket::write);
             clientSocket.exceptionHandler(e -> {
                 if (LOG.isDebugEnabled()) {
                     LOG.debugf(e, "İstemci soket hatası %s", clientSocket.remoteAddress());
@@ -143,30 +137,16 @@ public class CanCacheLoadBalancer implements AutoCloseable
         });
     }
 
-    private void failClient(NetSocket clientSocket, String message)
-    {
-        if (clientSocket.isClosed()) {
-            return;
-        }
-        clientSocket.write(message).onComplete(v -> {
-            if (!clientSocket.isClosed()) {
-                clientSocket.close();
-            }
-        });
-    }
 
     @PreDestroy
     @Override
     public void close()
     {
-        if (!enabled) {
-            return;
-        }
-        if (netServer != null) {
-            netServer.close().toCompletionStage().toCompletableFuture().join();
-        }
-        if (netClient != null) {
-            netClient.close().toCompletionStage().toCompletableFuture().join();
-        }
+        if (!enabled) return;
+
+        if (netServer != null) netServer.close().toCompletionStage().toCompletableFuture().join();
+
+        if (netClient != null) netClient.close().toCompletionStage().toCompletableFuture().join();
+
     }
 }

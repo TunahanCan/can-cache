@@ -424,9 +424,7 @@ public class CoordinationService implements AutoCloseable
                     throw new EOFException("Incomplete stream payload");
                 }
 
-                if (expireAt > 0L && expireAt <= now) {
-                    continue;
-                }
+                if (expireAt > 0L && expireAt <= now) continue;
 
                 String key = new String(keyBytes, StandardCharsets.UTF_8);
                 String value = new String(valueBytes, StandardCharsets.UTF_8);
@@ -468,7 +466,8 @@ public class CoordinationService implements AutoCloseable
     {
         final long[] digest = {1125899906842597L};
         localEngine.forEachEntry((key, value, expireAt) -> {
-            List<Node<String, String>> replicas = ring.getReplicas(key.getBytes(StandardCharsets.UTF_8), replicationFactor);
+            List<Node<String, String>> replicas =
+                    ring.getReplicas(key.getBytes(StandardCharsets.UTF_8), replicationFactor);
             for (Node<String, String> replica : replicas) {
                 if (Objects.equals(replica.id(), nodeId)) {
                     long entryHash = 31L * key.hashCode() + Arrays.hashCode(value);
@@ -494,15 +493,18 @@ public class CoordinationService implements AutoCloseable
             snapshot = new ArrayList<>(members.values());
         }
 
-        for (RemoteMember member : snapshot) {
-            try {
+        for (RemoteMember member : snapshot)
+        {
+            try
+            {
                 long remoteDigest = requestDigest(member);
                 long expectedDigest = computeExpectedDigestFor(member.node().id());
                 if (remoteDigest != expectedDigest) {
                     LOG.debugf("Digest mismatch detected with %s, triggering repair", member.node().id());
                     bootstrapFrom(member, true);
                 }
-            } catch (IOException e) {
+            }
+            catch (IOException e) {
                 LOG.debugf(e, "Anti-entropy probe failed for %s", member.node().id());
             }
         }
@@ -516,16 +518,16 @@ public class CoordinationService implements AutoCloseable
         DatagramPacket packet = new DatagramPacket(bytes, bytes.length, groupAddress, discoveryConfig.multicastPort());
         try {
             sendSocket.send(packet);
-        } catch (IOException e) {
+        }
+        catch (IOException e)
+        {
             LOG.warn("Failed to send coordination heartbeat", e);
         }
     }
 
     private void submitAntiEntropyTask()
     {
-        if (!running) {
-            return;
-        }
+        if (!running) return;
         try {
             taskExecutor.execute(this::runAntiEntropy);
         } catch (RejectedExecutionException e) {
@@ -537,9 +539,11 @@ public class CoordinationService implements AutoCloseable
 
     private void pruneDeadMembers() {
         long now = System.currentTimeMillis();
-        long timeout = Math.max(discoveryConfig.failureTimeoutMillis(), discoveryConfig.heartbeatIntervalMillis() * 3);
+        long timeout = Math.max(discoveryConfig.failureTimeoutMillis(),
+                discoveryConfig.heartbeatIntervalMillis() * 3);
 
-        synchronized (membershipLock) {
+        synchronized (membershipLock)
+        {
             members.entrySet().removeIf(entry -> {
                 RemoteMember member = entry.getValue();
                 if (now - member.lastSeen() > timeout) {

@@ -157,7 +157,8 @@ public class ReplicationServer implements AutoCloseable
                     byte command = reader.readByte();
                     decoder = decoderFor(command);
                     if (decoder == null) {
-                        LOG.warnf("Unknown replication command %d from %s", command & 0xff, socket.remoteAddress());
+                        LOG.warnf("Unknown replication command %d from %s",
+                                command & 0xff, socket.remoteAddress());
                         close();
                         return;
                     }

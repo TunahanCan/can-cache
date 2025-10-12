@@ -18,13 +18,12 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ClusterMembershipView
 {
     private final Map<String, BackendEndpoint> endpoints = new ConcurrentHashMap<>();
+
     private volatile List<BackendEndpoint> snapshot = List.of();
 
     public void upsert(String nodeId, String host, int port)
     {
-        if (port <= 0) {
-            return;
-        }
+        if (port <= 0) return;
         Objects.requireNonNull(nodeId, "nodeId");
         Objects.requireNonNull(host, "host");
         endpoints.put(nodeId, new BackendEndpoint(nodeId, host, port));

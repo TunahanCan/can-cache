@@ -21,7 +21,7 @@ public class CanCacheLoadBalancerMain implements QuarkusApplication
     @Override
     public int run(String... args)
     {
-        LOG.info("can-cache-load-balancer başlatılıyor");
+        LOG.info("can-cache-load-balancer starting...");
         Quarkus.waitForExit();
         return 0;
     }

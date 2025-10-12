@@ -49,7 +49,6 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
     private final long connectTimeoutMillis;
     private final long requestTimeoutMillis;
     private final long requestTimeoutNanos;
-    private final Vertx vertx;
     private final NetClient netClient;
     private final int maxPoolSize;
     private final BlockingQueue<PooledConnection> pool;
@@ -67,7 +66,6 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
         this.connectTimeoutMillis = Math.max(1L, normalizedConnectTimeout);
         this.requestTimeoutMillis = Math.max(5_000L, this.connectTimeoutMillis * 2L);
         this.requestTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(this.requestTimeoutMillis);
-        this.vertx = Objects.requireNonNull(vertx, "vertx");
         this.maxPoolSize = Math.max(2, Runtime.getRuntime().availableProcessors());
         this.pool = new LinkedBlockingQueue<>(maxPoolSize);
 
@@ -94,7 +92,8 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
                 .appendLong(expireAt)
                 .appendBytes(keyBytes)
                 .appendBytes(valueBytes);
-        return execute(connection -> send(connection, request, new BooleanResponseParser(NodeProtocol.RESP_TRUE,
+        return execute(connection -> send(connection, request,
+                new BooleanResponseParser(NodeProtocol.RESP_TRUE,
                 NodeProtocol.RESP_FALSE)));
     }
 
@@ -106,7 +105,8 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
                 .appendByte(NodeProtocol.CMD_GET)
                 .appendInt(keyBytes.length)
                 .appendBytes(keyBytes);
-        return execute(connection -> send(connection, request, new GetResponseParser()));
+        return execute(connection ->
+                send(connection, request, new GetResponseParser()));
     }
 
     @Override
@@ -197,7 +197,8 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
         try (ConnectionLease lease = new ConnectionLease(acquireConnection())) {
             CompletableFuture<T> future;
             try {
-                future = Objects.requireNonNull(action.apply(lease.connection()), "action returned null future");
+                future = Objects.requireNonNull(action.apply(lease.connection()),
+                        "action returned null future");
             } catch (RuntimeException | Error e) {
                 lease.discard(e);
                 throw communicationError("Remote command dispatch failed", e);

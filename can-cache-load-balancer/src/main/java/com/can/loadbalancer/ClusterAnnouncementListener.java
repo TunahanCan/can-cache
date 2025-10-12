@@ -178,7 +178,7 @@ public class ClusterAnnouncementListener implements AutoCloseable
     {
         Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
         while (interfaces.hasMoreElements()) {
-            NetworkInterface ni = interfaces.nextElement();
+            var ni = interfaces.nextElement();
             if (ni.isUp() && ni.supportsMulticast() && !ni.isLoopback()) {
                 return ni;
             }
@@ -195,9 +195,8 @@ public class ClusterAnnouncementListener implements AutoCloseable
     public void close()
     {
         running = false;
-        if (reapTimerId >= 0L) {
-            vertx.cancelTimer(reapTimerId);
-        }
+        if (reapTimerId >= 0L) vertx.cancelTimer(reapTimerId);
+
         if (socket != null) {
             try {
                 if (groupAddress != null && networkInterface != null) {

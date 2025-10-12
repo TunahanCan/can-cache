@@ -6,6 +6,4 @@ package com.can.loadbalancer;
  * yönlendirmek için {@link ClusterMembershipView} tarafından sağlanan listeleri
  * kullanır.
  */
-public record BackendEndpoint(String nodeId, String host, int port)
-{
-}
+public record BackendEndpoint(String nodeId, String host, int port) { }
