@@ -21,7 +21,6 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 public final class HintedHandoffService
 {
     private static final Logger LOG = Logger.getLogger(HintedHandoffService.class);
-
     private final Map<String, ConcurrentLinkedDeque<Hint>> hints = new ConcurrentHashMap<>();
     private final Counter enqueued;
     private final Counter replayed;
@@ -29,7 +28,8 @@ public final class HintedHandoffService
 
     public HintedHandoffService(MetricsRegistry metrics)
     {
-        if (metrics != null) {
+        if (metrics != null)
+        {
             this.enqueued = metrics.counter("hinted_handoff_enqueued_total");
             this.replayed = metrics.counter("hinted_handoff_replayed_total");
             this.replayFailures = metrics.counter("hinted_handoff_failures_total");

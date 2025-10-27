@@ -14,8 +14,7 @@ public class CanCacheApplication implements QuarkusApplication
         Quarkus.waitForExit();
         return 0;
     }
-
-    public static void main(String... args) {
+    static void main(String... args) {
         Quarkus.run(CanCacheApplication.class, args);
     }
 }

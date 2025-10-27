@@ -25,8 +25,6 @@ public interface AppProperties
     Cancache cancache();
 
     interface Metrics {
-        @WithDefault("5")
-        long reportIntervalSeconds();
 
         @WithDefault("true")
         boolean endpointEnabled();
@@ -124,6 +122,10 @@ public interface AppProperties
 
         @WithDefault("16")
         int workerThreads();
+
+        @WithDefault("HELLO")
+        String agreementPackMessage();
+
     }
 
     interface Coordination

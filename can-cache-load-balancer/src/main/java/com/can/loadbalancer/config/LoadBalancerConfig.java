@@ -67,5 +67,8 @@ public interface LoadBalancerConfig
 
         @WithDefault("11211")
         int port();
+
+        @WithDefault("HELLO")
+        String agreementPackMessage();
     }
 }

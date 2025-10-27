@@ -194,7 +194,7 @@ public class CoordinationService implements AutoCloseable
     {
         String message = new String(data, 0, length, StandardCharsets.UTF_8);
         String[] parts = message.split("\\|");
-        if (parts.length < 4 || !Objects.equals(parts[0], "HELLO")) {
+        if (parts.length < 4 || !Objects.equals(parts[0], networkConfig.agreementPackMessage())) {
             return;
         }
 
@@ -217,7 +217,6 @@ public class CoordinationService implements AutoCloseable
             try {
                 remoteEpoch = Long.parseLong(parts[4]);
             } catch (NumberFormatException ignored) {
-                remoteEpoch = 0L;
             }
         }
 
@@ -512,8 +511,10 @@ public class CoordinationService implements AutoCloseable
 
     private void broadcastHeartbeat()
     {
-        String payload = String.format("HELLO|%s|%s|%d|%d|%d", localNode.id(), clientAdvertisedHost,
+        String payload = String.format(networkConfig.agreementPackMessage() + "|%s|%s|%d|%d|%d",
+                localNode.id(), clientAdvertisedHost,
                 replicationConfig.port(), clusterState.currentEpoch(), clientPort);
+
         byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
         DatagramPacket packet = new DatagramPacket(bytes, bytes.length, groupAddress, discoveryConfig.multicastPort());
         try {

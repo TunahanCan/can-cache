@@ -26,6 +26,7 @@ import java.util.Enumeration;
  * Küme düğümlerinin multicast üzerinden paylaştığı "HELLO" mesajlarını dinleyip
  * yük dengeleyicinin kullanacağı istemci uç noktası görünümünü günceller.
  */
+
 @Startup
 @Singleton
 public class ClusterAnnouncementListener implements AutoCloseable
@@ -65,14 +66,17 @@ public class ClusterAnnouncementListener implements AutoCloseable
             return;
         }
 
-        try {
+        try
+        {
             int port = config.cluster().discovery().multicastPort();
             socket = new MulticastSocket(port);
             socket.setReuseAddress(true);
             groupAddress = InetAddress.getByName(config.cluster().discovery().multicastGroup());
             networkInterface = selectInterface();
             socket.joinGroup(new InetSocketAddress(groupAddress, port), networkInterface);
-        } catch (IOException e) {
+        }
+        catch (IOException e)
+        {
             throw new IllegalStateException("Multicast duyurularını dinlemek için soket oluşturulamadı", e);
         }
 
@@ -110,7 +114,7 @@ public class ClusterAnnouncementListener implements AutoCloseable
     {
         String message = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8);
         String[] parts = message.split("\\|");
-        if (parts.length < 6 || !Objects.equals(parts[0], "HELLO")) {
+        if (parts.length < 6 || !Objects.equals(parts[0], config.network().agreementPackMessage())) {
             return;
         }
 
@@ -196,7 +200,6 @@ public class ClusterAnnouncementListener implements AutoCloseable
     {
         running = false;
         if (reapTimerId >= 0L) vertx.cancelTimer(reapTimerId);
-
         if (socket != null) {
             try {
                 if (groupAddress != null && networkInterface != null) {

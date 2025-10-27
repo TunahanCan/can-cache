@@ -63,6 +63,7 @@ public class CanCacheLoadBalancer implements AutoCloseable
                 .setTcpNoDelay(true)
                 .setReuseAddress(true)
                 .setAcceptBacklog(Math.max(1, config.backlog()));
+
         netServer = vertx.createNetServer(serverOptions);
 
         NetClientOptions clientOptions = new NetClientOptions()
@@ -107,10 +108,12 @@ public class CanCacheLoadBalancer implements AutoCloseable
         int index = Math.floorMod(startIndex + attempt, endpoints.size());
         BackendEndpoint backend = endpoints.get(index);
 
-        netClient.connect(backend.port(), backend.host(), ar -> {
+        netClient.connect(backend.port(), backend.host(), ar ->
+        {
             if (ar.failed()) {
                 if (LOG.isDebugEnabled()) {
-                    LOG.debugf(ar.cause(), "Backend %s:%d bağlantısı kurulamadı", backend.host(), backend.port());
+                    LOG.debugf(ar.cause(), "Backend %s:%d bağlantısı kurulamadı",
+                            backend.host(), backend.port());
                 }
                 attemptBackendConnection(clientSocket, endpoints, startIndex, attempt + 1);
                 return;
@@ -147,6 +150,5 @@ public class CanCacheLoadBalancer implements AutoCloseable
         if (netServer != null) netServer.close().toCompletionStage().toCompletableFuture().join();
 
         if (netClient != null) netClient.close().toCompletionStage().toCompletableFuture().join();
-
     }
 }

@@ -37,6 +37,7 @@ import java.util.function.Supplier;
  * ayağa kalktığında belirtilen port üzerinden bağlantıları kabul eder ve gelen komutları
  * {@link ClusterClient} aracılığıyla küme içindeki düğümlere yönlendirir.
  */
+
 @Startup
 @Singleton
 public class CanCachedServer implements AutoCloseable
@@ -457,7 +458,8 @@ public class CanCachedServer implements AutoCloseable
 
         String key = parts[1];
         StoredValueCodec.StoredValue current = getEntry(key);
-        for (int attempt = 0; attempt < maxCasRetries; attempt++) {
+        for (int attempt = 0; attempt < maxCasRetries; attempt++)
+        {
             if (current == null) {
                 return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
             }
