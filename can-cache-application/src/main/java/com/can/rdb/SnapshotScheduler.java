@@ -2,24 +2,24 @@ package com.can.rdb;
 
 import com.can.config.AppProperties;
 import com.can.core.CacheEngine;
-import io.quarkus.runtime.Startup;
-import io.vertx.core.Vertx;
-import io.vertx.core.WorkerExecutor;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jboss.logging.Logger;
 
+import io.quarkus.runtime.Startup;
+
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Belirlenen aralıklarla {@link CacheEngine} üzerindeki veriyi güvenli bir şekilde
- * diske yazmak için arka planda çalışan zamanlayıcıdır. Sanal thread tabanlı
- * planlayıcıyı kullanarak ilk başlangıçta ve devamında periyodik olarak
- * {@link SnapshotFile#write(CacheEngine)} çağrısını gerçekleştirir ve hata
- * durumlarını loglayarak sistemin ayakta kalmasını sağlar.
+ * diske yazmak için arka planda çalışan basit bir zamanlayıcıdır. İlk başlangıçta
+ * ve devamında periyodik olarak {@link SnapshotFile#write(CacheEngine)} çağrısını
+ * gerçekleştirir ve hata durumlarını loglayarak sistemin ayakta kalmasını sağlar.
  */
 @Startup
 @Singleton
@@ -31,30 +31,30 @@ public class SnapshotScheduler implements AutoCloseable
     private final CacheEngine<String, String> engine;
     private final SnapshotFile<String, String> snapshotFile;
     private final long intervalSeconds;
-    private final Vertx vertx;
-    private final WorkerExecutor workerExecutor;
-    private final AtomicBoolean started = new AtomicBoolean(false);
-    private long periodicTimerId = -1L;
+    private final ScheduledExecutorService scheduler;
+    private ScheduledFuture<?> scheduledTask;
+    private boolean running;
 
     @Inject
     public SnapshotScheduler(CacheEngine<String, String> engine,
                              SnapshotFile<String, String> snapshotFile,
-                             AppProperties properties,
-                             Vertx vertx,
-                             WorkerExecutor workerExecutor) {
-        this(engine, snapshotFile, properties.rdb().snapshotIntervalSeconds(), vertx, workerExecutor);
+                             AppProperties properties) {
+        this(engine, snapshotFile, properties.rdb().snapshotIntervalSeconds());
     }
 
     public SnapshotScheduler(CacheEngine<String, String> engine,
                              SnapshotFile<String, String> snapshotFile,
-                             long intervalSeconds,
-                             Vertx vertx,
-                             WorkerExecutor workerExecutor) {
+                             long intervalSeconds) {
         this.engine = engine;
         this.snapshotFile = snapshotFile;
         this.intervalSeconds = intervalSeconds;
-        this.vertx = vertx;
-        this.workerExecutor = workerExecutor;
+        this.scheduler = intervalSeconds > 0
+                ? Executors.newSingleThreadScheduledExecutor(r -> {
+                    Thread thread = new Thread(r, "snapshot-writer");
+                    thread.setDaemon(true);
+                    return thread;
+                })
+                : null;
     }
 
     @PostConstruct
@@ -63,27 +63,19 @@ public class SnapshotScheduler implements AutoCloseable
     }
 
     public synchronized void start() {
-        if (started.get()) {
+        if (running) {
             return;
         }
-        started.set(true);
-        workerExecutor.executeBlocking(() -> {
-            safeSnapshot();
-            return null;
-        });
-        if (intervalSeconds > 0) {
-            long delay = TimeUnit.SECONDS.toMillis(intervalSeconds);
-            periodicTimerId = vertx.setPeriodic(delay, id ->
-                    workerExecutor.executeBlocking(() -> {
-                        safeSnapshot();
-                        return null;
-                    })
-            );
+        running = true;
+        safeSnapshot();
+        if (intervalSeconds > 0 && scheduler != null) {
+            scheduledTask = scheduler.scheduleAtFixedRate(this::safeSnapshot,
+                    intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
         }
     }
 
     public boolean isRunning() {
-        return started.get();
+        return running;
     }
 
     private void safeSnapshot() {
@@ -102,12 +94,16 @@ public class SnapshotScheduler implements AutoCloseable
     @Override
     public synchronized void close()
     {
-        if (!started.getAndSet(false)) {
+        if (!running) {
             return;
         }
-        if (periodicTimerId >= 0L) {
-            vertx.cancelTimer(periodicTimerId);
-            periodicTimerId = -1L;
+        running = false;
+        if (scheduledTask != null) {
+            scheduledTask.cancel(false);
+            scheduledTask = null;
+        }
+        if (scheduler != null) {
+            scheduler.shutdownNow();
         }
     }
 }
