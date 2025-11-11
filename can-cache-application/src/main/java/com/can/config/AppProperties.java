@@ -72,7 +72,6 @@ public interface AppProperties
         int replicationFactor();
 
         Discovery discovery();
-
         Replication replication();
         Coordination coordination();
     }

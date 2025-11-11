@@ -6,6 +6,7 @@ package com.can.cluster;
  * Uygulamalar tek tip bir hashing stratejisi sağlayarak halka üzerinde düğüm ve
  * anahtar yerleşiminin belirlenmesine imkan verir.
  */
-public interface HashFn {
+public interface HashFn
+{
     int hash(byte[] keyBytes);
 }

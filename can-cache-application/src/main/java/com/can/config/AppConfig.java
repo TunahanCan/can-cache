@@ -11,7 +11,6 @@ import com.can.codec.StringCodec;
 import com.can.core.CacheEngine;
 import com.can.core.EvictionPolicyType;
 import com.can.metric.MetricsRegistry;
-import com.can.rdb.SnapshotFile;
 import com.can.pubsub.Broker;
 import io.quarkus.arc.DefaultBean;
 import io.vertx.core.Vertx;
@@ -24,8 +23,6 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import java.io.File;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
@@ -126,7 +123,6 @@ public class AppConfig {
     public CacheEngine<String, String> cacheEngine(
             MetricsRegistry metrics,
             Broker broker,
-            SnapshotFile<String, String> snapshotFile,
             Vertx vertx
     ) {
         var cacheProps = properties.cache();
@@ -141,23 +137,11 @@ public class AppConfig {
                 .vertx(vertx)
                 .build();
 
-        snapshotFile.load(engine);
         return engine;
     }
 
     void disposeCacheEngine(@Disposes CacheEngine<String, String> engine) {
         engine.close();
-    }
-
-    @Produces
-    @Singleton
-    public SnapshotFile<String, String> snapshotFile()
-    {
-        var rdbProps = properties.rdb();
-        return new SnapshotFile<>(
-                new File(rdbProps.path()),
-                StringCodec.UTF8
-        );
     }
 
     @Produces

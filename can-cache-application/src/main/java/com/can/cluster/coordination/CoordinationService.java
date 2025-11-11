@@ -131,7 +131,6 @@ public class CoordinationService implements AutoCloseable
         heartbeatTimerId = vertx.setPeriodic(heartbeat, id -> broadcastHeartbeat());
         reapTimerId = vertx.setPeriodic(reapInterval, id -> pruneDeadMembers());
         long repairInterval = Math.max(reapInterval, antiEntropyIntervalMillis);
-        repairTimerId = vertx.setPeriodic(repairInterval, id -> submitAntiEntropyTask());
 
         LOG.infof("Coordination service started for node %s, announcing %s:%d", localNode.id(),
                 advertisedHost(), replicationConfig.port());
@@ -479,36 +478,6 @@ public class CoordinationService implements AutoCloseable
         return digest[0];
     }
 
-    private void runAntiEntropy()
-    {
-        if (!running) {
-            return;
-        }
-        List<RemoteMember> snapshot;
-        synchronized (membershipLock) {
-            if (members.isEmpty()) {
-                return;
-            }
-            snapshot = new ArrayList<>(members.values());
-        }
-
-        for (RemoteMember member : snapshot)
-        {
-            try
-            {
-                long remoteDigest = requestDigest(member);
-                long expectedDigest = computeExpectedDigestFor(member.node().id());
-                if (remoteDigest != expectedDigest) {
-                    LOG.debugf("Digest mismatch detected with %s, triggering repair", member.node().id());
-                    bootstrapFrom(member, true);
-                }
-            }
-            catch (IOException e) {
-                LOG.debugf(e, "Anti-entropy probe failed for %s", member.node().id());
-            }
-        }
-    }
-
     private void broadcastHeartbeat()
     {
         String payload = String.format(networkConfig.agreementPackMessage() + "|%s|%s|%d|%d|%d",
@@ -526,17 +495,6 @@ public class CoordinationService implements AutoCloseable
         }
     }
 
-    private void submitAntiEntropyTask()
-    {
-        if (!running) return;
-        try {
-            taskExecutor.execute(this::runAntiEntropy);
-        } catch (RejectedExecutionException e) {
-            if (running) {
-                LOG.debugf("Anti-entropy task rejected: %s", e.getMessage());
-            }
-        }
-    }
 
     private void pruneDeadMembers() {
         long now = System.currentTimeMillis();

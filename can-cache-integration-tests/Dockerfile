@@ -1,4 +1,4 @@
-FROM maven:3.9.11-eclipse-temurin-24
+FROM maven:3.9.11-eclipse-temurin-25
 
 WORKDIR /workspace/tests
 

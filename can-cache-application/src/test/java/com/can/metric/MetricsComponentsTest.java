@@ -139,13 +139,6 @@ class MetricsComponentsTest
     {
         private boolean enabled = true;
         private int port = 0;
-
-        @Override
-        public long reportIntervalSeconds()
-        {
-            return 1;
-        }
-
         @Override
         public boolean endpointEnabled()
         {
