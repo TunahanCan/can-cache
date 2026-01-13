@@ -16,6 +16,7 @@ import org.jboss.logging.Logger;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -24,9 +25,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Startup
 @Singleton
-public class CanCacheLoadBalancer implements AutoCloseable
-{
+public class CanCacheLoadBalancer implements AutoCloseable {
+
     private static final Logger LOG = Logger.getLogger(CanCacheLoadBalancer.class);
+    private static final long CLOSE_TIMEOUT_SECONDS = 5L;
 
     private final Vertx vertx;
     private final ClusterMembershipView membershipView;
@@ -40,8 +42,7 @@ public class CanCacheLoadBalancer implements AutoCloseable
     @Inject
     public CanCacheLoadBalancer(Vertx vertx,
                                 ClusterMembershipView membershipView,
-                                LoadBalancerConfig config)
-    {
+                                LoadBalancerConfig config) {
         this.vertx = Objects.requireNonNull(vertx, "vertx");
         this.membershipView = Objects.requireNonNull(membershipView, "membershipView");
         Objects.requireNonNull(config, "config");
@@ -50,8 +51,7 @@ public class CanCacheLoadBalancer implements AutoCloseable
     }
 
     @PostConstruct
-    void start()
-    {
+    void start() {
         if (!enabled) {
             LOG.info("can-cache-load-balancer devre dışı bırakıldı (app.load-balancer.enabled=false)");
             return;
@@ -83,11 +83,11 @@ public class CanCacheLoadBalancer implements AutoCloseable
         LOG.infof("can-cache-load-balancer %s:%d adresinde dinlemede", config.host(), netServer.actualPort());
     }
 
-    private void handleClientConnection(NetSocket clientSocket)
-    {
+    private void handleClientConnection(NetSocket clientSocket) {
         List<BackendEndpoint> endpoints = membershipView.snapshot();
         if (endpoints.isEmpty()) {
             LOG.warn("Aktif can-cache düğümü bulunamadı, bağlantı sonlandırılıyor");
+            clientSocket.close();
             return;
         }
 
@@ -98,18 +98,17 @@ public class CanCacheLoadBalancer implements AutoCloseable
     private void attemptBackendConnection(NetSocket clientSocket,
                                           List<BackendEndpoint> endpoints,
                                           int startIndex,
-                                          int attempt)
-    {
+                                          int attempt) {
         if (endpoints.isEmpty() || attempt >= endpoints.size()) {
             LOG.warn("Uygun backend bulunamadı, tüm adaylar denendi");
+            clientSocket.close();
             return;
         }
 
         int index = Math.floorMod(startIndex + attempt, endpoints.size());
         BackendEndpoint backend = endpoints.get(index);
 
-        netClient.connect(backend.port(), backend.host(), ar ->
-        {
+        netClient.connect(backend.port(), backend.host(), ar -> {
             if (ar.failed()) {
                 if (LOG.isDebugEnabled()) {
                     LOG.debugf(ar.cause(), "Backend %s:%d bağlantısı kurulamadı",
@@ -122,12 +121,12 @@ public class CanCacheLoadBalancer implements AutoCloseable
             NetSocket backendSocket = ar.result();
             backendSocket.handler(clientSocket::write);
             backendSocket.exceptionHandler(e -> {
-               if (LOG.isDebugEnabled()) {
+                if (LOG.isDebugEnabled()) {
                     LOG.debugf(e, "Backend soket hatası %s:%d", backend.host(), backend.port());
                 }
                 backendSocket.close();
             });
-            backendSocket.closeHandler(v -> clientSocket.close());
+            backendSocket.closeHandler(_ -> clientSocket.close());
 
             clientSocket.handler(backendSocket::write);
             clientSocket.exceptionHandler(e -> {
@@ -136,19 +135,32 @@ public class CanCacheLoadBalancer implements AutoCloseable
                 }
                 clientSocket.close();
             });
-            clientSocket.closeHandler(v -> backendSocket.close());
+            clientSocket.closeHandler(_ -> backendSocket.close());
         });
     }
 
 
     @PreDestroy
     @Override
-    public void close()
-    {
+    public void close() {
         if (!enabled) return;
 
-        if (netServer != null) netServer.close().toCompletionStage().toCompletableFuture().join();
+        try {
+            if (netServer != null) {
+                netServer.close().toCompletionStage().toCompletableFuture()
+                        .get(CLOSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            }
+        } catch (Exception e) {
+            LOG.warn("NetServer kapatılırken zaman aşımı veya hata", e);
+        }
 
-        if (netClient != null) netClient.close().toCompletionStage().toCompletableFuture().join();
+        try {
+            if (netClient != null) {
+                netClient.close().toCompletionStage().toCompletableFuture()
+                        .get(CLOSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            }
+        } catch (Exception e) {
+            LOG.warn("NetClient kapatılırken zaman aşımı veya hata", e);
+        }
     }
 }

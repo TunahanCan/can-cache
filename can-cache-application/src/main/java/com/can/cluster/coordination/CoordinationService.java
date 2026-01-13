@@ -27,7 +27,6 @@ import java.net.SocketException;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
@@ -47,8 +46,7 @@ import java.util.concurrent.ThreadFactory;
  * ve RAM'deki veriler replikasyon protokolü aracılığıyla senkronize edilir.
  */
 @Singleton
-public class CoordinationService implements AutoCloseable
-{
+public class CoordinationService implements AutoCloseable {
     private static final Logger LOG = Logger.getLogger(CoordinationService.class);
     private static final int MAX_PACKET_SIZE = 1024;
 
@@ -62,7 +60,6 @@ public class CoordinationService implements AutoCloseable
     private final AppProperties.Network networkConfig;
     private final int replicationFactor;
     private final long hintReplayIntervalMillis;
-    private final long antiEntropyIntervalMillis;
     private final Vertx vertx;
     private final ExecutorService taskExecutor;
     private final String clientAdvertisedHost;
@@ -100,7 +97,6 @@ public class CoordinationService implements AutoCloseable
         this.replicationFactor = Math.max(1, cluster.replicationFactor());
         var coordination = cluster.coordination();
         this.hintReplayIntervalMillis = Math.max(0L, coordination.hintReplayIntervalMillis());
-        this.antiEntropyIntervalMillis = Math.max(0L, coordination.antiEntropyIntervalMillis());
         this.vertx = vertx;
         ThreadFactory threadFactory = Thread.ofVirtual().name("coordination-task-", 0).factory();
         this.taskExecutor = Executors.newThreadPerTaskExecutor(threadFactory);
@@ -112,9 +108,7 @@ public class CoordinationService implements AutoCloseable
     void start() {
         try {
             setupSockets();
-        }
-        catch (IOException e)
-        {
+        } catch (IOException e) {
             throw new IllegalStateException("Failed to initialise coordination sockets", e);
         }
 
@@ -130,14 +124,12 @@ public class CoordinationService implements AutoCloseable
         broadcastHeartbeat();
         heartbeatTimerId = vertx.setPeriodic(heartbeat, id -> broadcastHeartbeat());
         reapTimerId = vertx.setPeriodic(reapInterval, id -> pruneDeadMembers());
-        long repairInterval = Math.max(reapInterval, antiEntropyIntervalMillis);
 
         LOG.infof("Coordination service started for node %s, announcing %s:%d", localNode.id(),
                 advertisedHost(), replicationConfig.port());
     }
 
-    private void setupSockets() throws IOException
-    {
+    private void setupSockets() throws IOException {
         groupAddress = InetAddress.getByName(discoveryConfig.multicastGroup());
         listenSocket = new MulticastSocket(discoveryConfig.multicastPort());
         listenSocket.setReuseAddress(true);
@@ -147,8 +139,7 @@ public class CoordinationService implements AutoCloseable
         sendSocket.setReuseAddress(true);
     }
 
-    private NetworkInterface selectInterface() throws SocketException
-    {
+    private NetworkInterface selectInterface() throws SocketException {
         // Önce bind host'u deneyelim, değilse multicast destekleyen ilk arayüzü seçelim.
         try {
             InetAddress bindAddress = InetAddress.getByName(replicationConfig.bindHost());
@@ -173,8 +164,7 @@ public class CoordinationService implements AutoCloseable
         throw new SocketException("No multicast-capable network interface found");
     }
 
-    private void listenLoop()
-    {
+    private void listenLoop() {
         byte[] buffer = new byte[MAX_PACKET_SIZE];
         while (running) {
             var packet = new DatagramPacket(buffer, buffer.length);
@@ -189,8 +179,7 @@ public class CoordinationService implements AutoCloseable
         }
     }
 
-    private void handlePacket(byte[] data, int length)
-    {
+    private void handlePacket(byte[] data, int length) {
         String message = new String(data, 0, length, StandardCharsets.UTF_8);
         String[] parts = message.split("\\|");
         if (parts.length < 4 || !Objects.equals(parts[0], networkConfig.agreementPackMessage())) {
@@ -380,8 +369,7 @@ public class CoordinationService implements AutoCloseable
         }
     }
 
-    private void bootstrapFrom(RemoteMember member, boolean force)
-    {
+    private void bootstrapFrom(RemoteMember member, boolean force) {
         if (!force && !member.tryStartBootstrap()) {
             return;
         }
@@ -447,8 +435,7 @@ public class CoordinationService implements AutoCloseable
         }
     }
 
-    private long requestDigest(RemoteMember member) throws IOException
-    {
+    private long requestDigest(RemoteMember member) throws IOException {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(member.host(), member.port()), replicationConfig.connectTimeoutMillis());
             socket.setTcpNoDelay(true);
@@ -460,8 +447,7 @@ public class CoordinationService implements AutoCloseable
         }
     }
 
-    private long computeExpectedDigestFor(String nodeId)
-    {
+    private long computeExpectedDigestFor(String nodeId) {
         final long[] digest = {1125899906842597L};
         localEngine.forEachEntry((key, value, expireAt) -> {
             List<Node<String, String>> replicas =
@@ -478,8 +464,7 @@ public class CoordinationService implements AutoCloseable
         return digest[0];
     }
 
-    private void broadcastHeartbeat()
-    {
+    private void broadcastHeartbeat() {
         String payload = String.format(networkConfig.agreementPackMessage() + "|%s|%s|%d|%d|%d",
                 localNode.id(), clientAdvertisedHost,
                 replicationConfig.port(), clusterState.currentEpoch(), clientPort);
@@ -488,21 +473,17 @@ public class CoordinationService implements AutoCloseable
         DatagramPacket packet = new DatagramPacket(bytes, bytes.length, groupAddress, discoveryConfig.multicastPort());
         try {
             sendSocket.send(packet);
-        }
-        catch (IOException e)
-        {
+        } catch (IOException e) {
             LOG.warn("Failed to send coordination heartbeat", e);
         }
     }
-
 
     private void pruneDeadMembers() {
         long now = System.currentTimeMillis();
         long timeout = Math.max(discoveryConfig.failureTimeoutMillis(),
                 discoveryConfig.heartbeatIntervalMillis() * 3);
 
-        synchronized (membershipLock)
-        {
+        synchronized (membershipLock) {
             members.entrySet().removeIf(entry -> {
                 RemoteMember member = entry.getValue();
                 if (now - member.lastSeen() > timeout) {
@@ -538,8 +519,7 @@ public class CoordinationService implements AutoCloseable
 
     @PreDestroy
     @Override
-    public void close()
-    {
+    public void close() {
         running = false;
         cancelTimer(heartbeatTimerId);
         cancelTimer(reapTimerId);
@@ -567,8 +547,7 @@ public class CoordinationService implements AutoCloseable
         }
     }
 
-    private void closeRemoteNode(RemoteNode node)
-    {
+    private void closeRemoteNode(RemoteNode node) {
         if (node == null) {
             return;
         }
@@ -585,8 +564,7 @@ public class CoordinationService implements AutoCloseable
         }
     }
 
-    private static final class RemoteMember
-    {
+    private static final class RemoteMember {
         private volatile RemoteNode node;
         private volatile byte[] idBytes;
         private volatile String host;
@@ -676,13 +654,11 @@ public class CoordinationService implements AutoCloseable
             return false;
         }
 
-        private void markHintReplayed(long timestamp)
-        {
+        private void markHintReplayed(long timestamp) {
             lastHintReplay = timestamp;
         }
 
-        private void replace(RemoteNode node, byte[] idBytes, String host, int port, long lastSeen, long epoch)
-        {
+        private void replace(RemoteNode node, byte[] idBytes, String host, int port, long lastSeen, long epoch) {
             this.node = node;
             this.idBytes = idBytes;
             this.host = host;

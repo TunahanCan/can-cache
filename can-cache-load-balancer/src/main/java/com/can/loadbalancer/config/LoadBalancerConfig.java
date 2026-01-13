@@ -9,14 +9,16 @@ import io.smallrye.config.WithDefault;
  * ve aynı {@code application.properties} dosyası üzerinden yönetilebilir.
  */
 @ConfigMapping(prefix = "app")
-public interface LoadBalancerConfig
-{
+public interface LoadBalancerConfig {
+
     LoadBalancer loadBalancer();
+
     Cluster cluster();
+
     Network network();
 
-    interface LoadBalancer
-    {
+    interface LoadBalancer {
+
         @WithDefault("true")
         boolean enabled();
 
@@ -33,14 +35,15 @@ public interface LoadBalancerConfig
         int connectTimeoutMillis();
     }
 
-    interface Cluster
-    {
+    interface Cluster {
+
         Discovery discovery();
+
         Replication replication();
     }
 
-    interface Discovery
-    {
+    interface Discovery {
+
         @WithDefault("230.0.0.1")
         String multicastGroup();
 
@@ -54,14 +57,14 @@ public interface LoadBalancerConfig
         long failureTimeoutMillis();
     }
 
-    interface Replication
-    {
+    interface Replication {
+
         @WithDefault("127.0.0.1")
         String advertiseHost();
     }
 
-    interface Network
-    {
+    interface Network {
+
         @WithDefault("0.0.0.0")
         String host();
 

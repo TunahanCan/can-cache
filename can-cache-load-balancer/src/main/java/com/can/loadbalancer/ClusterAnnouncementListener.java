@@ -17,20 +17,19 @@ import java.net.MulticastSocket;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
+import java.util.Enumeration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.Enumeration;
 
 /**
  * Küme düğümlerinin multicast üzerinden paylaştığı "HELLO" mesajlarını dinleyip
  * yük dengeleyicinin kullanacağı istemci uç noktası görünümünü günceller.
  */
-
 @Startup
 @Singleton
-public class ClusterAnnouncementListener implements AutoCloseable
-{
+public class ClusterAnnouncementListener implements AutoCloseable {
+
     private static final Logger LOG = Logger.getLogger(ClusterAnnouncementListener.class);
     private static final int MAX_PACKET_SIZE = 1024;
 
@@ -50,8 +49,7 @@ public class ClusterAnnouncementListener implements AutoCloseable
     @Inject
     public ClusterAnnouncementListener(ClusterMembershipView membershipView,
                                        LoadBalancerConfig config,
-                                       Vertx vertx)
-    {
+                                       Vertx vertx) {
         this.membershipView = Objects.requireNonNull(membershipView, "membershipView");
         this.config = Objects.requireNonNull(config, "config");
         this.vertx = Objects.requireNonNull(vertx, "vertx");
@@ -59,42 +57,37 @@ public class ClusterAnnouncementListener implements AutoCloseable
     }
 
     @PostConstruct
-    void start()
-    {
+    void start() {
         if (!enabled) {
             LOG.info("Yük dengeleyici devre dışı olduğu için üyelik dinleyicisi başlatılmadı");
             return;
         }
 
-        try
-        {
+        try {
             int port = config.cluster().discovery().multicastPort();
             socket = new MulticastSocket(port);
             socket.setReuseAddress(true);
             groupAddress = InetAddress.getByName(config.cluster().discovery().multicastGroup());
             networkInterface = selectInterface();
             socket.joinGroup(new InetSocketAddress(groupAddress, port), networkInterface);
-        }
-        catch (IOException e)
-        {
+        } catch (IOException e) {
             throw new IllegalStateException("Multicast duyurularını dinlemek için soket oluşturulamadı", e);
         }
 
         running = true;
-        listenerThread = new Thread(this::listenLoop, "lb-membership-listener");
-        listenerThread.setDaemon(true);
-        listenerThread.start();
+        listenerThread = Thread.ofVirtual()
+                .name("lb-membership-listener")
+                .start(this::listenLoop);
 
         long heartbeat = Math.max(1000L, config.cluster().discovery().heartbeatIntervalMillis());
         long reapInterval = Math.max(heartbeat, config.cluster().discovery().failureTimeoutMillis() / 2);
-        reapTimerId = vertx.setPeriodic(reapInterval, id -> pruneExpiredMembers());
+        reapTimerId = vertx.setPeriodic(reapInterval, _ -> pruneExpiredMembers());
 
         LOG.infof("Küme duyuruları %s:%d adresinden dinleniyor", groupAddress.getHostAddress(),
                 config.cluster().discovery().multicastPort());
     }
 
-    private void listenLoop()
-    {
+    private void listenLoop() {
         byte[] buffer = new byte[MAX_PACKET_SIZE];
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
         while (running) {
@@ -105,13 +98,14 @@ public class ClusterAnnouncementListener implements AutoCloseable
                 if (running) {
                     LOG.debug("Multicast paketini alırken hata oluştu", e);
                 }
+            } catch (Exception e) {
+                LOG.warn("Paket işlenirken beklenmeyen hata", e);
             }
             packet.setLength(buffer.length);
         }
     }
 
-    private void handlePacket(DatagramPacket packet)
-    {
+    private void handlePacket(DatagramPacket packet) {
         String message = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8);
         String[] parts = message.split("\\|");
         if (parts.length < 6 || !Objects.equals(parts[0], config.network().agreementPackMessage())) {
@@ -123,7 +117,8 @@ public class ClusterAnnouncementListener implements AutoCloseable
         int clientPort;
         try {
             clientPort = Integer.parseInt(parts[5]);
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException _) {
+            LOG.debugf("Geçersiz port değeri: %s", parts[5]);
             clientPort = 0;
         }
 
@@ -135,8 +130,7 @@ public class ClusterAnnouncementListener implements AutoCloseable
         lastSeen.put(nodeId, System.currentTimeMillis());
     }
 
-    private String normaliseHost(String host, InetAddress sourceAddress)
-    {
+    private String normaliseHost(String host, InetAddress sourceAddress) {
         if (isUsableHost(host)) {
             return host;
         }
@@ -158,13 +152,11 @@ public class ClusterAnnouncementListener implements AutoCloseable
         return InetAddress.getLoopbackAddress().getHostAddress();
     }
 
-    private boolean isUsableHost(String candidate)
-    {
+    private boolean isUsableHost(String candidate) {
         return candidate != null && !candidate.isBlank() && !Objects.equals(candidate, "0.0.0.0");
     }
 
-    private void pruneExpiredMembers()
-    {
+    private void pruneExpiredMembers() {
         long now = System.currentTimeMillis();
         long timeout = Math.max(config.cluster().discovery().failureTimeoutMillis(),
                 config.cluster().discovery().heartbeatIntervalMillis() * 3);
@@ -172,14 +164,14 @@ public class ClusterAnnouncementListener implements AutoCloseable
         lastSeen.entrySet().removeIf(entry -> {
             if (now - entry.getValue() > timeout) {
                 membershipView.remove(entry.getKey());
+                LOG.debugf("Üye zaman aşımına uğradı: %s", entry.getKey());
                 return true;
             }
             return false;
         });
     }
 
-    private NetworkInterface selectInterface() throws SocketException
-    {
+    private NetworkInterface selectInterface() throws SocketException {
         Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
         while (interfaces.hasMoreElements()) {
             var ni = interfaces.nextElement();
@@ -196,17 +188,19 @@ public class ClusterAnnouncementListener implements AutoCloseable
 
     @PreDestroy
     @Override
-    public void close()
-    {
+    public void close() {
         running = false;
-        if (reapTimerId >= 0L) vertx.cancelTimer(reapTimerId);
+        if (reapTimerId >= 0L) {
+            vertx.cancelTimer(reapTimerId);
+        }
         if (socket != null) {
             try {
                 if (groupAddress != null && networkInterface != null) {
                     socket.leaveGroup(new InetSocketAddress(groupAddress, config.cluster().discovery().multicastPort()),
                             networkInterface);
                 }
-            } catch (IOException ignored) {
+            } catch (IOException e) {
+                LOG.debug("Multicast gruptan ayrılırken hata", e);
             }
             socket.close();
         }
