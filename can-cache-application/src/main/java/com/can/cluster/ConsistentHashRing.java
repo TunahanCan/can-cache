@@ -61,6 +61,7 @@ public final class ConsistentHashRing<N>
     public synchronized List<N> nodes() {
         return new ArrayList<>(new LinkedHashSet<>(ring.values()));
     }
+
     private static byte[] join(byte[] id, int i){
         byte[] suffix = ("#" + i).getBytes(StandardCharsets.UTF_8);
         byte[] combined = new byte[id.length + suffix.length];

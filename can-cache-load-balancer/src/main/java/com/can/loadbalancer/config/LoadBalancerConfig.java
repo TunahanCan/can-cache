@@ -3,6 +3,9 @@ package com.can.loadbalancer.config;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
+import java.util.List;
+import java.util.Optional;
+
 /**
  * Yük dengeleyici modülünün ihtiyaç duyduğu yapılandırma parametrelerini
  * tanımlar. Varsayılanlar can-cache uygulamasındaki karşılıklarıyla uyumludur
@@ -33,6 +36,12 @@ public interface LoadBalancerConfig {
 
         @WithDefault("3000")
         int connectTimeoutMillis();
+
+        /**
+         * Statik node listesi. Multicast çalışmadığında bu listedeki node'lar
+         * otomatik olarak eklenir. Format: host:port (örn: 127.0.0.1:11211)
+         */
+        Optional<List<String>> staticNodes();
     }
 
     interface Cluster {

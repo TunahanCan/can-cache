@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * Uygulamanın belirli olaylarını saymak için atomik sayaç tutan metrik
  * bileşenidir. Artış ve toplama operasyonları thread-safe şekilde gerçekleştirilir.
  */
-public final class Counter
+public class Counter
 {
     private final String name;
     private final AtomicLong value = new AtomicLong();

@@ -70,7 +70,8 @@ public class Broker implements AutoCloseable
     private synchronized ExecutorService ensureExecutor()
     {
         if (executor == null || executor.isShutdown())
-            executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
+            executor =
+                    Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
 
          return executor;
     }

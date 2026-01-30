@@ -112,11 +112,6 @@ public class AppConfig {
         workerExecutor.close();
     }
 
-    @Produces
-    @Singleton
-    public MetricsRegistry metricsRegistry() {
-        return new MetricsRegistry();
-    }
 
     @Produces
     @Singleton

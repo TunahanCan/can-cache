@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Startup
 @Singleton
-public class ClusterAnnouncementListener implements AutoCloseable {
+public class  ClusterAnnouncementListener implements AutoCloseable {
 
     private static final Logger LOG = Logger.getLogger(ClusterAnnouncementListener.class);
     private static final int MAX_PACKET_SIZE = 1024;
@@ -63,15 +63,22 @@ public class ClusterAnnouncementListener implements AutoCloseable {
             return;
         }
 
+        // Önce statik node'ları ekle
+        registerStaticNodes();
+
         try {
             int port = config.cluster().discovery().multicastPort();
             socket = new MulticastSocket(port);
             socket.setReuseAddress(true);
             groupAddress = InetAddress.getByName(config.cluster().discovery().multicastGroup());
             networkInterface = selectInterface();
-            socket.joinGroup(new InetSocketAddress(groupAddress, port), networkInterface);
+            tryJoinMulticastGroup(port);
         } catch (IOException e) {
-            throw new IllegalStateException("Multicast duyurularını dinlemek için soket oluşturulamadı", e);
+            LOG.warnf("Multicast duyurularını dinlemek için soket oluşturulamadı: %s. " +
+                    "Sadece statik node'lar kullanılacak.", e.getMessage());
+            closeSocketQuietly();
+            logConnectedNodes();
+            return;
         }
 
         running = true;
@@ -83,8 +90,110 @@ public class ClusterAnnouncementListener implements AutoCloseable {
         long reapInterval = Math.max(heartbeat, config.cluster().discovery().failureTimeoutMillis() / 2);
         reapTimerId = vertx.setPeriodic(reapInterval, _ -> pruneExpiredMembers());
 
+        // Her 10 saniyede bir bağlı node'ları logla
+        vertx.setPeriodic(10_000L, _ -> logConnectedNodes());
+
         LOG.infof("Küme duyuruları %s:%d adresinden dinleniyor", groupAddress.getHostAddress(),
                 config.cluster().discovery().multicastPort());
+    }
+
+    private void registerStaticNodes() {
+        config.loadBalancer().staticNodes().ifPresent(nodes -> {
+            LOG.infof("Statik node listesi yükleniyor: %d node", nodes.size());
+            for (String node : nodes) {
+                try {
+                    String[] parts = node.split(":");
+                    if (parts.length == 2) {
+                        String host = parts[0].trim();
+                        int port = Integer.parseInt(parts[1].trim());
+                        String nodeId = "static-" + host + "-" + port;
+                        membershipView.upsert(nodeId, host, port);
+                        lastSeen.put(nodeId, Long.MAX_VALUE); // Statik node'lar asla expire olmaz
+                        LOG.infof(">>> Statik node eklendi: %s (%s:%d)", nodeId, host, port);
+                    } else {
+                        LOG.warnf("Geçersiz statik node formatı: %s (beklenen: host:port)", node);
+                    }
+                } catch (NumberFormatException e) {
+                    LOG.warnf("Geçersiz port değeri statik node'da: %s", node);
+                }
+            }
+        });
+    }
+
+    private void logConnectedNodes() {
+        var endpoints = membershipView.snapshot();
+        long now = System.currentTimeMillis();
+
+        if (endpoints.isEmpty()) {
+            LOG.info("=== Bağlı backend node yok ===");
+            return;
+        }
+
+        LOG.infof("=== Bağlı Backend Node'lar (%d adet) ===", endpoints.size());
+        for (var ep : endpoints) {
+            Long lastSeenTime = lastSeen.get(ep.nodeId());
+            long ageMs = lastSeenTime != null ? now - lastSeenTime : -1;
+            String status = ageMs >= 0 && ageMs < 15000 ? "HEALTHY" : "STALE";
+            LOG.infof("  [%s] %s:%d - %s (son görülme: %dms önce)",
+                    status, ep.host(), ep.port(), ep.nodeId(), ageMs);
+        }
+        LOG.info("=====================================");
+    }
+
+    private void tryJoinMulticastGroup(int port) throws IOException {
+        InetSocketAddress groupSocketAddress = new InetSocketAddress(groupAddress, port);
+
+        // First try with the selected interface
+        if (networkInterface != null) {
+            try {
+                socket.joinGroup(groupSocketAddress, networkInterface);
+                return;
+            } catch (IOException e) {
+                LOG.debugf("Seçilen arayüz ile multicast gruba katılınamadı (%s): %s",
+                        networkInterface.getName(), e.getMessage());
+            }
+        }
+
+        // Try loopback interface as fallback (useful for local development)
+        try {
+            NetworkInterface loopback = NetworkInterface.getByInetAddress(InetAddress.getLoopbackAddress());
+            if (loopback != null && loopback.supportsMulticast()) {
+                socket.joinGroup(groupSocketAddress, loopback);
+                networkInterface = loopback;
+                LOG.info("Multicast gruba loopback arayüzü ile katılındı");
+                return;
+            }
+        } catch (IOException e) {
+            LOG.debugf("Loopback ile multicast gruba katılınamadı: %s", e.getMessage());
+        }
+
+        // Try all available interfaces
+        Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+        while (interfaces.hasMoreElements()) {
+            NetworkInterface ni = interfaces.nextElement();
+            try {
+                if (ni.isUp() && ni.supportsMulticast()) {
+                    socket.joinGroup(groupSocketAddress, ni);
+                    networkInterface = ni;
+                    LOG.infof("Multicast gruba %s arayüzü ile katılındı", ni.getName());
+                    return;
+                }
+            } catch (IOException e) {
+                LOG.debugf("Arayüz %s ile multicast gruba katılınamadı: %s", ni.getName(), e.getMessage());
+            }
+        }
+
+        throw new IOException("Hiçbir ağ arayüzü ile multicast gruba katılınamadı");
+    }
+
+    private void closeSocketQuietly() {
+        if (socket != null) {
+            try {
+                socket.close();
+            } catch (Exception ignored) {
+            }
+            socket = null;
+        }
     }
 
     private void listenLoop() {
@@ -107,8 +216,12 @@ public class ClusterAnnouncementListener implements AutoCloseable {
 
     private void handlePacket(DatagramPacket packet) {
         String message = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8);
+        LOG.debugf("Multicast paketi alındı: %s (from %s)", message, packet.getAddress().getHostAddress());
+
         String[] parts = message.split("\\|");
         if (parts.length < 6 || !Objects.equals(parts[0], config.network().agreementPackMessage())) {
+            LOG.debugf("Paket reddedildi - parts: %d, expected prefix: %s, got: %s",
+                    parts.length, config.network().agreementPackMessage(), parts.length > 0 ? parts[0] : "empty");
             return;
         }
 
@@ -126,8 +239,13 @@ public class ClusterAnnouncementListener implements AutoCloseable {
             return;
         }
 
+        boolean isNewNode = !lastSeen.containsKey(nodeId);
         membershipView.upsert(nodeId, host, clientPort);
         lastSeen.put(nodeId, System.currentTimeMillis());
+
+        if (isNewNode) {
+            LOG.infof(">>> Yeni node bağlandı: %s (%s:%d)", nodeId, host, clientPort);
+        }
     }
 
     private String normaliseHost(String host, InetAddress sourceAddress) {
@@ -164,7 +282,8 @@ public class ClusterAnnouncementListener implements AutoCloseable {
         lastSeen.entrySet().removeIf(entry -> {
             if (now - entry.getValue() > timeout) {
                 membershipView.remove(entry.getKey());
-                LOG.debugf("Üye zaman aşımına uğradı: %s", entry.getKey());
+                LOG.warnf("<<< Node zaman aşımına uğradı ve kaldırıldı: %s (son görülme: %dms önce)",
+                        entry.getKey(), now - entry.getValue());
                 return true;
             }
             return false;

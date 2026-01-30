@@ -1,6 +1,10 @@
 package com.can.cluster.coordination;
 
-import com.can.cluster.*;
+import com.can.cluster.ClusterState;
+import com.can.cluster.ConsistentHashRing;
+import com.can.cluster.HintedHandoffService;
+import com.can.cluster.Node;
+import com.can.cluster.coordination.SocketConnectionPool.PooledSocket;
 import com.can.config.AppProperties;
 import com.can.constants.NodeProtocol;
 import com.can.core.CacheEngine;
@@ -11,12 +15,8 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jboss.logging.Logger;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.IOException;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.EOFException;
+import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -24,14 +24,9 @@ import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
 import java.net.NetworkInterface;
 import java.net.SocketException;
-import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Arrays;
-import java.util.Enumeration;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -62,6 +57,7 @@ public class CoordinationService implements AutoCloseable {
     private final long hintReplayIntervalMillis;
     private final Vertx vertx;
     private final ExecutorService taskExecutor;
+    private final ConnectionPoolManager connectionPoolManager;
     private final String clientAdvertisedHost;
     private final int clientPort;
 
@@ -73,7 +69,6 @@ public class CoordinationService implements AutoCloseable {
     private InetAddress groupAddress;
     private long heartbeatTimerId = -1L;
     private long reapTimerId = -1L;
-    private long repairTimerId = -1L;
     private Thread listenerThread;
     private volatile boolean running;
 
@@ -100,6 +95,12 @@ public class CoordinationService implements AutoCloseable {
         this.vertx = vertx;
         ThreadFactory threadFactory = Thread.ofVirtual().name("coordination-task-", 0).factory();
         this.taskExecutor = Executors.newThreadPerTaskExecutor(threadFactory);
+
+        this.connectionPoolManager = new ConnectionPoolManager(
+                Runtime.getRuntime().availableProcessors() * 2,
+                replicationConfig.connectTimeoutMillis()
+        );
+
         this.clientPort = Math.max(1, networkConfig.port());
         this.clientAdvertisedHost = resolveClientAdvertisedHost();
     }
@@ -122,8 +123,8 @@ public class CoordinationService implements AutoCloseable {
         long heartbeat = Math.max(1000L, discoveryConfig.heartbeatIntervalMillis());
         long reapInterval = Math.max(heartbeat, discoveryConfig.failureTimeoutMillis() / 2);
         broadcastHeartbeat();
-        heartbeatTimerId = vertx.setPeriodic(heartbeat, id -> broadcastHeartbeat());
-        reapTimerId = vertx.setPeriodic(reapInterval, id -> pruneDeadMembers());
+        heartbeatTimerId = vertx.setPeriodic(heartbeat, _ -> broadcastHeartbeat());
+        reapTimerId = vertx.setPeriodic(reapInterval, _ -> pruneDeadMembers());
 
         LOG.infof("Coordination service started for node %s, announcing %s:%d", localNode.id(),
                 advertisedHost(), replicationConfig.port());
@@ -134,9 +135,54 @@ public class CoordinationService implements AutoCloseable {
         listenSocket = new MulticastSocket(discoveryConfig.multicastPort());
         listenSocket.setReuseAddress(true);
         NetworkInterface networkInterface = selectInterface();
-        listenSocket.joinGroup(new InetSocketAddress(groupAddress, discoveryConfig.multicastPort()), networkInterface);
+        tryJoinMulticastGroup(networkInterface);
         sendSocket = new DatagramSocket();
         sendSocket.setReuseAddress(true);
+    }
+
+    private void tryJoinMulticastGroup(NetworkInterface selectedInterface) throws IOException {
+        InetSocketAddress groupSocketAddress = new InetSocketAddress(groupAddress, discoveryConfig.multicastPort());
+
+        // First try with the selected interface
+        if (selectedInterface != null) {
+            try {
+                listenSocket.joinGroup(groupSocketAddress, selectedInterface);
+                LOG.debugf("Joined multicast group using interface: %s", selectedInterface.getName());
+                return;
+            } catch (IOException e) {
+                LOG.debugf("Failed to join multicast group with selected interface (%s): %s",
+                        selectedInterface.getName(), e.getMessage());
+            }
+        }
+
+        // Try loopback interface as fallback (useful for local development on macOS)
+        try {
+            NetworkInterface loopback = NetworkInterface.getByInetAddress(InetAddress.getLoopbackAddress());
+            if (loopback != null && loopback.supportsMulticast()) {
+                listenSocket.joinGroup(groupSocketAddress, loopback);
+                LOG.info("Joined multicast group using loopback interface");
+                return;
+            }
+        } catch (IOException e) {
+            LOG.debugf("Failed to join multicast group with loopback: %s", e.getMessage());
+        }
+
+        // Try all available interfaces
+        Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+        while (interfaces.hasMoreElements()) {
+            NetworkInterface ni = interfaces.nextElement();
+            try {
+                if (ni.isUp() && ni.supportsMulticast()) {
+                    listenSocket.joinGroup(groupSocketAddress, ni);
+                    LOG.infof("Joined multicast group using interface: %s", ni.getName());
+                    return;
+                }
+            } catch (IOException e) {
+                LOG.debugf("Failed to join multicast group with interface %s: %s", ni.getName(), e.getMessage());
+            }
+        }
+
+        throw new IOException("Could not join multicast group on any network interface");
     }
 
     private NetworkInterface selectInterface() throws SocketException {
@@ -318,7 +364,7 @@ public class CoordinationService implements AutoCloseable {
         }
 
         if (memberForBootstrap != null && runBootstrap) {
-            bootstrapFrom(memberForBootstrap, false);
+            bootstrapFrom(memberForBootstrap);
         }
 
         if (shouldReplayHints && replayTarget != null) {
@@ -332,22 +378,24 @@ public class CoordinationService implements AutoCloseable {
     }
 
     private JoinHandshakeResult performJoinHandshake(String nodeId, String host, int port) {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(host, port), replicationConfig.connectTimeoutMillis());
-            socket.setTcpNoDelay(true);
-            DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
-            DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+        PooledSocket pooledSocket = null;
+        boolean success = false;
+        try {
+            pooledSocket = connectionPoolManager.acquire(host, port);
+            var out = pooledSocket.out();
+            var in = pooledSocket.in();
 
             byte[] idBytes = clusterState.localNodeIdBytes();
             out.writeByte(NodeProtocol.CMD_JOIN);
             out.writeInt(idBytes.length);
             out.write(idBytes);
             out.writeLong(clusterState.currentEpoch());
-            out.flush();
+            pooledSocket.flush();
 
             byte response = in.readByte();
             if (response != NodeProtocol.RESP_ACCEPT) {
                 LOG.debugf("Join handshake rejected by %s:%d", host, port);
+                success = true; // Connection is still valid
                 return new JoinHandshakeResult(0L, false);
             }
 
@@ -360,30 +408,39 @@ public class CoordinationService implements AutoCloseable {
             String remoteId = new String(remoteIdBytes, StandardCharsets.UTF_8);
             if (!Objects.equals(remoteId, nodeId)) {
                 LOG.warnf("Join handshake id mismatch: expected %s but remote reported %s", nodeId, remoteId);
+                success = true;
                 return new JoinHandshakeResult(0L, false);
             }
+            success = true;
             return new JoinHandshakeResult(remoteEpoch, true);
         } catch (IOException e) {
             LOG.warnf(e, "Failed to perform join handshake with %s:%d", host, port);
             return null;
+        } finally {
+            if (pooledSocket != null) {
+                if (success) {
+                    connectionPoolManager.release(host, port, pooledSocket);
+                } else {
+                    connectionPoolManager.discard(host, port, pooledSocket);
+                }
+            }
         }
     }
 
-    private void bootstrapFrom(RemoteMember member, boolean force) {
-        if (!force && !member.tryStartBootstrap()) {
+    private void bootstrapFrom(RemoteMember member) {
+        if (!member.tryStartBootstrap()) {
             return;
         }
 
         boolean success = false;
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(member.host(), member.port()), replicationConfig.connectTimeoutMillis());
-            socket.setTcpNoDelay(true);
-
-            DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
-            DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+        PooledSocket pooledSocket = null;
+        try {
+            pooledSocket = connectionPoolManager.acquire(member.host(), member.port());
+            var out = pooledSocket.out();
+            var in = pooledSocket.in();
 
             out.writeByte(NodeProtocol.CMD_STREAM);
-            out.flush();
+            pooledSocket.flush();
 
             long now = System.currentTimeMillis();
             while (true) {
@@ -429,24 +486,52 @@ public class CoordinationService implements AutoCloseable {
         } catch (IOException e) {
             LOG.warnf(e, "Failed to synchronise data from %s", member.hostPort());
         } finally {
-            if (!force) {
-                member.completeBootstrap(success);
+            if (pooledSocket != null) {
+                if (success) {
+                    connectionPoolManager.release(member.host(), member.port(), pooledSocket);
+                } else {
+                    connectionPoolManager.discard(member.host(), member.port(), pooledSocket);
+                }
+            }
+            member.completeBootstrap(success);
+        }
+    }
+
+    /**
+     * Requests the data digest from a remote member for anti-entropy repair.
+     * Reserved for future implementation of read-repair and active anti-entropy.
+     */
+    @SuppressWarnings("unused")
+    private long requestDigest(RemoteMember member) throws IOException {
+        PooledSocket pooledSocket = null;
+        boolean success = false;
+        try {
+            pooledSocket = connectionPoolManager.acquire(member.host(), member.port());
+            var out = pooledSocket.out();
+            var in = pooledSocket.in();
+
+            out.writeByte(NodeProtocol.CMD_DIGEST);
+            pooledSocket.flush();
+
+            long digest = in.readLong();
+            success = true;
+            return digest;
+        } finally {
+            if (pooledSocket != null) {
+                if (success) {
+                    connectionPoolManager.release(member.host(), member.port(), pooledSocket);
+                } else {
+                    connectionPoolManager.discard(member.host(), member.port(), pooledSocket);
+                }
             }
         }
     }
 
-    private long requestDigest(RemoteMember member) throws IOException {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(member.host(), member.port()), replicationConfig.connectTimeoutMillis());
-            socket.setTcpNoDelay(true);
-            DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
-            DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-            out.writeByte(NodeProtocol.CMD_DIGEST);
-            out.flush();
-            return in.readLong();
-        }
-    }
-
+    /**
+     * Computes the expected data digest for keys that should be replicated to a specific node.
+     * Reserved for future implementation of active anti-entropy protocol.
+     */
+    @SuppressWarnings("unused")
     private long computeExpectedDigestFor(String nodeId) {
         final long[] digest = {1125899906842597L};
         localEngine.forEachEntry((key, value, expireAt) -> {
@@ -523,8 +608,13 @@ public class CoordinationService implements AutoCloseable {
         running = false;
         cancelTimer(heartbeatTimerId);
         cancelTimer(reapTimerId);
-        cancelTimer(repairTimerId);
         taskExecutor.shutdownNow();
+
+        // Connection pool'u kapat
+        if (connectionPoolManager != null) {
+            connectionPoolManager.close();
+        }
+
         if (listenSocket != null) {
             try {
                 listenSocket.close();
@@ -608,9 +698,18 @@ public class CoordinationService implements AutoCloseable {
             return lastSeen;
         }
 
-        private void updateLastSeen(long value, long epoch) {
+        /**
+         * Returns the last known epoch of this member.
+         * Used for crdt-like conflict resolution during anti-entropy.
+         */
+        @SuppressWarnings("unused")
+        private long epoch() {
+            return epoch;
+        }
+
+        private void updateLastSeen(long value, long newEpoch) {
             this.lastSeen = value;
-            this.epoch = epoch;
+            this.epoch = newEpoch;
         }
 
         private boolean matches(String host, int port) {
@@ -647,11 +746,7 @@ public class CoordinationService implements AutoCloseable {
             if (interval <= 0) {
                 return true;
             }
-            if (now - lastHintReplay >= interval) {
-                lastHintReplay = now;
-                return true;
-            }
-            return false;
+            return now - lastHintReplay >= interval;
         }
 
         private void markHintReplayed(long timestamp) {

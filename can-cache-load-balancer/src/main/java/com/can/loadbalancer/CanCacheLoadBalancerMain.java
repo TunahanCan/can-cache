@@ -9,11 +9,12 @@ import org.jboss.logging.Logger;
  * can-cache yük dengeleyicisini tek başına ayağa kaldırmak için Quarkus ana giriş noktası.
  */
 @QuarkusMain
-public class CanCacheLoadBalancerMain implements QuarkusApplication {
+public class CanCacheLoadBalancerMain implements QuarkusApplication
+{
 
     private static final Logger LOG = Logger.getLogger(CanCacheLoadBalancerMain.class);
 
-    public static void main(String... args) {
+    static void main(String... args) {
         Quarkus.run(CanCacheLoadBalancerMain.class, args);
     }
 

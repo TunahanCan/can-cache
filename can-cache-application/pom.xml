@@ -10,6 +10,7 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
+
     <artifactId>can-cache-application</artifactId>
 
     <licenses>
@@ -37,6 +38,7 @@
         <maven.compiler.release>25</maven.compiler.release>
         <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
     </properties>
+
 
     <dependencyManagement>
         <dependencies>
@@ -66,6 +68,12 @@
             <artifactId>quarkus-junit5</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Micrometer Metrics with Prometheus Registry -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
@@ -84,6 +92,9 @@
                         </goals>
                     </execution>
                 </executions>
+                <configuration>
+                    <jvmArgs>--add-opens java.base/java.lang=ALL-UNNAMED</jvmArgs>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -97,6 +108,9 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${maven.surefire.plugin.version}</version>
+                <configuration>
+                    <argLine>--add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+                </configuration>
             </plugin>
         </plugins>
     </build>
