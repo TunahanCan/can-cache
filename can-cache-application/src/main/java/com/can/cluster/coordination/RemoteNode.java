@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -56,6 +57,12 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
     private final AtomicInteger openConnections = new AtomicInteger();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final ExecutorService requestExecutor;
+
+    // Metrics
+    private final AtomicLong totalRequests = new AtomicLong();
+    private final AtomicLong failedRequests = new AtomicLong();
+    private final AtomicLong totalLatencyNanos = new AtomicLong();
+    private final AtomicInteger activeRequests = new AtomicInteger();
 
     public RemoteNode(String id, String host, int port, int connectTimeoutMillis, Vertx vertx)
     {
@@ -142,7 +149,8 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
     @Override
     public void clear()
     {
-        Buffer request = Buffer.buffer(1).appendByte(NodeProtocol.CMD_CLEAR);
+        Buffer request = Buffer.buffer(1)
+                .appendByte(NodeProtocol.CMD_CLEAR);
         execute(connection -> send(connection, request, new ClearResponseParser()));
     }
 
@@ -194,6 +202,10 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
             throw new IllegalStateException("Remote node " + id + " is closed");
         }
 
+        long startNanos = System.nanoTime();
+        totalRequests.incrementAndGet();
+        activeRequests.incrementAndGet();
+
         try (ConnectionLease lease = new ConnectionLease(acquireConnection())) {
             CompletableFuture<T> future;
             try {
@@ -201,11 +213,16 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
                         "action returned null future");
             } catch (RuntimeException | Error e) {
                 lease.discard(e);
+                failedRequests.incrementAndGet();
                 throw communicationError("Remote command dispatch failed", e);
             }
             return awaitResult(future, lease);
         } catch (IOException e) {
+            failedRequests.incrementAndGet();
             throw communicationError("Failed to acquire connection", e);
+        } finally {
+            activeRequests.decrementAndGet();
+            totalLatencyNanos.addAndGet(System.nanoTime() - startNanos);
         }
     }
 
@@ -414,6 +431,60 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
             return 0L;
         }
         return System.currentTimeMillis() + ttl.toMillis();
+    }
+
+    // ==================== Metrics API ====================
+
+    /**
+     * Toplam istek sayısını döndürür.
+     */
+    public long getTotalRequests()
+    {
+        return totalRequests.get();
+    }
+
+    /**
+     * Başarısız istek sayısını döndürür.
+     */
+    public long getFailedRequests()
+    {
+        return failedRequests.get();
+    }
+
+    /**
+     * Aktif istek sayısını döndürür.
+     */
+    public int getActiveRequests()
+    {
+        return activeRequests.get();
+    }
+
+    /**
+     * Ortalama gecikmeyi milisaniye cinsinden döndürür.
+     */
+    public double getAverageLatencyMillis()
+    {
+        long total = totalRequests.get();
+        if (total == 0) {
+            return 0.0;
+        }
+        return TimeUnit.NANOSECONDS.toMillis(totalLatencyNanos.get()) / (double) total;
+    }
+
+    /**
+     * Açık bağlantı sayısını döndürür.
+     */
+    public int getOpenConnections()
+    {
+        return openConnections.get();
+    }
+
+    /**
+     * Havuzdaki boşta bekleyen bağlantı sayısını döndürür.
+     */
+    public int getIdleConnections()
+    {
+        return pool.size();
     }
 
     @Override
@@ -635,12 +706,15 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
 
     private static final class ByteBufferReader
     {
+        private static final int COMPACT_THRESHOLD = 1024;
+
         private Buffer buffer = Buffer.buffer();
         private int readIndex;
 
         void append(Buffer chunk)
         {
             buffer.appendBuffer(chunk);
+            compactIfNeeded();
         }
 
         boolean has(int bytes)
@@ -674,6 +748,27 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
             byte[] data = buffer.getBytes(readIndex, readIndex + length);
             readIndex += length;
             return data;
+        }
+
+        /**
+         * Bellek şişmesini önlemek için okunan verileri temizler.
+         */
+        private void compactIfNeeded()
+        {
+            if (readIndex > COMPACT_THRESHOLD) {
+                compact();
+            }
+        }
+
+        private void compact()
+        {
+            if (readIndex > 0 && readIndex < buffer.length()) {
+                buffer = buffer.getBuffer(readIndex, buffer.length());
+                readIndex = 0;
+            } else if (readIndex >= buffer.length()) {
+                buffer = Buffer.buffer();
+                readIndex = 0;
+            }
         }
 
         void reset()

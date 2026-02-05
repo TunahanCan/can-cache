@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit;
  * {@link AppProperties} üzerinden okunan değerler kullanılır ve yaşam döngüsü
  * boyunca gerekli kaynakların başlatılıp kapatılmasından sorumludur.
  */
+
 @ApplicationScoped
 public class AppConfig {
 
@@ -153,7 +154,8 @@ public class AppConfig {
     {
         var discovery = properties.cluster().discovery();
         var replication = properties.cluster().replication();
-        String nodeId = discovery.nodeId()
+
+        final String resolvedId = discovery.nodeId()
                 .filter(id -> !id.isBlank())
                 .orElseGet(() -> {
                     String host = replication.advertiseHost();
@@ -165,7 +167,6 @@ public class AppConfig {
                     }
                     return host + ":" + replication.port();
                 });
-        final String resolvedId = nodeId;
         return new Node<>() {
             @Override
             public boolean set(String k, String v, Duration ttl) {
