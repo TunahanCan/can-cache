@@ -94,7 +94,7 @@ The animation shows this loop with the removed node fading from orange to grey, 
 
 ### ⚡ Protocol & Performance
 - Implements every core command of the cancached text protocol (`set/add/replace/append/prepend/cas/get/gets/delete/incr/decr/touch/flush_all/stats/version/quit`), rejects payloads larger than 1 MB, and interprets TTL values over 30 days as epoch timestamps.
-- Ships with the dedicated `can-cache-load-balancer` module so you can run a single front-end that exposes a TCP port and forwards requests to healthy instances via round-robin routing.
+- Ships with the dedicated load balancer app in `load-balancer/` so you can run a single front-end that exposes a TCP port and forwards requests to healthy instances via round-robin routing.
 - CAS counters are produced atomically; thanks to `StoredValueCodec` CAS, flags, and TTL travel in a single Base64 string.
 - Segmented `CacheEngine` enables switchable LRU or TinyLFU eviction policies, millisecond-precision TTL cleanup and high hit rates.
 
@@ -203,7 +203,7 @@ The most important keys waiting under `application.properties`:
 | `app.cluster.coordination.hint-replay-interval-millis` | Minimum delay between hint replay attempts. | 5000 |
 | `app.cluster.coordination.anti-entropy-interval-millis` | Period (ms) for anti-entropy sweeps. | 30000 |
 | `app.network.host/port/backlog/worker-threads` | Settings for the cancached TCP server. | 0.0.0.0 / 11211 / 128 / 16 |
-| `app.load-balancer.enabled/host/port/backlog/connect-timeout-millis` | Settings consumed by the dedicated `can-cache-load-balancer` TCP front end. | true / 0.0.0.0 / 12000 / 128 / 3000 |
+| `app.load-balancer.enabled/host/port/backlog/connect-timeout-millis` | Settings consumed by the dedicated load balancer TCP front end. | true / 0.0.0.0 / 12000 / 128 / 3000 |
 | `app.memcache.max-item-size-bytes` | Maximum size (bytes) for a single value. | 1048576 |
 | `app.memcache.max-cas-retries` | Retry count for failed CAS operations. | 16 |
 | `app.metrics.report-interval-seconds` | Metrics reporting period; 0 disables the reporter. | 5 |
@@ -213,7 +213,7 @@ The most important keys waiting under `application.properties`:
 To avoid starting a front end on every cache JVM, run the standalone module once and point clients to it:
 
 1. Configure the service (if needed) via the `app.load-balancer.*` keys in the load balancer module's `application.properties`.
-2. Launch the front end with `./mvnw -pl can-cache-load-balancer quarkus:dev` (or package it via `./mvnw -pl can-cache-load-balancer -am package`).
+2. Launch the front end with `./mvnw -f load-balancer/pom.xml quarkus:dev` (or package it via `./mvnw -f load-balancer/pom.xml package`).
 3. Point clients to the configured `app.load-balancer.host:port` pair; the service will fan out requests to healthy cache members.
 
 ## Project Layout
@@ -229,7 +229,7 @@ To avoid starting a front end on every cache JVM, run the standalone module once
 | `src/main/java/com/can/metric` | Counters, timers, and console reporter. |
 | `src/main/java/com/can/pubsub` | In-process publish/subscribe infrastructure. |
 | `src/main/java/com/can/config` | CDI configuration and type-safe configuration interfaces. |
-| `can-cache-load-balancer/` | Dedicated Quarkus module for the TCP load balancer front end. |
+| `load-balancer/` | Dedicated Quarkus application for the TCP load balancer front end. |
 | `integration-tests/` | End-to-end cancached compatibility tests powered by Docker Compose. |
 | `performance-tests/` | JMeter plans and NFR documentation. |
 | `scripts/` | Helper scripts (e.g. `run-integration-tests.sh`). |
@@ -326,7 +326,7 @@ Bu döngü, animasyonda silinen node'un turuncudan griye dönen kareleriyle gös
 
 ### ⚡ Protokol & Performans
 - cancached metin protokolünün tüm çekirdek komutlarını (`set/add/replace/append/prepend/cas/get/gets/delete/incr/decr/touch/flush_all/stats/version/quit`) bire bir uygular, 1 MB üzerindeki yükleri reddeder ve 30 günü aşan TTL değerlerini epoch olarak yorumlar.
-- Ayrı `can-cache-load-balancer` modülü tek bir TCP portu açarak gelen istekleri round-robin stratejisiyle canlı örneklere iletir.
+- Ayrı `load-balancer/` uygulaması tek bir TCP portu açarak gelen istekleri round-robin stratejisiyle canlı örneklere iletir.
 - CAS sayaçları atomik olarak üretilir; `StoredValueCodec` sayesinde CAS, bayrak ve TTL tek bir Base64 dizesinde taşınır.
 - Segmentlenmiş `CacheEngine` ile seçilebilir LRU ya da TinyLFU tahliye politikaları, milisaniye hassasiyetinde TTL temizliği ve yüksek isabet oranı sağlar.
 
@@ -435,7 +435,7 @@ Multicast koordinasyon, yeni node'u otomatik keşfeder ve tutarlı hash halkası
 | `app.cluster.coordination.hint-replay-interval-millis` | Hinted handoff kuyruğu için yeniden oynatma denemeleri arasındaki minimum süre. | 5000 |
 | `app.cluster.coordination.anti-entropy-interval-millis` | Anti-entropy taramalarının periyodu (ms). | 30000 |
 | `app.network.host/port/backlog/worker-threads` | cancached TCP sunucusu ayarları. | 0.0.0.0 / 11211 / 128 / 16 |
-| `app.load-balancer.enabled/host/port/backlog/connect-timeout-millis` | Ayrı çalışan `can-cache-load-balancer` ön yüzünün okuduğu ayarlardır. | true / 0.0.0.0 / 12000 / 128 / 3000 |
+| `app.load-balancer.enabled/host/port/backlog/connect-timeout-millis` | Ayrı çalışan yük dengeleyici ön yüzünün okuduğu ayarlardır. | true / 0.0.0.0 / 12000 / 128 / 3000 |
 | `app.memcache.max-item-size-bytes` | Tek bir değerin saklanabileceği maksimum boyut (bayt). | 1048576 |
 | `app.memcache.max-cas-retries` | Başarısız CAS işlemleri için tekrar deneme sayısı. | 16 |
 | `app.metrics.report-interval-seconds` | Metrik raporlama periyodu; 0 devre dışı. | 5 |
@@ -445,7 +445,7 @@ Multicast koordinasyon, yeni node'u otomatik keşfeder ve tutarlı hash halkası
 Her cache JVM'inde ön yüzün ayağa kalkmasını istemiyorsanız modülü tek sefer çalıştırıp istemcileri ona yönlendirin:
 
 1. Yük dengeleyicinin `application.properties` dosyasında gerekirse `app.load-balancer.*` anahtarlarıyla yapılandırmayı özelleştirin.
-2. Ön yüzü `./mvnw -pl can-cache-load-balancer quarkus:dev` ile başlatın (veya `./mvnw -pl can-cache-load-balancer -am package` komutuyla paketleyin).
+2. Ön yüzü `./mvnw -f load-balancer/pom.xml quarkus:dev` ile başlatın (veya `./mvnw -f load-balancer/pom.xml package` komutuyla paketleyin).
 3. İstemcileri `app.load-balancer.host:port` adresine yönlendirin; servis istekleri canlı cache üyelerine dağıtacaktır.
 
 ## Proje Yapısı
@@ -461,7 +461,7 @@ Her cache JVM'inde ön yüzün ayağa kalkmasını istemiyorsanız modülü tek 
 | `src/main/java/com/can/metric` | Sayaç, zamanlayıcı ve konsol raporlayıcısı. |
 | `src/main/java/com/can/pubsub` | Uygulama içi yayınla-abone ol altyapısı. |
 | `src/main/java/com/can/config` | CDI yapılandırması ve tip güvenli konfigürasyon arayüzleri. |
-| `can-cache-load-balancer/` | TCP yük dengeleyicisine ev sahipliği yapan ayrı Quarkus modülü. |
+| `load-balancer/` | TCP yük dengeleyicisine ev sahipliği yapan ayrı Quarkus uygulaması. |
 | `integration-tests/` | Docker Compose ile çalışan uçtan uca cancached uyumluluk testleri. |
 | `performance-tests/` | JMeter planları ve NFR dokümanları. |
 | `scripts/` | Yardımcı komut dosyaları (`run-integration-tests.sh` vb.). |

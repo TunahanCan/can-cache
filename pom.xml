@@ -15,7 +15,6 @@
 
     <modules>
         <module>can-cache-application</module>
-        <module>can-cache-load-balancer</module>
         <module>can-cache-integration-tests</module>
         <module>can-cache-performance-tests</module>
     </modules>
