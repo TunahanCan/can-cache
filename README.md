@@ -148,7 +148,7 @@ flowchart LR
 
 ```bash
 # 1) Start the server in development mode
-./mvnw quarkus:dev
+./mvnw -f can-cache-application/pom.xml quarkus:dev
 
 # 2) Perform a quick validation
 printf 'set foo 0 5 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
@@ -158,8 +158,8 @@ printf 'set foo 0 5 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
 To run after packaging:
 
 ```bash
-./mvnw package
-java -jar target/quarkus-app/quarkus-run.jar
+./mvnw -f can-cache-application/pom.xml package
+java -jar can-cache-application/target/quarkus-app/quarkus-run.jar
 ```
 
 ## Cluster Setup Example
@@ -168,10 +168,10 @@ Scaling from a single JVM to a clustered topology is this easy:
 
 ```bash
 # Default node
-./mvnw quarkus:dev
+./mvnw -f can-cache-application/pom.xml quarkus:dev
 
 # Second node (with alternate ports)
-./mvnw quarkus:dev \
+./mvnw -f can-cache-application/pom.xml quarkus:dev \
     -Dquarkus.http.port=0 \
     -Dapp.network.port=11212 \
     -Dapp.cluster.replication.port=18081 \
@@ -202,11 +202,12 @@ The most important keys waiting under `application.properties`:
 | `app.cluster.replication.connect-timeout-millis` | Connection timeout for remote nodes. | 5000 |
 | `app.cluster.coordination.hint-replay-interval-millis` | Minimum delay between hint replay attempts. | 5000 |
 | `app.cluster.coordination.anti-entropy-interval-millis` | Period (ms) for anti-entropy sweeps. | 30000 |
-| `app.network.host/port/backlog/worker-threads` | Settings for the cancached TCP server. | 0.0.0.0 / 11211 / 128 / 16 |
+| `app.cancache.max-item-size-bytes` | Maximum size (bytes) for a single value. | 1048576 |
+| `app.cancache.max-cas-retries` | Retry count for failed CAS operations. | 16 |
+| `app.network.host/port/backlog/event-loop-threads/worker-threads` | Settings for the cancached TCP server. | 0.0.0.0 / 11211 / 128 / 8 / 16 |
+| `app.network.agreement-pack-message` | Multicast handshake payload for discovery. | HELLO |
 | `app.load-balancer.enabled/host/port/backlog/connect-timeout-millis` | Settings consumed by the dedicated load balancer TCP front end. | true / 0.0.0.0 / 12000 / 128 / 3000 |
-| `app.memcache.max-item-size-bytes` | Maximum size (bytes) for a single value. | 1048576 |
-| `app.memcache.max-cas-retries` | Retry count for failed CAS operations. | 16 |
-| `app.metrics.report-interval-seconds` | Metrics reporting period; 0 disables the reporter. | 5 |
+| `app.metrics.replication-role` | Label for Micrometer tags (ex: coordinator, replica). | coordinator |
 
 ### Dedicated load balancer service
 
@@ -220,19 +221,18 @@ To avoid starting a front end on every cache JVM, run the standalone module once
 
 | Directory | Contents |
 | --- | --- |
-| `src/main/java/com/can/net` | cancached TCP server and protocol parsers. |
-| `src/main/java/com/can/cluster` | Consistent hash ring, cluster client, and node interfaces. |
-| `src/main/java/com/can/cluster/coordination` | Multicast coordination, remote node proxies, and replication server. |
-| `src/main/java/com/can/core` | Cache engine, segments, TTL queue, and eviction policies. |
-| `src/main/java/com/can/codec` | Key/value codec implementations (UTF-8, Java Serializable). |
-| `src/main/java/com/can/rdb` | Snapshot file and scheduler components. |
-| `src/main/java/com/can/metric` | Counters, timers, and console reporter. |
-| `src/main/java/com/can/pubsub` | In-process publish/subscribe infrastructure. |
-| `src/main/java/com/can/config` | CDI configuration and type-safe configuration interfaces. |
+| `can-cache-application/src/main/java/com/can/net` | cancached TCP server and protocol parsers. |
+| `can-cache-application/src/main/java/com/can/cluster` | Consistent hash ring, cluster client, and node interfaces. |
+| `can-cache-application/src/main/java/com/can/cluster/coordination` | Multicast coordination, remote node proxies, and replication server. |
+| `can-cache-application/src/main/java/com/can/core` | Cache engine, segments, TTL queue, and eviction policies. |
+| `can-cache-application/src/main/java/com/can/codec` | Key/value codec implementations (UTF-8, Java Serializable). |
+| `can-cache-application/src/main/java/com/can/rdb` | Snapshot file and scheduler components. |
+| `can-cache-application/src/main/java/com/can/metric` | Counters, timers, and console reporter. |
+| `can-cache-application/src/main/java/com/can/pubsub` | In-process publish/subscribe infrastructure. |
+| `can-cache-application/src/main/java/com/can/config` | CDI configuration and type-safe configuration interfaces. |
 | `load-balancer/` | Dedicated Quarkus application for the TCP load balancer front end. |
-| `integration-tests/` | End-to-end cancached compatibility tests powered by Docker Compose. |
-| `performance-tests/` | JMeter plans and NFR documentation. |
-| `scripts/` | Helper scripts (e.g. `run-integration-tests.sh`). |
+| `can-cache-integration-tests/` | End-to-end cancached compatibility tests powered by Docker Compose. |
+| `can-cache-performance-tests/` | JMeter plans and NFR documentation. |
 
 ## Roadmap
 
@@ -248,7 +248,7 @@ To avoid starting a front end on every cache JVM, run the standalone module once
 
 1. Fork the repository and rebase your changes onto `main`.
 2. Follow the existing code style and write meaningful commit messages.
-3. Verify with `./mvnw test` and, if necessary, `./scripts/run-integration-tests.sh`.
+3. Verify with `./mvnw -pl can-cache-application test` and, if necessary, `./can-cache-integration-tests/run-integration-tests.sh`.
 4. Share your experiences, performance measurements, or new use cases — the project grows with community feedback.
 
 Have questions? [Open an issue](../../issues/new) or come directly with a Pull Request.
@@ -380,7 +380,7 @@ flowchart LR
 
 ```bash
 # 1) Geliştirme modunda sunucuyu başlatın
-./mvnw quarkus:dev
+./mvnw -f can-cache-application/pom.xml quarkus:dev
 
 # 2) Temel bir doğrulama yapın
 printf 'set foo 0 5 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
@@ -390,8 +390,8 @@ printf 'set foo 0 5 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
 Paketleme sonrası çalıştırmak için:
 
 ```bash
-./mvnw package
-java -jar target/quarkus-app/quarkus-run.jar
+./mvnw -f can-cache-application/pom.xml package
+java -jar can-cache-application/target/quarkus-app/quarkus-run.jar
 ```
 
 ## Küme Kurulum Örneği
@@ -400,10 +400,10 @@ Tek JVM'den kümelenmiş bir yapıya geçiş bu kadar kolay:
 
 ```bash
 # Varsayılan node
-./mvnw quarkus:dev
+./mvnw -f can-cache-application/pom.xml quarkus:dev
 
 # İkinci node (farklı portlarla)
-./mvnw quarkus:dev \
+./mvnw -f can-cache-application/pom.xml quarkus:dev \
     -Dquarkus.http.port=0 \
     -Dapp.network.port=11212 \
     -Dapp.cluster.replication.port=18081 \
@@ -434,11 +434,12 @@ Multicast koordinasyon, yeni node'u otomatik keşfeder ve tutarlı hash halkası
 | `app.cluster.replication.connect-timeout-millis` | Uzak düğüme bağlanma zaman aşımı. | 5000 |
 | `app.cluster.coordination.hint-replay-interval-millis` | Hinted handoff kuyruğu için yeniden oynatma denemeleri arasındaki minimum süre. | 5000 |
 | `app.cluster.coordination.anti-entropy-interval-millis` | Anti-entropy taramalarının periyodu (ms). | 30000 |
-| `app.network.host/port/backlog/worker-threads` | cancached TCP sunucusu ayarları. | 0.0.0.0 / 11211 / 128 / 16 |
+| `app.cancache.max-item-size-bytes` | Tek bir değerin saklanabileceği maksimum boyut (bayt). | 1048576 |
+| `app.cancache.max-cas-retries` | Başarısız CAS işlemleri için tekrar deneme sayısı. | 16 |
+| `app.network.host/port/backlog/event-loop-threads/worker-threads` | cancached TCP sunucusu ayarları. | 0.0.0.0 / 11211 / 128 / 8 / 16 |
+| `app.network.agreement-pack-message` | Multicast keşfi için handshake paketi. | HELLO |
 | `app.load-balancer.enabled/host/port/backlog/connect-timeout-millis` | Ayrı çalışan yük dengeleyici ön yüzünün okuduğu ayarlardır. | true / 0.0.0.0 / 12000 / 128 / 3000 |
-| `app.memcache.max-item-size-bytes` | Tek bir değerin saklanabileceği maksimum boyut (bayt). | 1048576 |
-| `app.memcache.max-cas-retries` | Başarısız CAS işlemleri için tekrar deneme sayısı. | 16 |
-| `app.metrics.report-interval-seconds` | Metrik raporlama periyodu; 0 devre dışı. | 5 |
+| `app.metrics.replication-role` | Micrometer etiketleri için rol adı (örn: coordinator, replica). | coordinator |
 
 ### Ayrı yük dengeleyiciyi çalıştırma
 
@@ -452,19 +453,18 @@ Her cache JVM'inde ön yüzün ayağa kalkmasını istemiyorsanız modülü tek 
 
 | Dizin | İçerik |
 | --- | --- |
-| `src/main/java/com/can/net` | cancached TCP sunucusu ve protokol ayrıştırıcıları. |
-| `src/main/java/com/can/cluster` | Tutarlı hash halkası, küme istemcisi ve node arayüzleri. |
-| `src/main/java/com/can/cluster/coordination` | Multicast koordinasyonu, uzak node vekilleri ve replikasyon sunucusu. |
-| `src/main/java/com/can/core` | Önbellek motoru, segmentler, TTL kuyruğu ve tahliye politikaları. |
-| `src/main/java/com/can/codec` | Anahtar/değer codec implementasyonları (UTF-8, Java Serializable). |
-| `src/main/java/com/can/rdb` | Snapshot dosyası ve zamanlayıcı bileşenleri. |
-| `src/main/java/com/can/metric` | Sayaç, zamanlayıcı ve konsol raporlayıcısı. |
-| `src/main/java/com/can/pubsub` | Uygulama içi yayınla-abone ol altyapısı. |
-| `src/main/java/com/can/config` | CDI yapılandırması ve tip güvenli konfigürasyon arayüzleri. |
+| `can-cache-application/src/main/java/com/can/net` | cancached TCP sunucusu ve protokol ayrıştırıcıları. |
+| `can-cache-application/src/main/java/com/can/cluster` | Tutarlı hash halkası, küme istemcisi ve node arayüzleri. |
+| `can-cache-application/src/main/java/com/can/cluster/coordination` | Multicast koordinasyonu, uzak node vekilleri ve replikasyon sunucusu. |
+| `can-cache-application/src/main/java/com/can/core` | Önbellek motoru, segmentler, TTL kuyruğu ve tahliye politikaları. |
+| `can-cache-application/src/main/java/com/can/codec` | Anahtar/değer codec implementasyonları (UTF-8, Java Serializable). |
+| `can-cache-application/src/main/java/com/can/rdb` | Snapshot dosyası ve zamanlayıcı bileşenleri. |
+| `can-cache-application/src/main/java/com/can/metric` | Sayaç, zamanlayıcı ve konsol raporlayıcısı. |
+| `can-cache-application/src/main/java/com/can/pubsub` | Uygulama içi yayınla-abone ol altyapısı. |
+| `can-cache-application/src/main/java/com/can/config` | CDI yapılandırması ve tip güvenli konfigürasyon arayüzleri. |
 | `load-balancer/` | TCP yük dengeleyicisine ev sahipliği yapan ayrı Quarkus uygulaması. |
-| `integration-tests/` | Docker Compose ile çalışan uçtan uca cancached uyumluluk testleri. |
-| `performance-tests/` | JMeter planları ve NFR dokümanları. |
-| `scripts/` | Yardımcı komut dosyaları (`run-integration-tests.sh` vb.). |
+| `can-cache-integration-tests/` | Docker Compose ile çalışan uçtan uca cancached uyumluluk testleri. |
+| `can-cache-performance-tests/` | JMeter planları ve NFR dokümanları. |
 
 ## Yol Haritası
 
@@ -480,7 +480,7 @@ Her cache JVM'inde ön yüzün ayağa kalkmasını istemiyorsanız modülü tek 
 
 1. Depoyu forklayın ve `main` üzerine değişikliklerinizi rebase edin.
 2. Kod stilini koruyarak anlamlı commit mesajları yazın.
-3. `./mvnw test` ve gerekiyorsa `./scripts/run-integration-tests.sh` ile doğrulayın.
+3. `./mvnw -pl can-cache-application test` ve gerekiyorsa `./can-cache-integration-tests/run-integration-tests.sh` ile doğrulayın.
 4. Deneyimlerinizi, performans ölçümlerinizi veya yeni kullanım senaryolarınızı paylaşın — proje bu geri bildirimlerle büyüyor.
 
 Sorularınız mı var? Bir [issue](../../issues/new) açabilir veya doğrudan Pull Request ile gelebilirsiniz.
