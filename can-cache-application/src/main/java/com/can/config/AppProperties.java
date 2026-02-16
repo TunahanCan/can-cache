@@ -162,6 +162,12 @@ public interface AppProperties
 
         @WithDefault("PT1S")
         java.time.Duration connectTimeout();
+
+        @WithDefault("PT0S")
+        java.time.Duration startupWait();
+
+        @WithDefault("false")
+        boolean requiredOnStartup();
     }
 
 }
