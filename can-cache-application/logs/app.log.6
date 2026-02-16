@@ -1,10 +1,24 @@
-2025-09-29 00:15:36,057 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] WARN  [io.qua.config] (main) The "quarkus.log.file.enable" config property is deprecated and should not be used anymore.
-2025-09-29 00:15:36,057 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] WARN  [io.qua.config] (main) The "quarkus.log.console.enable" config property is deprecated and should not be used anymore.
-2025-09-29 00:15:36,184 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [com.can.clu.coo.CoordinationService] (main) Coordination service started for node 127.0.0.1:18080, announcing 127.0.0.1:18080
-2025-09-29 00:15:36,225 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [com.can.net.CanCachedServer] (main) cancached-compatible server listening on 0.0.0.0:11211
-2025-09-29 00:15:36,235 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [com.can.met.MetricsReporter] (main) Metrics endpoint started on 0.0.0.0:9000/metrics
-2025-09-29 00:15:36,238 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [com.can.clu.coo.ReplicationServer] (main) Replication server listening on 0.0.0.0:18080 (advertised as 127.0.0.1:18080)
-2025-09-29 00:15:36,239 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [io.quarkus] (main) can-cache-application 0.0.1-SNAPSHOT on JVM (powered by Quarkus 3.28.1) started in 0.449s. 
-2025-09-29 00:15:36,240 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [io.quarkus] (main) Profile prod activated. 
-2025-09-29 00:15:36,240 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [io.quarkus] (main) Installed features: [cdi, smallrye-context-propagation, vertx]
-2025-09-29 00:15:38,961 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [io.quarkus] (main) can-cache-application stopped in 0.036s
+2025-09-29 00:17:11,101 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[397164] WARN  [io.qua.config] (main) The "quarkus.log.file.enable" config property is deprecated and should not be used anymore.
+2025-09-29 00:17:11,102 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[397164] WARN  [io.qua.config] (main) The "quarkus.log.console.enable" config property is deprecated and should not be used anymore.
+2025-09-29 00:17:11,225 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[397164] INFO  [com.can.clu.coo.CoordinationService] (main) Coordination service started for node 127.0.0.1:18080, announcing 127.0.0.1:18080
+2025-09-29 00:17:11,269 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[397164] INFO  [com.can.net.CanCachedServer] (main) cancached-compatible server listening on 0.0.0.0:11211
+2025-09-29 00:17:11,277 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[397164] INFO  [com.can.met.MetricsReporter] (main) Metrics endpoint started on 0.0.0.0:9000/metrics
+2025-09-29 00:17:11,282 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[397164] INFO  [com.can.clu.coo.ReplicationServer] (main) Replication server listening on 0.0.0.0:18080 (advertised as 127.0.0.1:18080)
+2025-09-29 00:17:11,283 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[397164] INFO  [io.quarkus] (main) can-cache-application 0.0.1-SNAPSHOT on JVM (powered by Quarkus 3.28.1) started in 0.416s. 
+2025-09-29 00:17:11,283 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[397164] INFO  [io.quarkus] (main) Profile prod activated. 
+2025-09-29 00:17:11,284 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[397164] INFO  [io.quarkus] (main) Installed features: [cdi, smallrye-context-propagation, vertx]
+2025-09-29 00:17:26,140 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[397164] WARN  [com.can.clu.coo.CoordinationService] (coordination-task-0) Failed to perform join handshake with 127.0.0.1:18081: java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:628)
+	at java.base/sun.nio.ch.NioSocketImpl.timedFinishConnect(NioSocketImpl.java:533)
+	at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:583)
+	at java.base/java.net.SocksSocketImpl.connect(SocksSocketImpl.java:282)
+	at java.base/java.net.Socket.connect(Socket.java:665)
+	at com.can.cluster.coordination.CoordinationService.performJoinHandshake(CoordinationService.java:353)
+	at com.can.cluster.coordination.CoordinationService.processMembershipPacket(CoordinationService.java:282)
+	at com.can.cluster.coordination.CoordinationService.lambda$handlePacket$0(CoordinationService.java:230)
+	at java.base/java.util.concurrent.ThreadPerTaskExecutor$TaskRunner.run(ThreadPerTaskExecutor.java:291)
+	at java.base/java.lang.VirtualThread.run(VirtualThread.java:466)
+
+2025-09-29 00:17:31,181 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[397164] INFO  [com.can.clu.coo.CoordinationService] (coordination-task-1) Discovered new cluster member 127.0.0.1:18081 at 127.0.0.1:18081
+2025-09-29 00:19:06,355 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[397164] INFO  [io.quarkus] (main) can-cache-application stopped in 0.017s

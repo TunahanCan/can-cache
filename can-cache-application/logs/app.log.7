@@ -1,68 +1,10 @@
-2025-09-29 00:15:24,579 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395214] WARN  [io.qua.config] (main) The "quarkus.log.file.enable" config property is deprecated and should not be used anymore.
-2025-09-29 00:15:24,580 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395214] WARN  [io.qua.config] (main) The "quarkus.log.console.enable" config property is deprecated and should not be used anymore.
-2025-09-29 00:15:24,706 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395214] INFO  [com.can.clu.coo.CoordinationService] (main) Coordination service started for node 127.0.0.1:18080, announcing 127.0.0.1:18080
-2025-09-29 00:15:24,770 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395214] ERROR [io.qua.run.Application] (main) Failed to start application: java.lang.RuntimeException: Failed to start quarkus
-	at io.quarkus.runner.ApplicationImpl.doStart(Unknown Source)
-	at io.quarkus.runtime.Application.start(Application.java:101)
-	at io.quarkus.runtime.ApplicationLifecycleManager.run(ApplicationLifecycleManager.java:119)
-	at io.quarkus.runtime.Quarkus.run(Quarkus.java:80)
-	at io.quarkus.runtime.Quarkus.run(Quarkus.java:51)
-	at com.can.CanCacheApplication.main(CanCacheApplication.java:19)
-	at io.quarkus.bootstrap.runner.QuarkusEntryPoint.doRun(QuarkusEntryPoint.java:69)
-	at io.quarkus.bootstrap.runner.QuarkusEntryPoint.main(QuarkusEntryPoint.java:37)
-Caused by: java.lang.IllegalStateException: Failed to bind cancached port
-	at com.can.net.CanCachedServer.start(CanCachedServer.java:102)
-	at com.can.net.CanCachedServer_Bean.doCreate(Unknown Source)
-	at com.can.net.CanCachedServer_Bean.create(Unknown Source)
-	at com.can.net.CanCachedServer_Bean.create(Unknown Source)
-	at io.quarkus.arc.impl.AbstractSharedContext.createInstanceHandle(AbstractSharedContext.java:119)
-	at io.quarkus.arc.impl.AbstractSharedContext$1.get(AbstractSharedContext.java:38)
-	at io.quarkus.arc.impl.AbstractSharedContext$1.get(AbstractSharedContext.java:35)
-	at io.quarkus.arc.impl.LazyValue.get(LazyValue.java:32)
-	at io.quarkus.arc.impl.ComputingCache.computeIfAbsent(ComputingCache.java:69)
-	at io.quarkus.arc.impl.ComputingCacheContextInstances.computeIfAbsent(ComputingCacheContextInstances.java:19)
-	at io.quarkus.arc.impl.AbstractSharedContext.get(AbstractSharedContext.java:35)
-	at com.can.net.CanCachedServer_Bean.get(Unknown Source)
-	at com.can.net.CanCachedServer_Bean.get(Unknown Source)
-	at io.quarkus.arc.impl.ArcContainerImpl.beanInstanceHandle(ArcContainerImpl.java:570)
-	at io.quarkus.arc.impl.ArcContainerImpl.beanInstanceHandle(ArcContainerImpl.java:550)
-	at io.quarkus.arc.impl.ArcContainerImpl.beanInstanceHandle(ArcContainerImpl.java:583)
-	at io.quarkus.arc.impl.ArcContainerImpl.instance(ArcContainerImpl.java:345)
-	at com.can.net.CanCachedServer_Observer_Synthetic_5GSOUVOyTKYW_lUDEzM6EpYYDvM.notify(Unknown Source)
-	at io.quarkus.arc.impl.EventImpl$Notifier.notifyObservers(EventImpl.java:365)
-	at io.quarkus.arc.impl.EventImpl$Notifier.notify(EventImpl.java:347)
-	at io.quarkus.arc.impl.EventImpl.fire(EventImpl.java:81)
-	at io.quarkus.arc.runtime.ArcRecorder.fireLifecycleEvent(ArcRecorder.java:163)
-	at io.quarkus.arc.runtime.ArcRecorder.handleLifecycleEvents(ArcRecorder.java:114)
-	at io.quarkus.runner.recorded.LifecycleEventsBuildStep$startupEvent1144526294.deploy_0(Unknown Source)
-	at io.quarkus.runner.recorded.LifecycleEventsBuildStep$startupEvent1144526294.deploy(Unknown Source)
-	... 8 more
-Caused by: java.util.concurrent.CompletionException: java.net.BindException: Address already in use
-	at java.base/java.util.concurrent.CompletableFuture.wrapInCompletionException(CompletableFuture.java:325)
-	at java.base/java.util.concurrent.CompletableFuture.reportJoin(CompletableFuture.java:459)
-	at java.base/java.util.concurrent.CompletableFuture.join(CompletableFuture.java:2164)
-	at com.can.net.CanCachedServer.start(CanCachedServer.java:100)
-	... 32 more
-Caused by: java.net.BindException: Address already in use
-	at java.base/sun.nio.ch.Net.bind0(Native Method)
-	at java.base/sun.nio.ch.Net.bind(Net.java:511)
-	at java.base/sun.nio.ch.ServerSocketChannelImpl.netBind(ServerSocketChannelImpl.java:335)
-	at java.base/sun.nio.ch.ServerSocketChannelImpl.bind(ServerSocketChannelImpl.java:297)
-	at io.netty.channel.socket.nio.NioServerSocketChannel.doBind(NioServerSocketChannel.java:141)
-	at io.netty.channel.AbstractChannel$AbstractUnsafe.bind(AbstractChannel.java:561)
-	at io.netty.channel.DefaultChannelPipeline$HeadContext.bind(DefaultChannelPipeline.java:1281)
-	at io.netty.channel.AbstractChannelHandlerContext.invokeBind(AbstractChannelHandlerContext.java:600)
-	at io.netty.channel.AbstractChannelHandlerContext.bind(AbstractChannelHandlerContext.java:579)
-	at io.netty.channel.DefaultChannelPipeline.bind(DefaultChannelPipeline.java:922)
-	at io.netty.channel.AbstractChannel.bind(AbstractChannel.java:259)
-	at io.netty.bootstrap.AbstractBootstrap$2.run(AbstractBootstrap.java:380)
-	at io.netty.util.concurrent.AbstractEventExecutor.runTask(AbstractEventExecutor.java:173)
-	at io.netty.util.concurrent.AbstractEventExecutor.safeExecute(AbstractEventExecutor.java:166)
-	at io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasksFrom(SingleThreadEventExecutor.java:428)
-	at io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks(SingleThreadEventExecutor.java:377)
-	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:557)
-	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:998)
-	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
-	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
-	at java.base/java.lang.Thread.run(Thread.java:1447)
-
+2025-09-29 00:15:36,057 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] WARN  [io.qua.config] (main) The "quarkus.log.file.enable" config property is deprecated and should not be used anymore.
+2025-09-29 00:15:36,057 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] WARN  [io.qua.config] (main) The "quarkus.log.console.enable" config property is deprecated and should not be used anymore.
+2025-09-29 00:15:36,184 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [com.can.clu.coo.CoordinationService] (main) Coordination service started for node 127.0.0.1:18080, announcing 127.0.0.1:18080
+2025-09-29 00:15:36,225 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [com.can.net.CanCachedServer] (main) cancached-compatible server listening on 0.0.0.0:11211
+2025-09-29 00:15:36,235 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [com.can.met.MetricsReporter] (main) Metrics endpoint started on 0.0.0.0:9000/metrics
+2025-09-29 00:15:36,238 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [com.can.clu.coo.ReplicationServer] (main) Replication server listening on 0.0.0.0:18080 (advertised as 127.0.0.1:18080)
+2025-09-29 00:15:36,239 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [io.quarkus] (main) can-cache-application 0.0.1-SNAPSHOT on JVM (powered by Quarkus 3.28.1) started in 0.449s. 
+2025-09-29 00:15:36,240 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [io.quarkus] (main) Profile prod activated. 
+2025-09-29 00:15:36,240 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [io.quarkus] (main) Installed features: [cdi, smallrye-context-propagation, vertx]
+2025-09-29 00:15:38,961 tnnhn-asus /home/tnnhn/.sdkman/candidates/java/24-amzn/bin/java[395393] INFO  [io.quarkus] (main) can-cache-application stopped in 0.036s
