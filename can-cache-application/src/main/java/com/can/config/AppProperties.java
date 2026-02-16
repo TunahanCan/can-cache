@@ -23,6 +23,7 @@ public interface AppProperties
     Cluster cluster();
     Network network();
     Cancache cancache();
+    Agent agent();
 
     interface Metrics {
 
@@ -143,6 +144,24 @@ public interface AppProperties
 
         @WithDefault("16")
         int maxCasRetries();
+    }
+
+    interface Agent
+    {
+        @WithDefault("false")
+        boolean enabled();
+
+        @WithDefault("127.0.0.1")
+        String host();
+
+        @WithDefault("11211")
+        int port();
+
+        @WithDefault("PT5S")
+        java.time.Duration probeInterval();
+
+        @WithDefault("PT1S")
+        java.time.Duration connectTimeout();
     }
 
 }

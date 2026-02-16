@@ -205,11 +205,29 @@ The most important keys waiting under `application.properties`:
 | `app.cancache.max-item-size-bytes` | Maximum size (bytes) for a single value. | 1048576 |
 | `app.cancache.max-cas-retries` | Retry count for failed CAS operations. | 16 |
 | `app.network.host/port/backlog/event-loop-threads/worker-threads` | Settings for the cancached TCP server. | 0.0.0.0 / 11211 / 128 / 8 / 16 |
+| `app.agent.enabled/host/port/probe-interval/connect-timeout` | Optional can-cache-agent connectivity probe + status logging. | false / 127.0.0.1 / 11211 / PT5S / PT1S |
 | `app.network.agreement-pack-message` | Multicast handshake payload for discovery. | HELLO |
 | `app.load-balancer.enabled/host/port/backlog/connect-timeout-millis` | Settings consumed by the dedicated load balancer TCP front end. | true / 0.0.0.0 / 12000 / 128 / 3000 |
 | `app.metrics.replication-role` | Label for Micrometer tags (ex: coordinator, replica). | coordinator |
 
 ### Dedicated load balancer service
+
+### can-cache-agent integration
+
+When you run multiple `can-cache` instances behind **Can-Cache-Agent**, keep cache nodes on an internal port (for example `11212`) and expose only the agent externally on `11211`.
+
+1. On cache nodes set `app.network.port=11212` (already default in `can-cache-application/src/main/resources/application.properties`).
+2. In the same deployment enable the built-in probe so each cache instance automatically checks agent reachability:
+
+```properties
+app.agent.enabled=true
+app.agent.host=can-cache-agent
+app.agent.port=11211
+app.agent.probe-interval=PT5S
+app.agent.connect-timeout=PT1S
+```
+
+With this configuration, each instance logs `Connected to can-cache-agent ...` when reachable and `Lost connectivity ...` on failures, which makes Kubernetes/pod logs enough to monitor edge connectivity without adding K8s API permissions.
 
 To avoid starting a front end on every cache JVM, run the standalone module once and point clients to it:
 
