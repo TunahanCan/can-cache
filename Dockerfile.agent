@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1
+
+FROM maven:3.9.11-eclipse-temurin-25 AS build
+WORKDIR /workspace/app
+
+COPY pom.xml ./
+COPY mvnw ./
+COPY .mvn .mvn
+COPY can-cache-agent/pom.xml can-cache-agent/pom.xml
+
+RUN chmod +x mvnw
+RUN ./mvnw -B -pl can-cache-agent -am dependency:go-offline
+
+COPY can-cache-agent/src can-cache-agent/src
+RUN ./mvnw -B -pl can-cache-agent -am clean package -DskipTests
+
+FROM eclipse-temurin:25-jre
+WORKDIR /opt/can-cache-agent
+COPY --from=build /workspace/app/can-cache-agent/target/quarkus-app ./quarkus-app
+
+EXPOSE 11211 11311
+ENTRYPOINT ["java","-jar","/opt/can-cache-agent/quarkus-app/quarkus-run.jar"]
