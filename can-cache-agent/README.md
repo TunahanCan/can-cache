@@ -21,6 +21,7 @@
 - Health checks and upstream status tracking.
 - Selection policies: `RR` and `LEAST_CONN`.
 - Terminal dashboard (`tui`) and configurable dashboard modes.
+- REST status endpoint for connected instances and recent connection state (`GET /agent/instances`).
 
 ### Registration protocol
 
@@ -35,6 +36,16 @@ Example:
 ```text
 REGISTER 10.42.1.9 11212
 ```
+
+### REST status endpoint
+
+When dashboard output in terminal is not enough, use:
+
+```bash
+curl http://localhost:8080/agent/instances
+```
+
+This endpoint returns current instance list, health state, active/total connections, traffic counters, latest events, and recent connection summaries.
 
 ### Quick run
 
@@ -91,6 +102,16 @@ REGISTER <host> <port>
 ```text
 REGISTER 10.42.1.9 11212
 ```
+
+### REST durum endpoint
+
+Terminal dashboard yerine dışarıdan gözlemek için:
+
+```bash
+curl http://localhost:8080/agent/instances
+```
+
+Bu endpoint; anlık instance listesi, sağlık durumu, aktif/toplam bağlantı sayıları, trafik sayaçları, son eventler ve son bağlantı özetlerini JSON olarak döner.
 
 ### Hızlı çalıştırma
 
