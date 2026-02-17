@@ -36,6 +36,7 @@ public class CanCacheAgentConnector {
     private final AtomicBoolean healthy = new AtomicBoolean(false);
     private final AtomicBoolean probing = new AtomicBoolean(false);
     private final AtomicBoolean registering = new AtomicBoolean(false);
+    private final AtomicBoolean registrationHealthy = new AtomicBoolean(false);
 
     private NetClient netClient;
     private long timerId = -1L;
@@ -180,19 +181,37 @@ public class CanCacheAgentConnector {
                 .onSuccess(socket -> socket.write(Buffer.buffer(registrationLine))
                         .onComplete(done -> {
                             socket.close();
-                            if (done.failed() && LOG.isDebugEnabled()) {
-                                LOG.debugf(done.cause(), "can-cache-agent registration write failed for %s:%d",
-                                        advertisedHost, servicePort);
+                            if (done.succeeded()) {
+                                onRegistrationResult(true, null, advertisedHost, servicePort);
+                            } else {
+                                onRegistrationResult(false, done.cause(), advertisedHost, servicePort);
                             }
                             registering.set(false);
                         }))
                 .onFailure(error -> {
-                    if (LOG.isDebugEnabled()) {
-                        LOG.debugf(error, "can-cache-agent registration failed at %s:%d",
-                                agentConfig.host(), agentConfig.registrationPort());
-                    }
+                    onRegistrationResult(false, error, advertisedHost, servicePort);
                     registering.set(false);
                 });
+    }
+
+    private void onRegistrationResult(boolean success, Throwable error, String advertisedHost, int servicePort) {
+        boolean previous = registrationHealthy.getAndSet(success);
+        if (previous == success) {
+            if (!success && LOG.isDebugEnabled()) {
+                LOG.debugf(error, "can-cache-agent registration still failing via %s:%d for %s:%d",
+                        agentConfig.host(), agentConfig.registrationPort(), advertisedHost, servicePort);
+            }
+            return;
+        }
+
+        if (success) {
+            LOG.infof("Registered to can-cache-agent via %s:%d as %s:%d",
+                    agentConfig.host(), agentConfig.registrationPort(), advertisedHost, servicePort);
+            return;
+        }
+
+        LOG.warnf(error, "Lost can-cache-agent registration connectivity via %s:%d for %s:%d",
+                agentConfig.host(), agentConfig.registrationPort(), advertisedHost, servicePort);
     }
 
     private String resolveAdvertisedHost() {
