@@ -214,28 +214,38 @@ The most important keys waiting under `application.properties`:
 
 ### can-cache-agent integration
 
-When you run multiple `can-cache` instances behind **Can-Cache-Agent**, keep cache nodes on an internal port (for example `11212`) and expose only the agent externally on `11211`.
+When running multiple `can-cache` instances, the recommended topology is to expose only **can-cache-agent** to clients and keep application instances on an internal service port.
 
-1. On cache nodes set `app.network.port=11212` (already default in `can-cache-application/src/main/resources/application.properties`).
-2. In the same deployment enable the built-in probe so each cache instance automatically checks agent reachability:
+1. In `can-cache-application` keep cache listener internal (for example `app.network.port=11212`).
+2. Enable agent integration and registration heartbeat in each application instance:
 
 ```properties
 app.agent.enabled=true
 app.agent.host=can-cache-agent
 app.agent.port=11211
+app.agent.registration-port=11311
+app.agent.advertised-host=10.42.1.9
 app.agent.probe-interval=PT5S
 app.agent.connect-timeout=PT1S
 app.agent.startup-wait=PT30S
 app.agent.required-on-startup=true
 ```
 
-With this configuration, each instance logs `Connected to can-cache-agent ...` when reachable and `Lost connectivity ...` on failures. If `app.agent.required-on-startup=true`, node startup is blocked until the agent is reachable (or until `app.agent.startup-wait` expires), so agent becomes the enforced external entry point while cache nodes keep serving only internal traffic.
+3. Configure `can-cache-agent` registration listener:
 
-To avoid starting a front end on every cache JVM, run the standalone module once and point clients to it:
+```yaml
+agent:
+  listen:
+    port: 11211
+  registration:
+    enabled: true
+    host: 0.0.0.0
+    port: 11311
+    ttl: PT15S
+    cleanup-interval: PT2S
+```
 
-1. Configure the service (if needed) via the `app.load-balancer.*` keys in the load balancer module's `application.properties`.
-2. Launch the front end with `./mvnw -f load-balancer/pom.xml quarkus:dev` (or package it via `./mvnw -f load-balancer/pom.xml package`).
-3. Point clients to the configured `app.load-balancer.host:port` pair; the service will fan out requests to healthy cache members.
+Each cache node sends `REGISTER <host> <port>` heartbeats to the agent registration port. Agent merges registered nodes with DNS-discovered nodes, health-checks them, and serves all client traffic from a single external port (`agent.listen.port`).
 
 ## Project Layout
 

@@ -157,6 +157,12 @@ public interface AppProperties
         @WithDefault("11211")
         int port();
 
+        @WithDefault("11311")
+        int registrationPort();
+
+        @WithDefault("")
+        String advertisedHost();
+
         @WithDefault("PT5S")
         java.time.Duration probeInterval();
 

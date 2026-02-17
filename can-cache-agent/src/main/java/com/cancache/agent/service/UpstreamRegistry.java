@@ -12,15 +12,37 @@ import java.util.concurrent.ConcurrentMap;
 public class UpstreamRegistry {
 
     private final ConcurrentMap<String, NodeStats> nodes = new ConcurrentHashMap<>();
+    private final Set<String> discoveredAddresses = ConcurrentHashMap.newKeySet();
+    private final ConcurrentMap<String, Long> registeredUntilEpochMillis = new ConcurrentHashMap<>();
 
-    public void replace(List<String> ips, int port) {
-        Set<String> expected = new HashSet<>();
+    public synchronized void replace(List<String> ips, int port) {
+        Set<String> nextDiscovered = new HashSet<>();
         for (String ip : ips) {
             String address = ip + ":" + port;
-            expected.add(address);
+            nextDiscovered.add(address);
             nodes.computeIfAbsent(address, NodeStats::new);
         }
-        nodes.keySet().removeIf(key -> !expected.contains(key));
+
+        discoveredAddresses.clear();
+        discoveredAddresses.addAll(nextDiscovered);
+        pruneOrphans();
+    }
+
+    public void register(String host, int port, long ttlMillis) {
+        String address = host + ":" + port;
+        nodes.computeIfAbsent(address, NodeStats::new);
+        long expiresAt = System.currentTimeMillis() + Math.max(1000L, ttlMillis);
+        registeredUntilEpochMillis.put(address, expiresAt);
+    }
+
+    public void cleanupExpiredRegistrations() {
+        long now = System.currentTimeMillis();
+        registeredUntilEpochMillis.entrySet().removeIf(e -> e.getValue() <= now);
+        pruneOrphans();
+    }
+
+    private synchronized void pruneOrphans() {
+        nodes.keySet().removeIf(key -> !discoveredAddresses.contains(key) && !registeredUntilEpochMillis.containsKey(key));
     }
 
     public List<NodeStats> all() {
