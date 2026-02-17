@@ -2,16 +2,10 @@ name: can-cache-stack
 
 services:
   can-cache-agent:
-    image: maven:3.9.11-eclipse-temurin-25
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
     container_name: can-cache-agent
-    working_dir: /workspace
-    volumes:
-      - ./:/workspace
-      - maven-repo:/root/.m2
-    command: >
-      bash -lc "chmod +x mvnw &&
-      ./mvnw -B -pl can-cache-agent -am package -DskipTests &&
-      java -jar can-cache-agent/target/quarkus-app/quarkus-run.jar"
     environment:
       AGENT_LISTEN_HOST: 0.0.0.0
       AGENT_LISTEN_PORT: 11211
@@ -65,8 +59,6 @@ services:
     networks:
       - can-cache-net
 
-volumes:
-  maven-repo:
 
 networks:
   can-cache-net:
