@@ -1,50 +1,119 @@
-Can-Cache-Agent
-Can-Cache-Agent is a Quarkus + Vert.x TCP edge proxy for Can-Cache (memcached-compatible) nodes running on Kubernetes.
+# can-cache-agent
 
-Features
-L4 TCP proxy on a single external port (11211 by default)
-Kubernetes DNS-based upstream discovery (no K8s API / RBAC)
-Application-driven upstream registration channel (cache nodes self-register)
-Async health checks with UP/DOWN/UNKNOWN state tracking
-Selection policies: RR and LEAST_CONN
-Backpressure-aware byte forwarding with pause/resume + drainHandler
-Terminal dashboard (ANSI TUI) when running in TTY
-Snapshot logging mode for non-TTY environments (pods/log collectors)
-Run
-mvn quarkus:dev
-or package:
+<div align="center">
+  <a href="#english">🇬🇧 English</a>
+  &nbsp;|&nbsp;
+  <a href="#turkce">🇹🇷 Türkçe</a>
+</div>
 
-mvn package
-java -jar target/quarkus-app/quarkus-run.jar
-Configuration
-See src/main/resources/application.yaml.
+---
 
-Important defaults:
+<a id="english"></a>
+## English
 
-agent.listen.host=0.0.0.0
-agent.listen.port=11211
-agent.registration.enabled=true
-agent.registration.host=0.0.0.0
-agent.registration.port=11311
-agent.registration.ttl=15s
-agent.registration.cleanup-interval=2s
-agent.discovery.dns=cache-headless.default.svc.cluster.local
-agent.discovery.interval=5s
-agent.health.interval=2s
-agent.health.connect-timeout=1500ms
-agent.selection.policy=RR
-agent.timeouts.idle=60s
-agent.dashboard.mode=auto (auto, tui, log, compact)
-compact mode keeps a single snapshot line updated in place (no scrolling) and is useful for attached terminals where full TUI is not desired.
+`can-cache-agent` is a Quarkus + Vert.x TCP edge proxy designed for `can-cache` clusters.
 
-Registration protocol
-Each cache instance can register itself to the agent by opening a TCP connection to `agent.registration.port` and writing:
+### Core capabilities
 
-REGISTER <host> <port>\n
+- Single external TCP listener (`agent.listen.port`, default `11211`).
+- Upstream discovery by DNS (`agent.discovery.dns`) and optional app-driven registration.
+- Registration protocol support on `agent.registration.port` (default `11311`).
+- Health checks and upstream status tracking.
+- Selection policies: `RR` and `LEAST_CONN`.
+- Terminal dashboard (`tui`) and configurable dashboard modes.
+
+### Registration protocol
+
+Cache nodes can register themselves by opening a TCP connection to registration port and sending:
+
+```text
+REGISTER <host> <port>
+```
+
 Example:
-REGISTER 10.42.1.9 11212
 
-Keyboard commands (TUI mode)
-q: quit
-r: force DNS refresh
-h: help event
+```text
+REGISTER 10.42.1.9 11212
+```
+
+### Quick run
+
+```bash
+./mvnw -f can-cache-agent/pom.xml quarkus:dev
+```
+
+Package + run:
+
+```bash
+./mvnw -f can-cache-agent/pom.xml package
+java -jar can-cache-agent/target/quarkus-app/quarkus-run.jar
+```
+
+### Key configuration
+
+See `src/main/resources/application.yaml`.
+
+- `agent.listen.host/port`
+- `agent.registration.enabled/host/port/ttl/cleanup-interval`
+- `agent.discovery.dns/interval`
+- `agent.health.interval/connect-timeout`
+- `agent.selection.policy`
+- `agent.timeouts.idle`
+- `agent.dashboard.mode/refresh/snapshot-interval`
+- `agent.shutdown.grace`
+
+---
+
+<a id="turkce"></a>
+## Türkçe
+
+`can-cache-agent`, `can-cache` kümeleri için tasarlanmış Quarkus + Vert.x tabanlı bir TCP edge proxy'dir.
+
+### Temel yetenekler
+
+- Tek dış TCP dinleme noktası (`agent.listen.port`, varsayılan `11211`).
+- DNS ile upstream keşfi (`agent.discovery.dns`) ve opsiyonel uygulama tabanlı kayıt.
+- `agent.registration.port` (varsayılan `11311`) üzerinden kayıt protokolü desteği.
+- Sağlık kontrolleri ve upstream durum takibi.
+- Seçim politikaları: `RR` ve `LEAST_CONN`.
+- Terminal dashboard (`tui`) ve yapılandırılabilir dashboard modları.
+
+### Kayıt protokolü
+
+Cache node'ları, registration portuna TCP bağlantısı açıp şu satırı göndererek kendini kaydedebilir:
+
+```text
+REGISTER <host> <port>
+```
+
+Örnek:
+
+```text
+REGISTER 10.42.1.9 11212
+```
+
+### Hızlı çalıştırma
+
+```bash
+./mvnw -f can-cache-agent/pom.xml quarkus:dev
+```
+
+Paketleyip çalıştırma:
+
+```bash
+./mvnw -f can-cache-agent/pom.xml package
+java -jar can-cache-agent/target/quarkus-app/quarkus-run.jar
+```
+
+### Önemli konfigürasyon alanları
+
+`src/main/resources/application.yaml` dosyasına bakın.
+
+- `agent.listen.host/port`
+- `agent.registration.enabled/host/port/ttl/cleanup-interval`
+- `agent.discovery.dns/interval`
+- `agent.health.interval/connect-timeout`
+- `agent.selection.policy`
+- `agent.timeouts.idle`
+- `agent.dashboard.mode/refresh/snapshot-interval`
+- `agent.shutdown.grace`
