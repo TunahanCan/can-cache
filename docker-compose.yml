@@ -1,0 +1,73 @@
+name: can-cache-stack
+
+services:
+  can-cache-agent:
+    image: maven:3.9.11-eclipse-temurin-25
+    container_name: can-cache-agent
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+      - maven-repo:/root/.m2
+    command: >
+      bash -lc "chmod +x mvnw &&
+      ./mvnw -B -pl can-cache-agent -am package -DskipTests &&
+      java -jar can-cache-agent/target/quarkus-app/quarkus-run.jar"
+    environment:
+      AGENT_LISTEN_HOST: 0.0.0.0
+      AGENT_LISTEN_PORT: 11211
+      AGENT_REGISTRATION_ENABLED: "true"
+      AGENT_REGISTRATION_HOST: 0.0.0.0
+      AGENT_REGISTRATION_PORT: 11311
+      AGENT_DISCOVERY_DNS: localhost
+      AGENT_DASHBOARD_MODE: logs
+      QUARKUS_LOG_LEVEL: INFO
+    ports:
+      - "11211:11211"
+      - "11311:11311"
+    networks:
+      - can-cache-net
+
+  can-cache-app-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: can-cache-app-1
+    environment:
+      APP_NETWORK_PORT: 11212
+      APP_AGENT_ENABLED: "true"
+      APP_AGENT_HOST: can-cache-agent
+      APP_AGENT_PORT: 11211
+      APP_AGENT_REGISTRATION_PORT: 11311
+      APP_AGENT_ADVERTISED_HOST: can-cache-app-1
+      APP_CLUSTER_DISCOVERY_NODE_ID: can-cache-app-1
+      APP_CLUSTER_REPLICATION_ADVERTISE_HOST: can-cache-app-1
+    depends_on:
+      - can-cache-agent
+    networks:
+      - can-cache-net
+
+  can-cache-app-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: can-cache-app-2
+    environment:
+      APP_NETWORK_PORT: 11212
+      APP_AGENT_ENABLED: "true"
+      APP_AGENT_HOST: can-cache-agent
+      APP_AGENT_PORT: 11211
+      APP_AGENT_REGISTRATION_PORT: 11311
+      APP_AGENT_ADVERTISED_HOST: can-cache-app-2
+      APP_CLUSTER_DISCOVERY_NODE_ID: can-cache-app-2
+      APP_CLUSTER_REPLICATION_ADVERTISE_HOST: can-cache-app-2
+    depends_on:
+      - can-cache-agent
+    networks:
+      - can-cache-net
+
+volumes:
+  maven-repo:
+
+networks:
+  can-cache-net:
+    driver: bridge
