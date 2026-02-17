@@ -20,6 +20,8 @@ public interface AgentConfig {
 
     Timeouts timeouts();
 
+    Registration registration();
+
     Dashboard dashboard();
 
     Shutdown shutdown();
@@ -76,6 +78,23 @@ public interface AgentConfig {
 
         @WithDefault("5s")
         Duration snapshotInterval();
+    }
+
+    interface Registration {
+        @WithDefault("true")
+        boolean enabled();
+
+        @WithDefault("0.0.0.0")
+        String host();
+
+        @WithDefault("11311")
+        int port();
+
+        @WithDefault("15s")
+        Duration ttl();
+
+        @WithDefault("2s")
+        Duration cleanupInterval();
     }
 
     interface Shutdown {

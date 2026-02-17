@@ -25,6 +25,17 @@ Komutlar ayrıştırıldıktan sonra `ClusterClient` ile kümeye iletilir.
 Okuma/yazma işlemleri hedef düğümlerin `CacheEngine` örneklerine ulaşır, TTL ve tahliye politikaları burada yürütülür.
 Opsiyonel snapshot ve metrik bileşenleri sistemi kalıcı ve gözlemlenebilir kılar.
 
+### 2.1 Can-Cache-Agent ile Çoklu Instance Yönetimi
+Çoklu instance senaryosunda dış dünyaya açılan tek kapı `can-cache-agent` olmalıdır. Bunun için:
+- Her `can-cache-application` instance'ı kendi internal portunda (`app.network.port`, örn. `11212`) dinler.
+- Uygulama `CanCacheAgentConnector` ile agent'a hem erişilebilirlik probe'u gönderir hem de `REGISTER <host> <port>` mesajı ile kendini `agent.registration.port` üstünden kaydeder.
+- Agent tarafındaki `RegistrationService`, gelen kayıtları `UpstreamRegistry` içine TTL ile işler; DNS discovery kayıtlarıyla birleştirir ve HealthService ile canlılık kontrolü yapar.
+- Sonuç olarak client trafiği sadece agent'ın `agent.listen.port` kapısına gelir, load balancing ve upstream seçimleri agent üzerinde tamamlanır.
+
+Önerilen temel ayarlar:
+- Application: `app.agent.enabled=true`, `app.agent.port=11211`, `app.agent.registration-port=11311`, `app.agent.advertised-host=<pod-ip-or-service-dns>`
+- Agent: `agent.listen.port=11211`, `agent.registration.enabled=true`, `agent.registration.port=11311`, `agent.registration.ttl=PT15S`
+
 ### Vert.x'e Genel Bakış ve Projedeki Yeri
 
 #### Vert.x nedir?
@@ -216,6 +227,17 @@ The server runs on Quarkus' built-in Vert.x `NetServer` component, which operate
 After the commands are parsed they are forwarded to the cluster via `ClusterClient`.
 Read/write operations reach the `CacheEngine` instances of the target nodes where TTL and eviction policies are enforced.
 Optional snapshot and metrics components keep the system persistent and observable.
+
+### 2.1 Managing Multiple Instances with Can-Cache-Agent
+In multi-instance deployments, only `can-cache-agent` should be exposed externally.
+- Each `can-cache-application` node listens on an internal cache port (`app.network.port`, e.g. `11212`).
+- `CanCacheAgentConnector` now sends both availability probes and periodic `REGISTER <host> <port>` messages to `agent.registration.port`.
+- On agent side, `RegistrationService` accepts registrations, stores them in `UpstreamRegistry` with TTL, merges them with DNS-discovered entries, and lets `HealthService` track their readiness.
+- Clients connect to a single external agent port (`agent.listen.port`), while load balancing stays centralized in agent.
+
+Recommended baseline configuration:
+- Application: `app.agent.enabled=true`, `app.agent.port=11211`, `app.agent.registration-port=11311`, `app.agent.advertised-host=<pod-ip-or-service-dns>`
+- Agent: `agent.listen.port=11211`, `agent.registration.enabled=true`, `agent.registration.port=11311`, `agent.registration.ttl=PT15S`
 
 ### Overview of Vert.x and Its Role in the Project
 

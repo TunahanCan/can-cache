@@ -13,6 +13,14 @@ agent:
   upstream:
     port: 11212
 
+
+  registration:
+    enabled: true
+    host: 0.0.0.0
+    port: 11311
+    ttl: PT15S
+    cleanup-interval: PT2S
+
   # Health probing
   health:
     interval: PT2S

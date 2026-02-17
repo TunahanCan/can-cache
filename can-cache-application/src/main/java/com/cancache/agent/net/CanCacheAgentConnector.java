@@ -4,6 +4,7 @@ import com.cancache.agent.config.AppProperties;
 import io.quarkus.runtime.Startup;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetClientOptions;
 import jakarta.annotation.PostConstruct;
@@ -12,6 +13,8 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jboss.logging.Logger;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -28,8 +31,11 @@ public class CanCacheAgentConnector {
 
     private final Vertx vertx;
     private final AppProperties.Agent agentConfig;
+    private final AppProperties.Network networkConfig;
+    private final AppProperties.Cluster clusterConfig;
     private final AtomicBoolean healthy = new AtomicBoolean(false);
     private final AtomicBoolean probing = new AtomicBoolean(false);
+    private final AtomicBoolean registering = new AtomicBoolean(false);
 
     private NetClient netClient;
     private long timerId = -1L;
@@ -38,6 +44,8 @@ public class CanCacheAgentConnector {
     public CanCacheAgentConnector(Vertx vertx, AppProperties properties) {
         this.vertx = Objects.requireNonNull(vertx, "vertx");
         this.agentConfig = Objects.requireNonNull(properties.agent(), "agentConfig");
+        this.networkConfig = Objects.requireNonNull(properties.network(), "networkConfig");
+        this.clusterConfig = Objects.requireNonNull(properties.cluster(), "clusterConfig");
     }
 
     @PostConstruct
@@ -58,8 +66,12 @@ public class CanCacheAgentConnector {
 
         Duration probeInterval = sanitizeDuration(agentConfig.probeInterval(), Duration.ofSeconds(5));
         long periodMillis = Math.max(250L, probeInterval.toMillis());
-        timerId = vertx.setPeriodic(periodMillis, id -> probeAgent());
+        timerId = vertx.setPeriodic(periodMillis, id -> {
+            probeAgent();
+            registerToAgent();
+        });
         probeAgent();
+        registerToAgent();
 
         LOG.infof("can-cache-agent connector enabled, probing %s:%d every %d ms",
                 agentConfig.host(), agentConfig.port(), periodMillis);
@@ -153,6 +165,57 @@ public class CanCacheAgentConnector {
                     onProbeResult(false, error);
                     probing.set(false);
                 });
+    }
+
+    private void registerToAgent() {
+        if (!agentConfig.enabled() || netClient == null || !registering.compareAndSet(false, true)) {
+            return;
+        }
+
+        String advertisedHost = resolveAdvertisedHost();
+        int servicePort = networkConfig.port();
+        String registrationLine = "REGISTER " + advertisedHost + " " + servicePort + "\n";
+
+        netClient.connect(agentConfig.registrationPort(), agentConfig.host())
+                .onSuccess(socket -> socket.write(Buffer.buffer(registrationLine))
+                        .onComplete(done -> {
+                            socket.close();
+                            if (done.failed() && LOG.isDebugEnabled()) {
+                                LOG.debugf(done.cause(), "can-cache-agent registration write failed for %s:%d",
+                                        advertisedHost, servicePort);
+                            }
+                            registering.set(false);
+                        }))
+                .onFailure(error -> {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debugf(error, "can-cache-agent registration failed at %s:%d",
+                                agentConfig.host(), agentConfig.registrationPort());
+                    }
+                    registering.set(false);
+                });
+    }
+
+    private String resolveAdvertisedHost() {
+        String configured = agentConfig.advertisedHost();
+        if (configured != null && !configured.isBlank()) {
+            return configured.trim();
+        }
+
+        String replicationAdvertise = clusterConfig.replication().advertiseHost();
+        if (replicationAdvertise != null && !replicationAdvertise.isBlank() && !"0.0.0.0".equals(replicationAdvertise)) {
+            return replicationAdvertise.trim();
+        }
+
+        String networkHost = networkConfig.host();
+        if (networkHost != null && !networkHost.isBlank() && !"0.0.0.0".equals(networkHost)) {
+            return networkHost.trim();
+        }
+
+        try {
+            return InetAddress.getLocalHost().getHostAddress();
+        } catch (UnknownHostException e) {
+            return "127.0.0.1";
+        }
     }
 
     private void onProbeResult(boolean isHealthy, Throwable error) {
