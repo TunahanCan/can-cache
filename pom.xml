@@ -17,5 +17,6 @@
         <module>can-cache-application</module>
         <module>can-cache-integration-tests</module>
         <module>can-cache-performance-tests</module>
+        <module>can-cache-agent</module>
     </modules>
 </project>

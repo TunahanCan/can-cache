@@ -1,0 +1,42 @@
+# Can-Cache-Agent Configuration
+
+agent:
+  listen:
+    host: 0.0.0.0
+    port: 11211
+
+  # Upstream discovery via Kubernetes DNS A records
+  discovery:
+    dns: cache-headless.default.svc.cluster.local
+    interval: PT5S
+
+  upstream:
+    port: 11212
+
+  # Health probing
+  health:
+    interval: PT2S
+    connect-timeout: PT1.5S
+
+  # Selection policy: RR | LEAST_CONN
+  selection:
+    policy: RR
+
+  # Connection timeout behavior
+  timeouts:
+    idle: PT60S
+
+  # Dashboard behavior
+  dashboard:
+    refresh: PT1S
+    mode: tui
+    snapshot-interval: PT5S
+
+  # Graceful shutdown timeout
+  shutdown:
+    grace: PT5S
+
+# Quarkus settings
+quarkus:
+  banner:
+    enabled: true

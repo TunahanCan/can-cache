@@ -84,7 +84,7 @@
       </ThreadGroup>
       <hashTree>
         <JavaSampler guiclass="JavaTestSamplerGui" testclass="JavaSampler" testname="cancached Round Trip" enabled="true">
-          <stringProp name="classname">com.can.cache.perf.CancachedRoundTripSampler</stringProp>
+          <stringProp name="classname">perf.cache.com.cancache.agent.CancachedRoundTripSampler</stringProp>
           <elementProp name="arguments" elementType="Arguments">
             <collectionProp name="Arguments.arguments">
               <elementProp name="targetHost" elementType="Argument">
