@@ -87,6 +87,15 @@ Run agent:
 
 Clients connect only to the agent (`agent.listen.port`), while agent balances traffic across healthy cache nodes.
 
+Run one local agent + two local cache nodes:
+
+```bash
+./local-setup.sh start
+./local-setup.sh status
+# connect client to 127.0.0.1:11211
+./local-setup.sh stop
+```
+
 ### Documentation index
 
 - Detailed architecture: `help.md`
@@ -169,6 +178,15 @@ Agent çalıştırma:
 ```
 
 İstemciler sadece agent'a bağlanır (`agent.listen.port`), agent sağlıklı cache node'ları arasında trafiği dağıtır.
+
+Localde 1 agent + 2 cache node ayağa kaldırma:
+
+```bash
+./local-setup.sh start
+./local-setup.sh status
+# istemciyi 127.0.0.1:11211 adresine bağla
+./local-setup.sh stop
+```
 
 ### Doküman dizini
 
