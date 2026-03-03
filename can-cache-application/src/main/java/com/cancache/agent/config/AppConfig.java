@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * CDI tarafından yönetilen bu yapılandırma sınıfı, önbellek motoru, metrik
- * bileşenleri, snapshot alma mekanizması ve küme istemcisi gibi uygulamanın
+ * bileşenleri ve küme istemcisi gibi uygulamanın
  * çalışması için gerekli tüm tekil bean'leri üretir. Bean oluşturulurken
  * {@link AppProperties} üzerinden okunan değerler kullanılır ve yaşam döngüsü
  * boyunca gerekli kaynakların başlatılıp kapatılmasından sorumludur.

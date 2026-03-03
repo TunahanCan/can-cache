@@ -121,7 +121,6 @@ start_all() {
     -Dapp.network.port=11212 \
     -Dapp.cluster.replication.port=18081 \
     -Dapp.cluster.discovery.node-id=node-1 \
-    -Dapp.rdb.path=data-node-1.rdb \
     -Dapp.agent.enabled=true \
     -Dapp.agent.host=127.0.0.1 \
     -Dapp.agent.port=11211 \
@@ -135,7 +134,6 @@ start_all() {
     -Dapp.network.port=11213 \
     -Dapp.cluster.replication.port=18082 \
     -Dapp.cluster.discovery.node-id=node-2 \
-    -Dapp.rdb.path=data-node-2.rdb \
     -Dapp.agent.enabled=true \
     -Dapp.agent.host=127.0.0.1 \
     -Dapp.agent.port=11211 \

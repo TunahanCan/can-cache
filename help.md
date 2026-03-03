@@ -1,143 +1,249 @@
-# Help / Yardım
+# can-cache Yardım ve Mimari Rehberi
 
-<div align="center">
-  <a href="#tr">🇹🇷 Türkçe</a>
-  &nbsp;|&nbsp;
-  <a href="#en">🇬🇧 English</a>
-</div>
+Bu doküman, projeyi **ilk kez gören bir geliştiricinin** tek başına sistemi anlayıp çalıştırabilmesi için sıfırdan yazılmıştır.
 
 ---
 
-<a id="tr"></a>
-## Türkçe Mimari Dokümanı
+## 1) Proje Amacı
 
-Bu doküman, kod tabanındaki güncel mimariyi uçtan uca özetler ve eski/yanlış kalan noktaları temizlenmiş haliyle sunar.
+### Hangi problemi çözüyor?
+`can-cache`, memcached text protokolünü konuşan istemcilere düşük gecikmeli bir key/value cache sağlar. Sistem iki katmandan oluşur:
 
-### 1) Modül Haritası
+- **Cache sunucusu (`can-cache-application`)**: Veriyi bellekte tutar, TTL/CAS kurallarını uygular, cluster içinde çoğaltır.
+- **Edge/proxy (`can-cache-agent`)**: İstemcileri sağlıklı cache node’larına yönlendirir.
 
-- `can-cache-application`: Ana cache sunucusu.
-- `can-cache-agent`: Dış dünyaya açılan TCP proxy ve upstream yönetimi.
-- `can-cache-integration-tests`: Docker ile entegrasyon testleri.
-- `can-cache-performance-tests`: JMeter bazlı yük testleri.
-
-### 2) can-cache-application Akışı
-
-#### 2.1 Ağ katmanı
-- `CanCachedServer`, Vert.x `NetServer` ile memcached metin protokolünü işler.
-- `app.network.*` ayarları ile host/port/event-loop/worker thread davranışı yönetilir.
-
-#### 2.2 Veri katmanı
-- `CacheEngine` segmentli bir bellek modeli kullanır (`CacheSegment`).
-- TTL takibi `DelayQueue<ExpiringKey>` üzerinden çalışır.
-- CAS desteği `CacheValue`, `CasDecision`, `CasResult` modelleri ile sağlanır.
-
-#### 2.3 Kümeleme ve replikasyon
-- `ConsistentHashRing` + `HashFn` + sanal node yaklaşımıyla anahtar dağıtımı yapılır.
-- `ClusterClient`, local/remote düğüm yönlendirmesini gerçekleştirir.
-- `ReplicationServer` ve `RemoteNode`, düğümler arası veri kopyalama ve koordinasyonu taşır.
-- `HintedHandoffService`, ulaşılamayan düğümler için yazma ipuçlarını sıraya alır ve tekrar oynatır.
-
-#### 2.4 Dayanıklılık ve metrik
-- Snapshot altyapısı `app.rdb.path` ve `app.rdb.snapshot-interval-seconds` ile yönetilir.
-- Micrometer/Prometheus entegrasyonu `application.properties` içinde etkin durumdadır ve `/metrics` endpoint'i kullanılabilir.
-
-### 3) can-cache-agent Akışı
-
-- `TcpProxyServer`: Tek dış porttan istemci trafiğini alır.
-- `DiscoveryService`: DNS üzerinden upstream keşfeder.
-- `RegistrationService`: `REGISTER <host> <port>` ile gelen uygulama kayıtlarını TTL ile saklar.
-- `HealthService`: upstream sağlık kontrollerini yapar.
-- `UpstreamSelector`: `RR` veya `LEAST_CONN` ile hedef seçer.
-- `TuiDashboard`: TTY ortamında canlı görünüm sağlar.
-
-### 4) Konfigürasyon Kısa Rehberi
-
-#### Uygulama (can-cache-application)
-- `app.network.port=11211`
-- `app.cluster.replication.port=18080`
-- `app.cluster.discovery.multicast-group=230.0.0.1`
-- `app.cluster.discovery.multicast-port=45565`
-- `app.agent.enabled=true`
-- `app.agent.registration-port=11311`
-
-#### Agent (can-cache-agent)
-- `agent.listen.port=11211`
-- `agent.registration.enabled=true`
-- `agent.registration.port=11311`
-- `agent.discovery.dns=<headless-service-dns>`
-- `agent.selection.policy=RR`
-
-### 5) İşletim Notları
-
-- Çoklu instance senaryosunda istemcileri doğrudan cache node'larına değil agent'a yönlendirin.
-- Node başına unique `app.cluster.discovery.node-id` vermek operasyonel görünürlüğü artırır.
-- Üretimde snapshot yolu (`app.rdb.path`) kalıcı disk üzerinde olmalıdır.
-- Yük testlerinde `can-cache-performance-tests/README.md` içindeki profilleri (`small/medium/large/xl`) kullanın.
+### Çözüm yaklaşımı neden böyle?
+- Bellek içi tasarım: en düşük gecikme için.
+- Segmentli cache: eşzamanlı erişimde lock çakışmasını azaltmak için.
+- Consistent hashing + replication: ölçekleme ve kısmi node kaybında servis devamlılığı için.
+- Agent katmanı: istemci konfigürasyonunu sadeleştirmek (tek endpoint) için.
 
 ---
 
-<a id="en"></a>
-## English Architecture Document
+## 2) Modül Haritası
 
-This document summarizes the current end-to-end architecture and removes stale references.
+- `can-cache-application`
+  - `net`: memcached komut ayrıştırma ve yanıt üretimi (`CanCachedServer`).
+  - `core`: `CacheEngine`, TTL queue, eviction policy, CAS.
+  - `cluster`: ring yönlendirme, replication, hinted handoff, koordinasyon.
+  - `config`: CDI bean üretimi ve runtime wiring.
+- `can-cache-agent`
+  - TCP proxy, upstream discovery, registration, health check, seçim politikaları.
+- `can-cache-integration-tests`
+  - Docker ortamında protokol + metrik + cluster doğrulaması.
+- `can-cache-performance-tests`
+  - JMeter tabanlı NFR senaryoları.
 
-### 1) Module Map
+### System Context Diagram
+```mermaid
+flowchart LR
+    C[Client / SDK] -->|memcached text TCP| A[can-cache-agent]
+    A -->|proxy| N1[can-cache-application node-1]
+    A -->|proxy| N2[can-cache-application node-2]
+    N1 <-->|replication protocol| N2
+    N1 --> M[/metrics/]
+    N2 --> M
+```
 
-- `can-cache-application`: Main cache server.
-- `can-cache-agent`: Public TCP proxy and upstream management layer.
-- `can-cache-integration-tests`: Docker-based integration tests.
-- `can-cache-performance-tests`: JMeter-based load tests.
+### Container/Module Diagram
+```mermaid
+flowchart TB
+    subgraph app[can-cache-application]
+      NET[net/CanCachedServer]
+      CORE[core/CacheEngine + CacheSegment]
+      CL[cluster/ClusterClient + Ring]
+      COORD[cluster/coordination]
+      HH[HintedHandoffService]
+      NET --> CL --> CORE
+      COORD --> CL
+      CL --> HH
+    end
 
-### 2) can-cache-application Flow
+    subgraph agent[can-cache-agent]
+      PX[TcpProxyServer]
+      REG[RegistrationService]
+      DISC[DiscoveryService]
+      HL[HealthService]
+      SEL[UpstreamSelector]
+      PX --> SEL
+      REG --> SEL
+      DISC --> SEL
+      HL --> SEL
+    end
+```
 
-#### 2.1 Network layer
-- `CanCachedServer` handles the memcached text protocol through Vert.x `NetServer`.
-- `app.network.*` controls host/port/event-loop/worker-thread behavior.
+---
 
-#### 2.2 Data layer
-- `CacheEngine` uses segmented in-memory storage (`CacheSegment`).
-- TTL tracking is implemented via `DelayQueue<ExpiringKey>`.
-- CAS semantics are modeled with `CacheValue`, `CasDecision`, and `CasResult`.
+## 3) Uçtan Uca Request Yaşam Döngüsü
 
-#### 2.3 Clustering and replication
-- Key distribution uses `ConsistentHashRing` + `HashFn` + virtual nodes.
-- `ClusterClient` routes commands to local or remote nodes.
-- `ReplicationServer` and `RemoteNode` handle inter-node replication.
-- `HintedHandoffService` queues writes for unreachable members and replays them later.
+### Normal akış (SET/GET)
+1. Client, agent’a TCP bağlantısı açar.
+2. Agent, sağlıklı upstream seçer (`RR` veya `LEAST_CONN`).
+3. Uygulama node’u komutu parse eder.
+4. `ClusterClient`, key’in owner node’unu ring üzerinden bulur.
+5. Yazma ise replication factor kadar node’a gönderir; quorum sağlanırsa başarı döner.
+6. Okuma ise owner/replica’dan değer döner.
 
-#### 2.4 Durability and metrics
-- Snapshot behavior is driven by `app.rdb.path` and `app.rdb.snapshot-interval-seconds`.
-- Micrometer/Prometheus integration is enabled in `application.properties`, exposed at `/metrics`.
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as Agent
+    participant S as CanCachedServer
+    participant CC as ClusterClient
+    participant O as Owner Node
+    participant R as Replica Node
 
-### 3) can-cache-agent Flow
+    C->>A: set k v
+    A->>S: proxied request
+    S->>CC: handle write(k,v)
+    CC->>O: set(k,v)
+    CC->>R: replicate(k,v)
+    O-->>CC: ok
+    R-->>CC: ok
+    CC-->>S: quorum ok
+    S-->>A: STORED
+    A-->>C: STORED
+```
 
-- `TcpProxyServer`: accepts client traffic on one external port.
-- `DiscoveryService`: discovers upstreams via DNS.
-- `RegistrationService`: stores app-registered upstreams from `REGISTER <host> <port>` with TTL.
-- `HealthService`: runs upstream probes.
-- `UpstreamSelector`: selects targets using `RR` or `LEAST_CONN`.
-- `TuiDashboard`: live terminal dashboard for TTY environments.
+---
 
-### 4) Configuration Quick Guide
+## 4) Veri Modeli
 
-#### Application (can-cache-application)
-- `app.network.port=11211`
-- `app.cluster.replication.port=18080`
-- `app.cluster.discovery.multicast-group=230.0.0.1`
-- `app.cluster.discovery.multicast-port=45565`
-- `app.agent.enabled=true`
-- `app.agent.registration-port=11311`
+- **Key**: metin anahtar.
+- **Value**: byte[]/string payload.
+- **TTL**: `exptime` alanı ile hesaplanır; süre dolunca silinir.
+- **CAS**: yarışan yazmalarda optimistic concurrency sağlar.
+- **Eviction**: kapasite dolduğunda LRU veya TinyLFU devreye girer.
 
-#### Agent (can-cache-agent)
-- `agent.listen.port=11211`
-- `agent.registration.enabled=true`
-- `agent.registration.port=11311`
-- `agent.discovery.dns=<headless-service-dns>`
-- `agent.selection.policy=RR`
+### Data Lifecycle Diagram
+```mermaid
+stateDiagram-v2
+    [*] --> Absent
+    Absent --> Present: set/add/cas success
+    Present --> Present: get/gets
+    Present --> Present: touch (ttl refresh)
+    Present --> Absent: delete
+    Present --> Expired: ttl elapsed
+    Expired --> Absent: cleaner removes
+    Present --> Evicted: capacity pressure
+    Evicted --> Absent
+```
 
-### 5) Operations Notes
+---
 
-- In multi-instance deployments, route clients to agent instead of directly to cache nodes.
-- Setting a unique `app.cluster.discovery.node-id` per node improves observability.
-- Use persistent storage for `app.rdb.path` in production.
-- Use load profiles (`small/medium/large/xl`) documented in `can-cache-performance-tests/README.md`.
+## 5) Cluster Davranışı
+
+- **Discovery**: multicast heartbeat ile node üyeliği.
+- **Ring**: virtual node’larla key dağılımını dengeler.
+- **Replication**: `replication-factor` kadar kopya yazılır.
+- **Failure handling**:
+  - hedef node down ise hint kuyruğu tutulur,
+  - node geri geldiğinde hint replay edilir.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Source Node
+    participant T as Target Node(down)
+    participant H as HintedHandoffService
+
+    C->>S: set k v
+    S->>T: replicate(k,v)
+    T--xS: timeout/failure
+    S->>H: queue hint(k,v)
+    S-->>C: write accepted (quorum permitting)
+    Note over T: node recovers
+    S->>H: replay(node)
+    H->>T: apply hinted writes
+    T-->>H: success
+    H-->>S: hint removed
+```
+
+---
+
+## 6) Operasyon Rehberi
+
+### Local geliştirme
+- Uygulama: `./mvnw -f can-cache-application/pom.xml quarkus:dev`
+- Agent: `./mvnw -f can-cache-agent/pom.xml quarkus:dev`
+- Hazır script: `./local-setup.sh start|status|stop`
+
+### Health ve gözlem
+- Agent status endpoint’i: `agent.status.port`.
+- Metrics endpoint’i: `/metrics`.
+- Loglar: Quarkus console + file log.
+
+### Deployment Diagram
+```mermaid
+flowchart LR
+    subgraph single[Single Node]
+      C1[Client] --> A1[Agent]
+      A1 --> S1[Cache Node]
+    end
+
+    subgraph multi[Multi Node Cluster]
+      C2[Client] --> A2[Agent]
+      A2 --> N1[Node-1]
+      A2 --> N2[Node-2]
+      A2 --> N3[Node-3]
+      N1 <-->|replication| N2
+      N2 <-->|replication| N3
+      N1 <-->|replication| N3
+    end
+```
+
+### Troubleshooting kısa notları
+- Çok `NOT_STORED`: yanlış command semantiği (`add/replace/cas`) veya yarışan yazma.
+- Yüksek miss oranı: TTL çok kısa veya eviction baskısı yüksek.
+- Dengesiz dağılım: virtual node sayısını artırın.
+
+---
+
+## 7) Performans Notları
+
+- Sıcak noktalar: parse maliyeti, network hop sayısı, replication factor.
+- Tuning:
+  - `app.cache.segments`: çekirdek sayısına göre artırılabilir.
+  - `app.cache.max-capacity`: eviction basıncını yönetir.
+  - `app.network.event-loop-threads` ve `worker-threads`: I/O yoğunlukta kritik.
+- Agent selection policy:
+  - `RR`: homojen yükte stabil.
+  - `LEAST_CONN`: bağlantı süresi değişkense daha dengeli olabilir.
+
+---
+
+## 8) Güvenilirlik / Riskler
+
+- Kalıcılık yok: süreç restart sonrası veri kaybı beklenen davranıştır.
+- Quorum/replication ayarları yanlışsa yazma başarısı ile tutarlılık dengesi bozulabilir.
+- Multicast discovery bazı ağlarda kısıtlı olabilir (özellikle bulut CNI politikalarında).
+
+Trade-off:
+- Düşük gecikme için bellek içi tasarım seçildi; bunun doğal bedeli process-level durability olmamasıdır.
+
+---
+
+## 9) SSS
+
+**S: Veriler diskte tutuluyor mu?**  
+C: Hayır. Sistem bellek içi çalışır.
+
+**S: Neden agent kullanmalıyım?**  
+C: İstemciyi tek endpoint’e bağlarsınız; health + upstream seçim merkezi olur.
+
+**S: TTL nasıl işliyor?**  
+C: Yazımda expire zamanı hesaplanır, arka plan cleaner süre dolan anahtarları kaldırır.
+
+**S: CAS neyi çözer?**  
+C: Aynı key’e yarışan update’lerde “benim gördüğüm versiyon hâlâ güncel mi?” kontrolünü sağlar.
+
+---
+
+## 10) Terimler Sözlüğü
+
+- **TTL (Time-To-Live)**: Verinin geçerlilik süresi.
+- **CAS (Compare-And-Swap)**: Koşullu yazma mekanizması.
+- **Eviction**: Kapasite baskısında öğe çıkarma.
+- **Consistent Hashing**: Key->node dağılımını minimum yeniden dağıtımla yapan yöntem.
+- **Quorum**: Bir işlemin başarılı sayılması için gereken minimum onay sayısı.
+- **Hinted Handoff**: Geçici olarak ulaşılamayan node için yazıyı kuyruklayıp sonra aktarma tekniği.

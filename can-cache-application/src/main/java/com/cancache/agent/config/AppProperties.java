@@ -7,8 +7,8 @@ import java.util.Optional;
 
 /**
  * Uygulama yapılandırma değerlerini tip güvenli bir şekilde okumak için kullanılan
- * konfigürasyon arayüzüdür. Alt arayüzler metrik raporlama sıklığı, RDB anlık
- * görüntü ayarları, önbellek segment sayısı ve kapasitesi ile küme topolojisini
+ * konfigürasyon arayüzüdür. Alt arayüzler metrik raporlama sıklığı,
+ * önbellek segment sayısı ve kapasitesi ile küme topolojisini
  * belirleyen parametreler gibi alanları gruplayarak {@code application.properties}
  * içindeki "app" önekiyle başlayan değerleri CDI bileşenlerine sağlar.
  */
@@ -18,7 +18,6 @@ public interface AppProperties
 {
 
     Metrics metrics();
-    Rdb rdb();
     Cache cache();
     Cluster cluster();
     Network network();
@@ -41,14 +40,6 @@ public interface AppProperties
 
         @WithDefault("coordinator")
         String replicationRole();
-    }
-
-    interface Rdb {
-        @WithDefault("data.rdb")
-        String path();
-
-        @WithDefault("60")
-        long snapshotIntervalSeconds();
     }
 
     interface Cache {
