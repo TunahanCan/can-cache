@@ -69,14 +69,13 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
         this.id = Objects.requireNonNull(id, "id");
         this.host = Objects.requireNonNull(host, "host");
         this.port = port;
-        long normalizedConnectTimeout = Math.max(100, connectTimeoutMillis);
-        this.connectTimeoutMillis = Math.max(1L, normalizedConnectTimeout);
+        this.connectTimeoutMillis = Math.max(100, connectTimeoutMillis);
         this.requestTimeoutMillis = Math.max(5_000L, this.connectTimeoutMillis * 2L);
         this.requestTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(this.requestTimeoutMillis);
         this.maxPoolSize = Math.max(2, Runtime.getRuntime().availableProcessors());
         this.pool = new LinkedBlockingQueue<>(maxPoolSize);
 
-        int connectTimeoutMillisValue = (int) Math.min(Integer.MAX_VALUE, this.connectTimeoutMillis);
+        int connectTimeoutMillisValue = (int) this.connectTimeoutMillis;
         NetClientOptions options = new NetClientOptions()
                 .setConnectTimeout(connectTimeoutMillisValue)
                 .setTcpNoDelay(true)
@@ -162,7 +161,8 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
 
     private <T> T execute(Function<PooledConnection, CompletableFuture<T>> action)
     {
-        if (Thread.currentThread().isVirtual()) {
+        if (Thread.currentThread().isVirtual())
+        {
             return executeInternal(action);
         }
 

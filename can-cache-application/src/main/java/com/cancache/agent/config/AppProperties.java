@@ -25,8 +25,8 @@ public interface AppProperties
     Cancache cancache();
     Agent agent();
 
-    interface Metrics {
-
+    interface Metrics
+    {
         @WithDefault("true")
         boolean endpointEnabled();
 

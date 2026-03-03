@@ -119,21 +119,18 @@ public class AppConfig {
     public CacheEngine<String, String> cacheEngine(
             MetricsRegistry metrics,
             Broker broker,
-            Vertx vertx
-    ) {
+            Vertx vertx)
+    {
         var cacheProps = properties.cache();
-        CacheEngine<String, String> engine =
-                CacheEngine.<String, String>builder(StringCodec.UTF8, StringCodec.UTF8)
-                .segments(cacheProps.segments())
-                .maxCapacity(cacheProps.maxCapacity())
-                .cleanerPollMillis(cacheProps.cleanerPollMillis())
-                .evictionPolicy(EvictionPolicyType.fromConfig(cacheProps.evictionPolicy()))
-                .metrics(metrics)
-                .broker(broker)
-                .vertx(vertx)
-                .build();
-
-        return engine;
+        return CacheEngine.builder(StringCodec.UTF8, StringCodec.UTF8)
+        .segments(cacheProps.segments())
+        .maxCapacity(cacheProps.maxCapacity())
+        .cleanerPollMillis(cacheProps.cleanerPollMillis())
+        .evictionPolicy(EvictionPolicyType.fromConfig(cacheProps.evictionPolicy()))
+        .metrics(metrics)
+        .broker(broker)
+        .vertx(vertx)
+        .build();
     }
 
     void disposeCacheEngine(@Disposes CacheEngine<String, String> engine) {
@@ -167,7 +164,8 @@ public class AppConfig {
                     }
                     return host + ":" + replication.port();
                 });
-        return new Node<>() {
+        return new Node<>()
+        {
             @Override
             public boolean set(String k, String v, Duration ttl) {
                 return engine.set(k, v, ttl);
