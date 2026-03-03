@@ -19,7 +19,7 @@
 
 ### What is in this repository?
 
-- `can-cache-application`: core cache server (protocol parser, in-memory engine, clustering, replication, snapshots, metrics).
+- `can-cache-application`: core cache server (protocol parser, in-memory engine, clustering, replication, hinted handoff, metrics).
 - `can-cache-agent`: TCP edge proxy + registration/discovery service for multi-node deployments.
 - `can-cache-integration-tests`: Docker-based protocol and metrics integration tests.
 - `can-cache-performance-tests`: JMeter sampler and load profiles (`small/medium/large/xl`).
@@ -37,7 +37,7 @@
    - `HintedHandoffService` replays missed writes when a node recovers.
 
 3. **Reliability and observability path**
-   - Snapshot persistence is controlled by `app.rdb.*` (`data.rdb` by default).
+   - Durability is in-memory only; process restart drops data unless clients repopulate.
    - Metrics are exported with Micrometer/Prometheus (`/metrics`).
    - Cluster membership and failure detection run via multicast heartbeat settings under `app.cluster.discovery.*`.
 
@@ -111,7 +111,7 @@ Run one local agent + two local cache nodes:
 
 ### Bu repoda neler var?
 
-- `can-cache-application`: çekirdek cache sunucusu (protokol ayrıştırma, bellek motoru, kümeleme, replikasyon, snapshot, metrik).
+- `can-cache-application`: çekirdek cache sunucusu (protokol ayrıştırma, bellek motoru, kümeleme, replikasyon, hinted handoff, metrik).
 - `can-cache-agent`: çoklu node dağıtımları için TCP edge proxy + kayıt/keşif servisi.
 - `can-cache-integration-tests`: Docker tabanlı protokol ve metrik entegrasyon testleri.
 - `can-cache-performance-tests`: JMeter sampler ve yük profilleri (`small/medium/large/xl`).
@@ -129,7 +129,7 @@ Run one local agent + two local cache nodes:
    - `HintedHandoffService`, kesinti sırasında kaçan yazmaları node geri dönünce tekrar oynatır.
 
 3. **Dayanıklılık ve gözlemlenebilirlik**
-   - Kalıcılık `app.rdb.*` ayarlarıyla yönetilir (varsayılan `data.rdb`).
+   - Dayanıklılık bellek içidir; süreç yeniden başlatılırsa veri kaybolur ve istemci yeniden doldurmalıdır.
    - Metrikler Micrometer/Prometheus ile `/metrics` altında sunulur.
    - Küme üyeliği ve hata tespiti `app.cluster.discovery.*` multicast heartbeat ayarlarıyla yapılır.
 
