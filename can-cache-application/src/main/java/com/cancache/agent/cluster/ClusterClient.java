@@ -89,12 +89,22 @@ public final class ClusterClient
     {
         List<Node<String, String>> nodes = replicas(key);
         for (Node<String, String> node : nodes) {
-            String value = node.get(key);
-            if (value != null) {
-                return value;
+            try {
+                String value = node.get(key);
+                if (value != null) {
+                    return value;
+                }
+            } catch (RuntimeException e) {
+                LOG.debugf(e, "Failed to read key %s from node %s, trying next", key, node.id());
+                continue;
             }
         }
         return null;
+    }
+
+    private boolean fallBackScenario(String key, Node<String, String> node)
+    {
+        return false;
     }
 
     public boolean delete(String key)

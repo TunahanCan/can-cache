@@ -89,6 +89,15 @@ class ClusterClientTest
         {
             assertNull(client.get("clientKey"));
         }
+
+        // Bu test ilk node'un exception fırlatıp ikinci node'un başarılı değer döndürdüğü durumu doğrular.
+        @Test
+        void get_continues_to_next_node_on_exception()
+        {
+            leader.throwNextGet();
+            replica1.preset("fallback-value");
+            assertEquals("fallback-value", client.get("clientKey"));
+        }
     }
 
     @Nested
@@ -192,6 +201,7 @@ class ClusterClientTest
         private boolean throwDelete;
         private boolean failCas;
         private boolean throwCas;
+        private boolean throwGet;
         private String storedValue;
         private int clearCalls;
 
@@ -225,6 +235,11 @@ class ClusterClientTest
             this.throwCas = true;
         }
 
+        void throwNextGet()
+        {
+            this.throwGet = true;
+        }
+
         void preset(String value)
         {
             this.storedValue = value;
@@ -250,6 +265,11 @@ class ClusterClientTest
         @Override
         public String get(String key)
         {
+            if (throwGet)
+            {
+                throwGet = false;
+                throw new RuntimeException("get-fail-" + id);
+            }
             return storedValue;
         }
 

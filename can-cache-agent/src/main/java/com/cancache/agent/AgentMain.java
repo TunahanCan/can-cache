@@ -22,7 +22,8 @@ public class AgentMain implements QuarkusApplication
     }
 
     @Override
-    public int run(String... args) throws Exception {
+    public int run(String... args)
+    {
         LOG.info("Can-Cache-Agent starting");
         dashboard.start();
         Quarkus.waitForExit();

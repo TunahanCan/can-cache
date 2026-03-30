@@ -506,6 +506,7 @@ public class CanCachedServer implements AutoCloseable
         if (Duration.ZERO.equals(ttl)) {
             if (clusterClient.delete(parts[1])) {
                 decrementCurrItems();
+                return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("TOUCHED");
             }
             return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
         }
