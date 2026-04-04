@@ -13,100 +13,144 @@ class EvictionPoliciesTest
     @Nested
     class TypeResolution
     {
-        // Bu test yapılandırma değeri boş olduğunda LRU politikasının seçildiğini doğrular.
+        /**
+         * Verifies that the LRU policy is selected when the configuration value is blank.
+         */
         @Test
-        void from_config_returns_lru_for_blank_value()
+        void shouldReturnLruForBlankConfigValue()
         {
-            assertEquals(EvictionPolicyType.LRU, EvictionPolicyType.fromConfig(null));
-            assertEquals(EvictionPolicyType.LRU, EvictionPolicyType.fromConfig(" "));
+            // Given / When / Then
+            assertEquals(EvictionPolicyType.LRU, EvictionPolicyType.fromConfig(null), "Null config should default to LRU");
+            assertEquals(EvictionPolicyType.LRU, EvictionPolicyType.fromConfig(" "), "Blank config should default to LRU");
         }
 
-        // Bu test farklı yazımlarla verilen TinyLFU değerinin doğru çözümlendiğini gösterir.
+        /**
+         * Shows that variations in case for 'tiny-lfu' are normalized and parsed correctly.
+         */
         @Test
-        void from_config_normalizes_tiny_lfu()
+        void shouldNormalizeTinyLfuConfigValue()
         {
-            assertEquals(EvictionPolicyType.TINY_LFU, EvictionPolicyType.fromConfig("tiny-lfu"));
-            assertEquals(EvictionPolicyType.TINY_LFU, EvictionPolicyType.fromConfig("Tiny_Lfu"));
+            // Given / When / Then
+            assertEquals(EvictionPolicyType.TINY_LFU, EvictionPolicyType.fromConfig("tiny-lfu"), "Lowercase tiny-lfu should parse");
+            assertEquals(EvictionPolicyType.TINY_LFU, EvictionPolicyType.fromConfig("Tiny_Lfu"), "Mixed case Tiny_Lfu should parse");
         }
 
-        // Bu test bilinmeyen politika değerinde istisna fırlatıldığını doğrular.
+        /**
+         * Verifies that an exception is thrown for an unknown policy value.
+         */
         @Test
-        void from_config_throws_for_unknown_value()
+        void shouldThrowExceptionForUnknownConfigValue()
         {
-            assertThrows(IllegalArgumentException.class, () -> EvictionPolicyType.fromConfig("unknown"));
+            // Given / When / Then
+            assertThrows(IllegalArgumentException.class, () -> EvictionPolicyType.fromConfig("unknown"), "Unknown value should trigger an exception");
         }
     }
 
     @Nested
     class LruBehavior
     {
-        // Bu test kapasite dolmadığında yeni anahtarın doğrudan kabul edildiğini gösterir.
+        /**
+         * Shows that a new key is admitted directly when capacity is available.
+         */
         @Test
-        void lru_admits_candidate_when_capacity_available()
+        void shouldAdmitCandidateWhenCapacityAvailableInLru()
         {
+            // Given
             LruEvictionPolicy<String> policy = new LruEvictionPolicy<>();
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
+            
+            // When
             var decision = policy.admit("candidate", map, 2);
-            assertTrue(decision.shouldAdmit());
-            assertNull(decision.evictKey());
+            
+            // Then
+            assertTrue(decision.shouldAdmit(), "Candidate should be admitted");
+            assertNull(decision.evictKey(), "No eviction key should be provided");
         }
 
-        // Bu test kapasite dolduğunda en eski girdinin kurban seçildiğini doğrular.
+        /**
+         * Verifies that the oldest entry is chosen as a victim when capacity is full.
+         */
         @Test
-        void lru_evicts_oldest_when_full()
+        void shouldEvictOldestWhenFullInLru()
         {
+            // Given
             LruEvictionPolicy<String> policy = new LruEvictionPolicy<>();
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
             map.put("old", new CacheValue(new byte[]{1}, 0L));
             map.put("young", new CacheValue(new byte[]{2}, 0L));
+            
+            // When
             var decision = policy.admit("candidate", map, 2);
-            assertTrue(decision.shouldAdmit());
-            assertEquals("old", decision.evictKey());
+            
+            // Then
+            assertTrue(decision.shouldAdmit(), "Candidate should be admitted");
+            assertEquals("old", decision.evictKey(), "Oldest key should be chosen for eviction");
         }
     }
 
     @Nested
     class TinyLfuBehavior
     {
-        // Bu test boş kapasitede TinyLFU'nun adayı kabul ettiğini doğrular.
+        /**
+         * Verifies that TinyLFU admits a candidate when there is free capacity.
+         */
         @Test
-        void tiny_lfu_admits_candidate_with_free_capacity()
+        void shouldAdmitCandidateWithFreeCapacityInTinyLfu()
         {
+            // Given
             TinyLfuEvictionPolicy<String> policy = new TinyLfuEvictionPolicy<>(2);
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
+            
+            // When
             var decision = policy.admit("candidate", map, 2);
-            assertTrue(decision.shouldAdmit());
-            assertNull(decision.evictKey());
+            
+            // Then
+            assertTrue(decision.shouldAdmit(), "Candidate should be admitted");
+            assertNull(decision.evictKey(), "No eviction key should be provided");
         }
 
-        // Bu test adayın frekansı kurbandan yüksek olduğunda kabul edildiğini gösterir.
+        /**
+         * Shows that a candidate is admitted and a victim is evicted when the candidate has a higher frequency.
+         */
         @Test
-        void tiny_lfu_admits_candidate_with_higher_frequency()
+        void shouldAdmitCandidateWithHigherFrequencyInTinyLfu()
         {
+            // Given
             TinyLfuEvictionPolicy<String> policy = new TinyLfuEvictionPolicy<>(1);
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
             map.put("victim", new CacheValue(new byte[]{1}, 0L));
             policy.recordAccess("victim");
             policy.recordAccess("candidate");
             policy.recordAccess("candidate");
-            policy.recordAccess("candidate");
+            policy.recordAccess("candidate"); // Candidate has higher frequency
+            
+            // When
             var decision = policy.admit("candidate", map, 1);
-            assertTrue(decision.shouldAdmit());
-            assertEquals("victim", decision.evictKey());
+            
+            // Then
+            assertTrue(decision.shouldAdmit(), "Candidate with higher frequency should be admitted");
+            assertEquals("victim", decision.evictKey(), "Victim with lower frequency should be evicted");
         }
 
-        // Bu test adayın frekansı düşük olduğunda reddedildiğini doğrular.
+        /**
+         * Verifies that a candidate is rejected if its frequency is lower than the victim's.
+         */
         @Test
-        void tiny_lfu_rejects_low_frequency_candidate()
+        void shouldRejectCandidateWithLowerFrequencyInTinyLfu()
         {
+            // Given
             TinyLfuEvictionPolicy<String> policy = new TinyLfuEvictionPolicy<>(1);
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
             map.put("victim", new CacheValue(new byte[]{1}, 0L));
             policy.recordAccess("victim");
-            policy.recordAccess("victim");
+            policy.recordAccess("victim"); // Victim has higher frequency
             policy.recordAccess("candidate");
+            
+            // When
             var decision = policy.admit("candidate", map, 1);
-            assertFalse(decision.shouldAdmit());
+            
+            // Then
+            assertFalse(decision.shouldAdmit(), "Candidate with lower frequency should be rejected");
         }
     }
 }

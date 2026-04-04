@@ -16,13 +16,18 @@ class CanCacheApplicationTests {
 
     @Nested
     class ContainerWiring {
+
         /**
-         * Quarkus DI konteyneri AppConfig tarafından üretilen ClusterClient bean'ini sağlar.
-         * Uygulama ayağa kalktığında bu bean'in hazır olduğunu kontrol ederek modüller arası entegrasyonu doğrularız.
+         * Verifies that the Quarkus DI container successfully provides the ClusterClient bean.
+         * This ensures basic inter-module integration is functioning upon application startup.
          */
         @Test
-        void clusterClientIsAvailable() {
-            assertNotNull(cluster);
+        void shouldInjectClusterClientSuccessfully() {
+            // Given / When
+            // (Injection handled by Quarkus)
+
+            // Then
+            assertNotNull(cluster, "ClusterClient bean should be injected by the container");
         }
     }
 }

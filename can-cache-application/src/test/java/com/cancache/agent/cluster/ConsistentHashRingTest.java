@@ -22,56 +22,90 @@ class ConsistentHashRingTest
     @Nested
     class NodeManagement
     {
-        // Bu test düğüm eklendiğinde benzersiz liste olarak döndürüldüğünü doğrular.
+        /**
+         * Verifies that when nodes are added, they are returned as a unique list.
+         */
         @Test
-        void add_node_returns_unique_list()
+        void shouldReturnUniqueListWhenNodesAdded()
         {
+            // Given / When
             ring.addNode("A", bytes("A"));
             ring.addNode("B", bytes("B"));
-            assertEquals(List.of("A", "B"), ring.nodes());
+            
+            // Then
+            assertEquals(List.of("A", "B"), ring.nodes(), "Added nodes should be present in the ring");
         }
 
-        // Bu test düğüm kaldırıldığında replika listesinden çıkarıldığını gösterir.
+        /**
+         * Shows that when a node is removed, it is omitted from the replica list.
+         */
         @Test
-        void remove_node_clears_virtual_nodes()
+        void shouldClearVirtualNodesWhenNodeRemoved()
         {
+            // Given
             ring.addNode("A", bytes("A"));
             ring.addNode("B", bytes("B"));
+            
+            // When
             ring.removeNode("B", bytes("B"));
-            assertEquals(List.of("A"), ring.nodes());
-            assertEquals(List.of("A"), ring.getReplicas(bytes("key"), 2));
+            
+            // Then
+            assertEquals(List.of("A"), ring.nodes(), "Removed node should no longer be present");
+            assertEquals(List.of("A"), ring.getReplicas(bytes("key"), 2), "Removed node should not be returned as a replica");
         }
     }
 
     @Nested
     class ReplicaSelection
     {
-        // Bu test replikaların belirlenen sırada ve tekrar etmeden döndüğünü doğrular.
+        /**
+         * Verifies that replicas are returned in the determined order without duplicates.
+         */
         @Test
-        void get_replicas_returns_requested_nodes_in_order()
+        void shouldReturnRequestedNodesInOrderOnGetReplicas()
         {
+            // Given
             ring.addNode("A", bytes("A"));
             ring.addNode("B", bytes("B"));
             ring.addNode("C", bytes("C"));
+            
+            // When
             List<String> replicas = ring.getReplicas(bytes("key"), 3);
-            assertEquals(List.of("A", "B", "C"), replicas);
+            
+            // Then
+            assertEquals(List.of("A", "B", "C"), replicas, "Replicas should be returned in expected order based on consistent hashing");
         }
 
-        // Bu test istenen replika sayısından az düğüm olduğunda mevcut düğümlerin döndürüldüğünü gösterir.
+        /**
+         * Shows that when there are fewer nodes than requested, all available nodes are returned.
+         */
         @Test
-        void get_replicas_limits_to_available_nodes()
+        void shouldLimitToAvailableNodesOnGetReplicas()
         {
+            // Given
             ring.addNode("A", bytes("A"));
             ring.addNode("B", bytes("B"));
+            
+            // When
             List<String> replicas = ring.getReplicas(bytes("key"), 5);
-            assertEquals(List.of("A", "B"), replicas);
+            
+            // Then
+            assertEquals(List.of("A", "B"), replicas, "Returned replicas should not exceed available nodes");
         }
 
-        // Bu test boş halkada replika isteğinin boş liste ürettiğini doğrular.
+        /**
+         * Verifies that requesting replicas from an empty ring produces an empty list.
+         */
         @Test
-        void get_replicas_returns_empty_list_for_empty_ring()
+        void shouldReturnEmptyListForEmptyRingOnGetReplicas()
         {
-            assertTrue(ring.getReplicas(bytes("key"), 2).isEmpty());
+            // Given (empty ring)
+
+            // When
+            List<String> replicas = ring.getReplicas(bytes("key"), 2);
+            
+            // Then
+            assertTrue(replicas.isEmpty(), "Empty list should be returned when there are no nodes in the ring");
         }
     }
 

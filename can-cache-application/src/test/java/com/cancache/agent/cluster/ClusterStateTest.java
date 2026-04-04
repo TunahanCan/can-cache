@@ -24,46 +24,70 @@ class ClusterStateTest
     @Nested
     class IdentityInformation
     {
-        // Bu test yerel düğüm kimliğinin ve bayt temsilinin doğru döndüğünü doğrular.
+        /**
+         * Verifies that the local node ID and its byte representation are returned correctly.
+         */
         @Test
-        void local_node_id_and_bytes_are_returned()
+        void shouldReturnLocalNodeIdAndBytes()
         {
-            assertEquals("node-1", state.localNodeId());
-            assertArrayEquals("node-1".getBytes(StandardCharsets.UTF_8), state.localNodeIdBytes());
+            // Given / When / Then
+            assertEquals("node-1", state.localNodeId(), "Local node ID should match the initialized value");
+            assertArrayEquals("node-1".getBytes(StandardCharsets.UTF_8), state.localNodeIdBytes(), "Byte representation of node ID should match");
         }
     }
 
     @Nested
     class EpochManagement
     {
-        // Bu test bumpEpoch çağrısının değer artırdığını ve metrikleri güncellediğini gösterir.
+        /**
+         * Shows that calling bumpEpoch increments the value and updates the metrics.
+         */
         @Test
-        void bump_epoch_increments_value()
+        void shouldIncrementValueOnBumpEpoch()
         {
+            // Given
             long initial = state.currentEpoch();
+            
+            // When
             long next = state.bumpEpoch();
-            assertEquals(initial + 1, next);
-            assertEquals(1L, metrics.counter("cluster_epoch_increments").get());
+            
+            // Then
+            assertEquals(initial + 1, next, "Epoch should be incremented by 1");
+            assertEquals(1L, metrics.counter("cluster_epoch_increments").get(), "Epoch increments counter should be updated");
         }
 
-        // Bu test uzaktan gelen daha büyük epoch değerinin benimsendiğini doğrular.
+        /**
+         * Verifies that a larger epoch value coming from remote is adopted.
+         */
         @Test
-        void observe_epoch_accepts_higher_value()
+        void shouldAcceptHigherValueOnObserveEpoch()
         {
+            // Given
             long expected = state.currentEpoch() + 5;
+            
+            // When
             state.observeEpoch(expected);
-            assertEquals(expected, state.currentEpoch());
-            assertEquals(1L, metrics.counter("cluster_epoch_observed_updates").get());
+            
+            // Then
+            assertEquals(expected, state.currentEpoch(), "Current epoch should be updated to the larger observed epoch");
+            assertEquals(1L, metrics.counter("cluster_epoch_observed_updates").get(), "Epoch observed updates counter should be updated");
         }
 
-        // Bu test daha küçük veya geçersiz epoch değerlerinin dikkate alınmadığını doğrular.
+        /**
+         * Verifies that smaller or invalid epoch values are ignored.
+         */
         @Test
-        void observe_epoch_ignores_lower_values()
+        void shouldIgnoreLowerValuesOnObserveEpoch()
         {
+            // Given
             long initial = state.currentEpoch();
+            
+            // When
             state.observeEpoch(initial - 1);
             state.observeEpoch(0);
-            assertEquals(initial, state.currentEpoch());
+            
+            // Then
+            assertEquals(initial, state.currentEpoch(), "Current epoch should remain unchanged when smaller values are observed");
         }
     }
 }

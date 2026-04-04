@@ -62,191 +62,283 @@ class CacheEngineTest
     @Nested
     class SetAndGetBehavior
     {
-        // Bu test set ve get çağrılarının değeri koruduğunu ve metriklerin güncellendiğini doğrular.
+        /**
+         * Verifies that set and get calls preserve the value and update the metrics accordingly.
+         */
         @Test
-        void set_and_get_preserve_value_and_update_metrics()
+        void shouldPreserveValueAndUpdateMetricsOnSetAndGet()
         {
-            assertTrue(engine.set("key", "value"));
-            assertEquals("value", engine.get("key"));
-            assertEquals(1, engine.size());
+            // Given / When
+            boolean setSuccess = engine.set("key", "value");
 
-            assertEquals(1L, metrics.counter("cache_hits").get());
+            // Then
+            assertTrue(setSuccess, "Set operation should succeed");
+            assertEquals("value", engine.get("key"), "Get operation should return the set value");
+            assertEquals(1, engine.size(), "Cache size should be 1");
+
+            assertEquals(1L, metrics.counter("cache_hits").get(), "Cache hits should be 1");
             Timer.Sample setSample = metrics.timer("cache_set").snapshot();
-            assertTrue(setSample.count() >= 1);
+            assertTrue(setSample.count() >= 1, "Cache set timer should have at least 1 sample");
             Timer.Sample getSample = metrics.timer("cache_get").snapshot();
-            assertTrue(getSample.count() >= 1);
-            assertTrue(broker.events().contains("keyspace:set:key"));
+            assertTrue(getSample.count() >= 1, "Cache get timer should have at least 1 sample");
+            assertTrue(broker.events().contains("keyspace:set:key"), "Broker should emit keyspace:set event");
         }
 
-        // Bu test TTL dolduğunda get çağrısının girdiyi sildiğini gösterir.
+        /**
+         * Demonstrates that the get call removes the entry after its TTL expires.
+         */
         @Test
-        void get_removes_entry_after_ttl_expires()
+        void shouldRemoveEntryOnGetAfterTtlExpires()
         {
-            assertTrue(engine.set("expire", "value", Duration.ofMillis(15)));
+            // Given
+            assertTrue(engine.set("expire", "value", Duration.ofMillis(15)), "Set with TTL should succeed");
+
+            // When
             sleep(40);
 
-            assertNull(engine.get("expire"));
-            assertFalse(engine.exists("expire"));
-            assertTrue(metrics.counter("cache_misses").get() >= 1);
-            assertTrue(broker.events().contains("keyspace:del:expire"));
+            // Then
+            assertNull(engine.get("expire"), "Get should return null for expired key");
+            assertFalse(engine.exists("expire"), "Exists should return false for expired key");
+            assertTrue(metrics.counter("cache_misses").get() >= 1, "Cache misses should be incremented");
+            assertTrue(broker.events().contains("keyspace:del:expire"), "Broker should emit keyspace:del event");
         }
 
-        // Bu test çok büyük TTL değerlerinin taşma oluşturmadan saklandığını kontrol eder.
+        /**
+         * Checks that extremely large TTL values are stored without causing an overflow.
+         */
         @Test
-        void extreme_ttl_is_stored_without_overflow()
+        void shouldStoreExtremeTtlWithoutOverflow()
         {
+            // Given
             long now = System.currentTimeMillis();
             Duration ttl = Duration.ofMillis(Long.MAX_VALUE - now - 1);
-            assertTrue(engine.set("forever", "value", ttl));
-            assertEquals("value", engine.get("forever"));
-            assertTrue(engine.exists("forever"));
+
+            // When
+            boolean setSuccess = engine.set("forever", "value", ttl);
+
+            // Then
+            assertTrue(setSuccess, "Set with extreme TTL should succeed");
+            assertEquals("value", engine.get("forever"), "Value should be accessible");
+            assertTrue(engine.exists("forever"), "Key should exist");
         }
     }
 
     @Nested
     class CompareAndSwapBehavior
     {
-        // Bu test CAS beklentisi sağlandığında değerin ve TTL'nin güncellendiğini ispatlar.
+        /**
+         * Proves that the value and TTL are updated when the CAS expectation is met.
+         */
         @Test
-        void compare_and_swap_updates_value_when_cas_matches()
+        void shouldUpdateValueWhenCasMatches()
         {
+            // Given
             StoredValueCodec.StoredValue base = new StoredValueCodec.StoredValue("v1".getBytes(StandardCharsets.UTF_8), 1, 9L, 0L);
             String encoded = StoredValueCodec.encode(base);
-            assertTrue(engine.set("cas", encoded));
+            assertTrue(engine.set("cas", encoded), "Initial set should succeed");
 
             StoredValueCodec.StoredValue updated = base.withValue("v2".getBytes(StandardCharsets.UTF_8), 11L);
             String next = StoredValueCodec.encode(updated);
-            assertTrue(engine.compareAndSwap("cas", next, 9L, Duration.ofMillis(30)));
 
-            assertEquals(next, engine.get("cas"));
+            // When
+            boolean casSuccess = engine.compareAndSwap("cas", next, 9L, Duration.ofMillis(30));
+
+            // Then
+            assertTrue(casSuccess, "CAS should succeed when CAS value matches");
+            assertEquals(next, engine.get("cas"), "Cache should contain the newly updated value");
+            
+            // Wait for expiration
             sleep(60);
-            assertFalse(engine.exists("cas"));
-            assertTrue(broker.events().stream().anyMatch(e -> e.startsWith("keyspace:set:cas")));
+            assertFalse(engine.exists("cas"), "Key should be removed after new TTL expires");
+            assertTrue(broker.events().stream().anyMatch(e -> e.startsWith("keyspace:set:cas")), "Broker should record set event");
         }
 
-        // Bu test CAS beklentisi tutmadığında değerin değişmediğini doğrular.
+        /**
+         * Verifies that the value remains unchanged when the CAS expectation does not match.
+         */
         @Test
-        void compare_and_swap_fails_when_cas_mismatch()
+        void shouldFailWhenCasMismatchOccurs()
         {
+            // Given
             StoredValueCodec.StoredValue base = new StoredValueCodec.StoredValue("v1".getBytes(StandardCharsets.UTF_8), 1, 7L, 0L);
             String encoded = StoredValueCodec.encode(base);
-            assertTrue(engine.set("cas", encoded));
+            assertTrue(engine.set("cas", encoded), "Initial set should succeed");
 
-            assertFalse(engine.compareAndSwap("cas", "ignored", 5L, null));
-            assertEquals(encoded, engine.get("cas"));
+            // When
+            boolean casSuccess = engine.compareAndSwap("cas", "ignored", 5L, null);
+
+            // Then
+            assertFalse(casSuccess, "CAS should fail when CAS value mismatches");
+            assertEquals(encoded, engine.get("cas"), "Original value should be intact");
         }
 
-        // Bu test süresi dolmuş girdide CAS denemesi yapıldığında kaydın temizlendiğini doğrular.
+        /**
+         * Verifies that the record is cleared if a CAS attempt is made on an expired entry.
+         */
         @Test
-        void compare_and_swap_removes_expired_entry()
+        void shouldRemoveExpiredEntryOnCompareAndSwap()
         {
-            assertTrue(engine.set("stale", "plain", Duration.ofMillis(10)));
+            // Given
+            assertTrue(engine.set("stale", "plain", Duration.ofMillis(10)), "Set with TTL should succeed");
             sleep(30);
 
-            assertFalse(engine.compareAndSwap("stale", "new", 0L, null));
-            assertFalse(engine.exists("stale"));
-            assertTrue(broker.events().stream().anyMatch(e -> e.startsWith("keyspace:del:stale")));
+            // When
+            boolean casSuccess = engine.compareAndSwap("stale", "new", 0L, null);
+
+            // Then
+            assertFalse(casSuccess, "CAS should fail on expired entry");
+            assertFalse(engine.exists("stale"), "Key should be removed after attempting CAS on expired entry");
+            assertTrue(broker.events().stream().anyMatch(e -> e.startsWith("keyspace:del:stale")), "Broker should record delete event");
         }
     }
 
     @Nested
     class ReplayBehavior
     {
-        // Bu test kalıcı logdan gelen set kaydının belleğe geri yüklendiğini gösterir.
+        /**
+         * Shows that a set record originating from a persistent log is restored to memory.
+         */
         @Test
-        void replay_set_command_restores_value()
+        void shouldRestoreValueOnReplaySetCommand()
         {
+            // Given / When
             engine.replay(new byte[]{NodeProtocol.CMD_SET}, StringCodec.UTF8.encode("key"), StringCodec.UTF8.encode("value"), 0L);
-            assertEquals("value", engine.get("key"));
+
+            // Then
+            assertEquals("value", engine.get("key"), "Replayed value should be accessible via get");
         }
 
-        // Bu test süresi geçmiş bir replay girdisinin dikkate alınmadığını kontrol eder.
+        /**
+         * Checks that an expired replay entry is ignored.
+         */
         @Test
-        void replay_ignores_expired_record()
+        void shouldIgnoreExpiredRecordOnReplay()
         {
+            // Given / When
             engine.replay(new byte[]{NodeProtocol.CMD_SET}, StringCodec.UTF8.encode("late"), StringCodec.UTF8.encode("value"), System.currentTimeMillis() - 1_000);
-            assertNull(engine.get("late"));
+
+            // Then
+            assertNull(engine.get("late"), "Expired replayed value should not be accessible");
         }
 
-        // Bu test replay delete kaydının ilgili anahtarı kaldırdığını doğrular.
+        /**
+         * Verifies that a replay delete record removes the corresponding key.
+         */
         @Test
-        void replay_delete_command_removes_entry()
+        void shouldRemoveEntryOnReplayDeleteCommand()
         {
-            assertTrue(engine.set("gone", "value"));
+            // Given
+            assertTrue(engine.set("gone", "value"), "Initial set should succeed");
+
+            // When
             engine.replay(new byte[]{NodeProtocol.CMD_DELETE}, StringCodec.UTF8.encode("gone"), new byte[0], 0L);
-            assertNull(engine.get("gone"));
+
+            // Then
+            assertNull(engine.get("gone"), "Replayed delete should remove the value");
         }
     }
 
     @Nested
     class RemovalNotifications
     {
-        // Bu test manuel silme yapıldığında dinleyicinin bilgilendirildiğini doğrular.
+        /**
+         * Verifies that the listener is notified when a manual deletion is performed.
+         */
         @Test
-        void manual_delete_notifies_listener() throws Exception
+        void shouldNotifyListenerOnManualDelete() throws Exception
         {
+            // Given
             List<String> removed = new ArrayList<>();
             AutoCloseable handle = engine.onRemoval(removed::add);
-            assertTrue(engine.set("target", "value"));
-            assertTrue(engine.delete("target"));
-            assertEquals(List.of("target"), removed);
+            assertTrue(engine.set("target", "value"), "Initial set should succeed");
+
+            // When
+            assertTrue(engine.delete("target"), "Manual delete should succeed");
+
+            // Then
+            assertEquals(List.of("target"), removed, "Listener should receive the removed key");
             handle.close();
         }
 
-        // Bu test TTL dolduğunda dinleyiciye haber gönderildiğini ispatlar.
+        /**
+         * Proves that a notification is sent to the listener when TTL expires.
+         */
         @Test
-        void ttl_expiration_notifies_listener()
+        void shouldNotifyListenerOnTtlExpiration()
         {
+            // Given
             List<String> removed = new ArrayList<>();
             engine.onRemoval(removed::add);
-            assertTrue(engine.set("ttl", "value", Duration.ofMillis(15)));
+            assertTrue(engine.set("ttl", "value", Duration.ofMillis(15)), "Set with TTL should succeed");
+
+            // When
             sleep(60);
-            assertTrue(removed.contains("ttl"));
+
+            // Then
+            assertTrue(removed.contains("ttl"), "Listener should receive the removed key after TTL expiration");
         }
     }
 
     @Nested
     class IterationAndSummary
     {
-        // Bu test forEach çağrısının yalnızca süresi geçmemiş kayıtları aktardığını doğrular.
+        /**
+         * Verifies that the forEach call transfers only unexpired records.
+         */
         @Test
-        void for_each_returns_only_valid_entries()
+        void shouldReturnOnlyValidEntriesOnForEach()
         {
-            assertTrue(engine.set("kal", "value"));
-            assertTrue(engine.set("git", "value", Duration.ofMillis(10)));
+            // Given
+            assertTrue(engine.set("kal", "value"), "Set without TTL should succeed");
+            assertTrue(engine.set("git", "value", Duration.ofMillis(10)), "Set with TTL should succeed");
             sleep(40);
 
+            // When
             List<String> keys = new ArrayList<>();
             engine.forEachEntry((key, value, expireAt) -> keys.add(key));
-            assertEquals(List.of("kal"), keys);
+
+            // Then
+            assertEquals(List.of("kal"), keys, "Only non-expired key should be returned by forEachEntry");
         }
 
-        // Bu test clear işleminin tüm segmentleri boşalttığını gösterir.
+        /**
+         * Shows that the clear operation empties all segments.
+         */
         @Test
-        void clear_removes_all_segments()
+        void shouldRemoveAllSegmentsOnClear()
         {
-            assertTrue(engine.set("a", "1"));
-            assertTrue(engine.set("b", "2"));
+            // Given
+            assertTrue(engine.set("a", "1"), "Set A should succeed");
+            assertTrue(engine.set("b", "2"), "Set B should succeed");
+
+            // When
             engine.clear();
-            assertEquals(0, engine.size());
 
+            // Then
+            assertEquals(0, engine.size(), "Size should be 0 after clear");
             List<String> keys = new ArrayList<>();
             engine.forEachEntry((key, value, expireAt) -> keys.add(key));
-            assertTrue(keys.isEmpty());
+            assertTrue(keys.isEmpty(), "forEachEntry should yield no keys after clear");
         }
 
-        // Bu test fingerprint sonucunun ekleme sırası değişse bile sabit kaldığını doğrular.
+        /**
+         * Verifies that the fingerprint result remains stable even if the insertion order changes.
+         */
         @Test
-        void fingerprint_remains_stable_across_reorder()
+        void shouldKeepFingerprintStableAcrossReorder()
         {
+            // Given
             assertTrue(engine.set("one", "1"));
             assertTrue(engine.set("two", "2"));
             long first = engine.fingerprint();
 
+            // When
             assertTrue(engine.delete("one"));
             assertTrue(engine.set("one", "1"));
             long second = engine.fingerprint();
-            assertEquals(first, second);
+
+            // Then
+            assertEquals(first, second, "Fingerprint should remain stable after deleting and re-inserting the same key/value");
         }
     }
 

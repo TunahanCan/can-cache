@@ -30,134 +30,213 @@ class CacheSegmentTest
     @Nested
     class PutOperations
     {
-        // Bu test politika izin verdiğinde yeni girdinin eklendiğini doğrular.
+        /**
+         * Verifies that a new entry is added when the policy admits it.
+         */
         @Test
-        void put_succeeds_when_key_is_admitted()
+        void shouldAdmitAndAddEntryWhenPolicyAllows()
         {
-            assertTrue(segment.put("a", value("1")));
-            assertEquals(1, segment.size());
-            assertEquals(List.of("a"), policy.accesses());
+            // Given / When
+            boolean result = segment.put("a", value("1"));
+            
+            // Then
+            assertTrue(result, "Put should succeed when policy allows");
+            assertEquals(1, segment.size(), "Segment size should be 1");
+            assertEquals(List.of("a"), policy.accesses(), "Policy should record access for the admitted key");
         }
 
-        // Bu test politika reddettiğinde put çağrısının başarısız döndüğünü gösterir.
+        /**
+         * Shows that a put call returns false when the policy rejects the entry.
+         */
         @Test
-        void put_returns_false_when_policy_rejects()
+        void shouldReturnFalseWhenPolicyRejectsPut()
         {
+            // Given
             policy.rejectNext();
-            assertFalse(segment.put("b", value("2")));
-            assertEquals(0, segment.size());
+            
+            // When
+            boolean result = segment.put("b", value("2"));
+            
+            // Then
+            assertFalse(result, "Put should fail when policy rejects");
+            assertEquals(0, segment.size(), "Segment size should remain 0");
         }
 
-        // Bu test mevcut anahtar tekrar yazıldığında değerin güncellendiğini ispatlar.
+        /**
+         * Proves that rewriting an existing key updates its value.
+         */
         @Test
-        void put_updates_existing_key()
+        void shouldUpdateValueWhenPuttingExistingKey()
         {
+            // Given
             assertTrue(segment.put("a", value("1")));
+            
+            // When
             assertTrue(segment.put("a", value("2")));
-            assertEquals("2", text(segment.get("a")));
+            
+            // Then
+            assertEquals("2", text(segment.get("a")), "Value should be updated to '2'");
         }
 
-        // Bu test kurban anahtar belirlendiğinde dinleyicinin bilgilendirildiğini doğrular.
+        /**
+         * Verifies that the listener is notified when a victim key is evicted.
+         */
         @Test
-        void put_notifies_listener_when_victim_selected()
+        void shouldNotifyListenerWhenVictimEvictedOnPut()
         {
+            // Given
             assertTrue(segment.put("a", value("1")));
             assertTrue(segment.put("b", value("2")));
             policy.evictNext("a");
+            
+            // When
             assertTrue(segment.put("c", value("3")));
-            assertEquals(List.of("a"), removals);
-            assertTrue(policy.removed().contains("a"));
+            
+            // Then
+            assertEquals(List.of("a"), removals, "Listener should be notified of eviction for 'a'");
+            assertTrue(policy.removed().contains("a"), "Policy should record removal of 'a'");
         }
 
-        // Bu test force eklemenin kapasite dolu olsa bile en eski girdiyi attığını gösterir.
+        /**
+         * Shows that a forced put evicts the oldest entry when capacity is full.
+         */
         @Test
-        void put_force_evicts_oldest_when_full()
+        void shouldEvictOldestWhenForcedPutAtFullCapacity()
         {
+            // Given
             assertTrue(segment.put("a", value("1")));
             assertTrue(segment.put("b", value("2")));
+            
+            // When
             assertTrue(segment.putForce("c", value("3")));
-            assertNull(segment.get("a"));
-            assertTrue(removals.contains("a"));
+            
+            // Then
+            assertNull(segment.get("a"), "Oldest entry 'a' should be forcefully evicted");
+            assertTrue(removals.contains("a"), "Evicted entry 'a' should trigger listener notification");
         }
     }
 
     @Nested
     class RemoveOperations
     {
-        // Bu test remove çağrısının değeri döndürüp politikayı bilgilendirdiğini doğrular.
+        /**
+         * Verifies that remove returns the value and notifies the policy.
+         */
         @Test
-        void remove_returns_value_when_present()
+        void shouldReturnValueAndNotifyPolicyOnRemove()
         {
+            // Given
             assertTrue(segment.put("a", value("1")));
+            
+            // When
             CacheValue removed = segment.remove("a");
-            assertNotNull(removed);
-            assertEquals(List.of("a"), policy.removed());
+            
+            // Then
+            assertNotNull(removed, "Removed value should not be null");
+            assertEquals(List.of("a"), policy.removed(), "Policy should be notified of the removal");
         }
 
-        // Bu test expireAt eşleştiğinde koşullu silmenin başarılı olduğunu ispatlar.
+        /**
+         * Proves that conditional removal succeeds if the expireAt timestamp matches.
+         */
         @Test
-        void remove_if_matches_deletes_when_timestamp_matches()
+        void shouldRemoveIfTimestampMatchesOnRemoveIfMatches()
         {
+            // Given
             assertTrue(segment.put("a", new CacheValue("v".getBytes(StandardCharsets.UTF_8), 123L)));
-            assertFalse(segment.removeIfMatches("a", 999L));
-            assertTrue(segment.removeIfMatches("a", 123L));
-            assertTrue(removals.contains("a"));
+            
+            // When
+            boolean failedRemove = segment.removeIfMatches("a", 999L);
+            boolean successfulRemove = segment.removeIfMatches("a", 123L);
+            
+            // Then
+            assertFalse(failedRemove, "Remove should fail if timestamps mismatch");
+            assertTrue(successfulRemove, "Remove should succeed if timestamps match");
+            assertTrue(removals.contains("a"), "Removal should notify listener");
         }
 
-        // Bu test clear çağrısının tüm girdileri temizlediğini doğrular.
+        /**
+         * Verifies that the clear call removes all entries.
+         */
         @Test
-        void clear_removes_all_entries()
+        void shouldRemoveAllEntriesOnClear()
         {
+            // Given
             assertTrue(segment.put("a", value("1")));
             assertTrue(segment.put("b", value("2")));
+            
+            // When
             segment.clear();
-            assertEquals(0, segment.size());
-            assertTrue(policy.removed().containsAll(List.of("a", "b")));
+            
+            // Then
+            assertEquals(0, segment.size(), "Size should be 0 after clear");
+            assertTrue(policy.removed().containsAll(List.of("a", "b")), "Policy should be notified of all removals");
         }
     }
 
     @Nested
     class CasOperations
     {
-        // Bu test CAS kararı başarı olduğunda yeni değerin yazıldığını gösterir.
+        /**
+         * Shows that the new value is written if the CAS decision is successful.
+         */
         @Test
-        void compare_and_swap_writes_new_value_on_success()
+        void shouldWriteNewValueOnCasSuccess()
         {
+            // Given
             assertTrue(segment.put("a", value("old")));
+            
+            // When
             var result = segment.compareAndSwap("a", existing -> CasDecision.success(value("new")));
-            assertTrue(result.success());
-            assertEquals("new", text(segment.get("a")));
-            assertTrue(policy.accesses().contains("a"));
+            
+            // Then
+            assertTrue(result.success(), "CAS should succeed");
+            assertEquals("new", text(segment.get("a")), "Value should be updated to 'new'");
+            assertTrue(policy.accesses().contains("a"), "Policy should register an access");
         }
 
-        // Bu test CAS kararı mevcut girdiyi kaldırdığında dinleyicinin çağrıldığını doğrular.
+        /**
+         * Verifies that the listener is called when a CAS decision results in deleting the current entry.
+         */
         @Test
-        void compare_and_swap_notifies_listener_on_delete()
+        void shouldNotifyListenerWhenCasDeletesEntry()
         {
+            // Given
             assertTrue(segment.put("a", value("old")));
+            
+            // When
             var result = segment.compareAndSwap("a", existing -> CasDecision.expired());
-            assertFalse(result.success());
-            assertNull(segment.get("a"));
-            assertTrue(removals.contains("a"));
+            
+            // Then
+            assertFalse(result.success(), "CAS should fail due to expiration");
+            assertNull(segment.get("a"), "Value should be removed after expiration CAS");
+            assertTrue(removals.contains("a"), "Listener should be notified of removal");
         }
     }
 
     @Nested
     class OtherOperations
     {
-        // Bu test forEach çağrısının snapshot üzerinden güvenle çalıştığını doğrular.
+        /**
+         * Verifies that a forEach iteration operates safely over a snapshot.
+         */
         @Test
-        void for_each_continues_operating_on_snapshot()
+        void shouldOperateSafelyOverSnapshotOnForEach()
         {
+            // Given
             assertTrue(segment.put("a", value("1")));
             assertTrue(segment.put("b", value("2")));
             List<String> keys = new ArrayList<>();
+            
+            // When
             segment.forEach((key, value) -> {
                 keys.add(key);
                 segment.put("c", value("3"));
             });
-            assertEquals(List.of("a", "b"), keys);
-            assertEquals(3, segment.size());
+            
+            // Then
+            assertEquals(List.of("a", "b"), keys, "Iteration should only cover original entries");
+            assertEquals(3, segment.size(), "Segment size should grow despite concurrent modification via snapshot iteration");
         }
     }
 

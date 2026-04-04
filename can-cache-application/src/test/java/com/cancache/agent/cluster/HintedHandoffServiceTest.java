@@ -26,53 +26,77 @@ class HintedHandoffServiceTest
     @Nested
     class RecordingOperations
     {
-        // Bu test set ipucunun kuyruğa eklendiğini ve metriklerin arttığını doğrular.
+        /**
+         * Verifies that recording a set hint enqueues it and increments the corresponding metric.
+         */
         @Test
-        void record_set_enqueues_hint()
+        void shouldEnqueueHintOnRecordSet()
         {
+            // Given / When
             service.recordSet("node", "key", "value", Duration.ofSeconds(1));
-            assertEquals(1, service.pendingFor("node"));
-            assertEquals(1L, metrics.counter("hinted_handoff_enqueued_total").get());
+            
+            // Then
+            assertEquals(1, service.pendingFor("node"), "Pending hints for node should be 1");
+            assertEquals(1L, metrics.counter("hinted_handoff_enqueued_total").get(), "Enqueued hints counter should be incremented");
         }
 
-        // Bu test delete ve CAS ipuçlarının da kuyruğa eklendiğini gösterir.
+        /**
+         * Shows that recording delete and CAS hints also enqueues them properly.
+         */
         @Test
-        void record_delete_and_cas_enqueue_hints()
+        void shouldEnqueueHintsOnRecordDeleteAndCas()
         {
+            // Given / When
             service.recordDelete("node", "key");
             service.recordCas("node", "key", "value", 5L, Duration.ZERO);
-            assertEquals(2, service.pendingFor("node"));
+            
+            // Then
+            assertEquals(2, service.pendingFor("node"), "Pending hints for node should be 2 after delete and CAS records");
         }
     }
 
     @Nested
     class ReplayOperations
     {
-        // Bu test başarılı ipuçlarının yeniden oynatılarak kuyruktan silindiğini doğrular.
+        /**
+         * Verifies that successful hints are replayed and removed from the queue.
+         */
         @Test
-        void replay_cleans_up_successful_hints()
+        void shouldCleanUpSuccessfulHintsOnReplay()
         {
+            // Given
             service.recordSet("node", "key", "value", Duration.ofSeconds(1));
             service.recordDelete("node", "key");
             service.recordCas("node", "key", "value", 1L, Duration.ofSeconds(1));
+            
+            // When
             service.replay("node", node);
-            assertEquals(1, node.setCallCount());
-            assertEquals(1, node.deleteCallCount());
-            assertEquals(1, node.casCallCount());
-            assertEquals(0, service.pendingFor("node"));
-            assertEquals(3L, metrics.counter("hinted_handoff_replayed_total").get());
+            
+            // Then
+            assertEquals(1, node.setCallCount(), "Node should receive 1 set call");
+            assertEquals(1, node.deleteCallCount(), "Node should receive 1 delete call");
+            assertEquals(1, node.casCallCount(), "Node should receive 1 CAS call");
+            assertEquals(0, service.pendingFor("node"), "Pending hints should be cleared after successful replay");
+            assertEquals(3L, metrics.counter("hinted_handoff_replayed_total").get(), "Replayed hints counter should reflect 3 successful replays");
         }
 
-        // Bu test yeniden oynatma başarısız olduğunda ipucunun kuyrukta kaldığını ve hata metriğinin arttığını doğrular.
+        /**
+         * Verifies that a failed hint remains in the queue and the failure metric is incremented.
+         */
         @Test
-        void replay_leaves_hint_on_failure()
+        void shouldLeaveHintInQueueOnReplayFailure()
         {
+            // Given
             service.recordSet("node", "key", "value", Duration.ZERO);
             node.throwNextSet();
+            
+            // When
             service.replay("node", node);
-            assertEquals(1, node.setCallCount());
-            assertEquals(1, service.pendingFor("node"));
-            assertEquals(1L, metrics.counter("hinted_handoff_failures_total").get());
+            
+            // Then
+            assertEquals(1, node.setCallCount(), "Node should receive 1 set call despite failure");
+            assertEquals(1, service.pendingFor("node"), "Hint should remain in the pending queue due to failure");
+            assertEquals(1L, metrics.counter("hinted_handoff_failures_total").get(), "Failure counter should be incremented");
         }
     }
 

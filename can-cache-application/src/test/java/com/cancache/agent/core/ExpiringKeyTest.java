@@ -13,25 +13,37 @@ class ExpiringKeyTest
     @Nested
     class TimingBehavior
     {
-        // Bu test gelecekteki zamanlar için bekleme süresinin pozitif olduğunu doğrular.
+        /**
+         * Verifies that the delay for future times is a positive value.
+         */
         @Test
-        void get_delay_returns_positive_for_future_time()
+        void shouldReturnPositiveDelayForFutureTime()
         {
+            // Given
             long expireAt = System.currentTimeMillis() + 200L;
             ExpiringKey key = new ExpiringKey("k", 0, expireAt);
+            
+            // When
             long delay = key.getDelay(TimeUnit.MILLISECONDS);
-            assertTrue(delay > 0 && delay <= 200L);
+            
+            // Then
+            assertTrue(delay > 0 && delay <= 200L, "Delay should be positive and within the expected bound");
         }
 
-        // Bu test compareTo'nun en erken süresi olan anahtarı önce sıraladığını gösterir.
+        /**
+         * Shows that compareTo orders keys by their expiration time, placing the earliest first.
+         */
         @Test
-        void compare_to_orders_by_expiration_time()
+        void shouldOrderByExpirationTimeOnCompareTo()
         {
+            // Given
             long now = System.currentTimeMillis();
             ExpiringKey early = new ExpiringKey("a", 0, now + 10);
             ExpiringKey late = new ExpiringKey("b", 0, now + 50);
-            assertTrue(early.compareTo(late) < 0);
-            assertTrue(late.compareTo(early) > 0);
+            
+            // When / Then
+            assertTrue(early.compareTo(late) < 0, "Earlier key should come before later key");
+            assertTrue(late.compareTo(early) > 0, "Later key should come after earlier key");
         }
     }
 }

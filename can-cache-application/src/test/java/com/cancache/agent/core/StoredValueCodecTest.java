@@ -12,84 +12,128 @@ class StoredValueCodecTest
     @Nested
     class DecodeBehavior
     {
-        // Bu test encode edilmiş verinin çözümlenerek aynı alanları ürettiğini doğrular.
+        /**
+         * Verifies that decoded data produces the same fields as the encoded valid value.
+         */
         @Test
-        void decode_decodes_valid_value()
+        void shouldDecodeValidValueSuccessfully()
         {
+            // Given
             StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
                     "veri".getBytes(StandardCharsets.UTF_8), 7, 99L, 1_234L);
             String encoded = StoredValueCodec.encode(stored);
+            
+            // When
             StoredValueCodec.StoredValue decoded = StoredValueCodec.decode(encoded);
-            assertArrayEquals(stored.value(), decoded.value());
-            assertEquals(stored.flags(), decoded.flags());
-            assertEquals(stored.cas(), decoded.cas());
-            assertEquals(stored.expireAt(), decoded.expireAt());
-            assertTrue(decoded.hasMetadata());
+            
+            // Then
+            assertArrayEquals(stored.value(), decoded.value(), "Values should match");
+            assertEquals(stored.flags(), decoded.flags(), "Flags should match");
+            assertEquals(stored.cas(), decoded.cas(), "CAS tokens should match");
+            assertEquals(stored.expireAt(), decoded.expireAt(), "Expiration times should match");
+            assertTrue(decoded.hasMetadata(), "Valid decoded value should have metadata");
         }
 
-        // Bu test bozuk Base64 girdisinin legacy formatı olarak ele alındığını gösterir.
+        /**
+         * Shows that invalid Base64 input is interpreted as the legacy format.
+         */
         @Test
-        void decode_interprets_invalid_value_as_legacy()
+        void shouldInterpretInvalidValueAsLegacy()
         {
-            StoredValueCodec.StoredValue decoded = StoredValueCodec.decode("not-base64");
-            assertArrayEquals("not-base64".getBytes(StandardCharsets.UTF_8), decoded.value());
-            assertFalse(decoded.hasMetadata());
-            assertEquals(0L, decoded.cas());
-            assertEquals(0L, decoded.expireAt());
+            // Given
+            String input = "not-base64";
+            
+            // When
+            StoredValueCodec.StoredValue decoded = StoredValueCodec.decode(input);
+            
+            // Then
+            assertArrayEquals("not-base64".getBytes(StandardCharsets.UTF_8), decoded.value(), "Value should be the verbatim input bytes");
+            assertFalse(decoded.hasMetadata(), "Legacy values should not have metadata");
+            assertEquals(0L, decoded.cas(), "Legacy CAS should be 0");
+            assertEquals(0L, decoded.expireAt(), "Legacy expiration should be 0");
         }
 
-        // Bu test expireAt geçmiş olduğunda expired metodunun true döndüğünü doğrular.
+        /**
+         * Verifies that the expired method returns true when the expiration time is in the past.
+         */
         @Test
-        void expired_returns_true_for_past_value()
+        void shouldReturnTrueForPastValueOnExpired()
         {
+            // Given
             long past = System.currentTimeMillis() - 1_000L;
             StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
                     "x".getBytes(StandardCharsets.UTF_8), 1, 5L, past);
-            assertTrue(stored.expired(System.currentTimeMillis()));
+            
+            // When
+            boolean isExpired = stored.expired(System.currentTimeMillis());
+            
+            // Then
+            assertTrue(isExpired, "Stored value with past expiration should be considered expired");
         }
     }
 
     @Nested
     class MutationBehavior
     {
-        // Bu test withValue çağrısının yeni değer ve CAS ürettiğini gösterir.
+        /**
+         * Shows that calling withValue creates a new instance with updated value and CAS.
+         */
         @Test
-        void with_value_updates_value_and_cas()
+        void shouldUpdateValueAndCasOnWithValue()
         {
+            // Given
             StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
                     "eski".getBytes(StandardCharsets.UTF_8), 2, 10L, 0L);
+            
+            // When
             StoredValueCodec.StoredValue mutated = stored.withValue("yeni".getBytes(StandardCharsets.UTF_8), 12L);
-            assertArrayEquals("yeni".getBytes(StandardCharsets.UTF_8), mutated.value());
-            assertEquals(12L, mutated.cas());
-            assertEquals(stored.flags(), mutated.flags());
-            assertEquals(stored.expireAt(), mutated.expireAt());
+            
+            // Then
+            assertArrayEquals("yeni".getBytes(StandardCharsets.UTF_8), mutated.value(), "Value should be updated");
+            assertEquals(12L, mutated.cas(), "CAS should be updated");
+            assertEquals(stored.flags(), mutated.flags(), "Flags should remain unchanged");
+            assertEquals(stored.expireAt(), mutated.expireAt(), "Expiration should remain unchanged");
         }
 
-        // Bu test withMeta çağrısının tüm alanları güncellediğini doğrular.
+        /**
+         * Verifies that calling withMeta updates all fields.
+         */
         @Test
-        void with_meta_updates_all_fields()
+        void shouldUpdateAllFieldsOnWithMeta()
         {
+            // Given
             StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
                     "veri".getBytes(StandardCharsets.UTF_8), 1, 3L, 4L);
+            
+            // When
             StoredValueCodec.StoredValue mutated = stored.withMeta(
                     "yeni".getBytes(StandardCharsets.UTF_8), 9, 7L, 8L);
-            assertArrayEquals("yeni".getBytes(StandardCharsets.UTF_8), mutated.value());
-            assertEquals(9, mutated.flags());
-            assertEquals(7L, mutated.cas());
-            assertEquals(8L, mutated.expireAt());
+            
+            // Then
+            assertArrayEquals("yeni".getBytes(StandardCharsets.UTF_8), mutated.value(), "Value should be updated");
+            assertEquals(9, mutated.flags(), "Flags should be updated");
+            assertEquals(7L, mutated.cas(), "CAS should be updated");
+            assertEquals(8L, mutated.expireAt(), "Expiration should be updated");
         }
 
-        // Bu test withExpireAt çağrısının yalnızca süre bilgisini güncellediğini gösterir.
+        /**
+         * Shows that calling withExpireAt only updates the expiration and CAS.
+         */
         @Test
-        void with_expire_at_only_changes_expiration()
+        void shouldOnlyChangeExpirationAndCasOnWithExpireAt()
         {
+            // Given
             StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(
                     "veri".getBytes(StandardCharsets.UTF_8), 1, 3L, 4L);
+            
+            // When
             StoredValueCodec.StoredValue mutated = stored.withExpireAt(55L, 66L);
-            assertEquals(55L, mutated.expireAt());
-            assertEquals(66L, mutated.cas());
-            assertArrayEquals(stored.value(), mutated.value());
-            assertEquals(stored.flags(), mutated.flags());
+            
+            // Then
+            assertEquals(55L, mutated.expireAt(), "Expiration should be updated");
+            assertEquals(66L, mutated.cas(), "CAS should be updated");
+            assertArrayEquals(stored.value(), mutated.value(), "Value should remain unchanged");
+            assertEquals(stored.flags(), mutated.flags(), "Flags should remain unchanged");
         }
     }
 }

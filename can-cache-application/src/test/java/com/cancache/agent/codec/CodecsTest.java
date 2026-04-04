@@ -12,50 +12,85 @@ class CodecsTest
     @Nested
     class StringCodecBehavior
     {
-        // Bu test null değerin boş diziye dönüştürüldüğünü doğrular.
+        /**
+         * Verifies that encoding a null value yields an empty array.
+         */
         @Test
-        void encode_null_returns_empty_array()
+        void shouldReturnEmptyArrayWhenEncodingNull()
         {
-            assertArrayEquals(new byte[0], StringCodec.UTF8.encode(null));
+            // Given / When
+            byte[] result = StringCodec.UTF8.encode(null);
+            
+            // Then
+            assertArrayEquals(new byte[0], result, "Encoding null should result in an empty byte array");
         }
 
-        // Bu test boş dizinin boş stringe çözüldüğünü gösterir.
+        /**
+         * Shows that an empty array decodes into an empty string.
+         */
         @Test
-        void decode_empty_array_returns_empty_string()
+        void shouldReturnEmptyStringWhenDecodingEmptyArray()
         {
-            assertEquals("", StringCodec.UTF8.decode(new byte[0]));
+            // Given / When
+            String result = StringCodec.UTF8.decode(new byte[0]);
+            
+            // Then
+            assertEquals("", result, "Decoding an empty byte array should return an empty string");
         }
 
-        // Bu test encode-decode işleminin yuvarlak tur sağladığını doğrular.
+        /**
+         * Verifies that an encode-decode round trip preserves the original string.
+         */
         @Test
-        void encode_decode_performs_round_trip()
+        void shouldPerformRoundTripEncodeDecode()
         {
+            // Given
             String original = "Merhaba dünya";
+            
+            // When
             byte[] encoded = StringCodec.UTF8.encode(original);
-            assertEquals(original, StringCodec.UTF8.decode(encoded));
+            String decoded = StringCodec.UTF8.decode(encoded);
+            
+            // Then
+            assertEquals(original, decoded, "Decoded string should match the original after round-trip");
         }
     }
 
     @Nested
     class JavaSerializerCodecBehavior
     {
-        // Bu test serileştirilebilir nesnenin aynı içerikle geri döndüğünü doğrular.
+        /**
+         * Verifies that a serializable object is returned with identical content after serialization and deserialization.
+         */
         @Test
-        void serialize_and_deserialize_return_same_object()
+        void shouldReturnIdenticalObjectAfterSerializeAndDeserialize()
         {
+            // Given
             JavaSerializerCodec<Sample> codec = new JavaSerializerCodec<>();
             Sample original = new Sample("data", 42);
+            
+            // When
             byte[] bytes = codec.encode(original);
             Sample decoded = codec.decode(bytes);
-            assertEquals(original, decoded);
+            
+            // Then
+            assertEquals(original, decoded, "Decoded object should be identical to the original");
         }
 
-        // Bu test boş diziden null döndüğünü gösterir.
+        /**
+         * Shows that decoding an empty array returns null.
+         */
         @Test
-        void decode_empty_array_returns_null()
+        void shouldReturnNullWhenDecodingEmptyArray()
         {
+            // Given
             JavaSerializerCodec<Sample> codec = new JavaSerializerCodec<>();
-            assertNull(codec.decode(new byte[0]));
+            
+            // When
+            Sample result = codec.decode(new byte[0]);
+            
+            // Then
+            assertNull(result, "Decoding an empty byte array should result in null");
         }
     }
 

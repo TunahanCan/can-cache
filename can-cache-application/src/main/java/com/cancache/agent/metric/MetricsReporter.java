@@ -4,10 +4,13 @@ import com.cancache.agent.cluster.ClusterState;
 import com.cancache.agent.config.AppProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
+import io.micrometer.core.instrument.config.MeterFilter;
 import io.quarkus.runtime.Startup;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import org.jboss.logging.Logger;
 
 import java.util.List;
@@ -55,20 +58,23 @@ public class MetricsReporter implements AutoCloseable
         this.replicationRole = "standalone";
     }
 
+    @Produces
+    @Singleton
+    public MeterFilter commonTagsFilter(AppProperties properties, ClusterState clusterState) {
+        String nId = clusterState != null ? clusterState.localNodeId() : "unknown";
+        String rRole = properties.metrics().replicationRole();
+        return MeterFilter.commonTags(List.of(
+            Tag.of("node_id", sanitize(nId)),
+            Tag.of("role", sanitize(rRole))
+        ));
+    }
+
     @PostConstruct
     void init()
     {
         if (meterRegistry == null) {
             return;
         }
-
-        // Ortak etiketleri MeterRegistry'ye ekle
-        List<Tag> commonTags = List.of(
-                Tag.of("node_id", sanitize(nodeId)),
-                Tag.of("role", sanitize(replicationRole))
-        );
-
-        meterRegistry.config().commonTags(commonTags);
 
         LOG.infof("Micrometer metrics configured with node_id=%s, role=%s", nodeId, replicationRole);
         LOG.info("Prometheus endpoint available at /q/metrics (or configured path)");

@@ -37,129 +37,212 @@ class ClusterClientTest
     @Nested
     class SetOperations
     {
-        // Bu test halka boş olduğunda set çağrısının başarısız döndüğünü doğrular.
+        /**
+         * Verifies that the set call returns false when the hash ring is empty.
+         */
         @Test
-        void set_returns_false_on_empty_ring()
+        void shouldReturnFalseOnEmptyRingWhenSetIsCalled()
         {
+            // Given
             ConsistentHashRing<Node<String, String>> emptyRing = new ConsistentHashRing<>(new ControlledHash(), 1);
             ClusterClient emptyClient = new ClusterClient(emptyRing, 3, StringCodec.UTF8, handoff);
-            assertFalse(emptyClient.set("clientKey", "value", null));
+
+            // When
+            boolean result = emptyClient.set("clientKey", "value", null);
+
+            // Then
+            assertFalse(result, "Set should return false if no nodes are available in the ring");
         }
 
-        // Bu test çoğunluk başarı sağladığında true döndüğünü ve hatalı düğümün kuyruğa eklendiğini gösterir.
+        /**
+         * Demonstrates that true is returned when the quorum is met, and a failed node is added to the handoff queue.
+         */
         @Test
-        void set_returns_true_when_quorum_reached()
+        void shouldReturnTrueWhenQuorumReachedOnSet()
         {
+            // Given
             replica1.failNextSet();
-            assertTrue(client.set("clientKey", "value", Duration.ofSeconds(1)));
-            assertEquals(1, handoff.pendingFor(replica1.id()));
-            assertEquals(0, handoff.pendingFor(replica2.id()));
-            assertEquals(0, handoff.pendingFor(leader.id()));
+
+            // When
+            boolean result = client.set("clientKey", "value", Duration.ofSeconds(1));
+
+            // Then
+            assertTrue(result, "Set should return true when a quorum of nodes succeeds");
+            assertEquals(1, handoff.pendingFor(replica1.id()), "Hinted handoff should queue a message for the failed replica1");
+            assertEquals(0, handoff.pendingFor(replica2.id()), "No messages should be queued for the successful replica2");
+            assertEquals(0, handoff.pendingFor(leader.id()), "No messages should be queued for the successful leader");
         }
 
-        // Bu test lider düğüm hata verip çoğunluk sağlanamadığında istisna fırlatıldığını doğrular.
+        /**
+         * Verifies that an exception is thrown when the leader node fails and a quorum cannot be met.
+         */
         @Test
-        void set_throws_when_leader_fails_and_no_quorum()
+        void shouldThrowExceptionWhenLeaderFailsAndNoQuorumOnSet()
         {
+            // Given
             leader.throwNextSet();
             replica1.failNextSet();
             replica2.failNextSet();
-            RuntimeException ex = assertThrows(RuntimeException.class, () -> client.set("clientKey", "value", null));
-            assertTrue(ex.getMessage().contains("set"));
-            assertEquals(1, handoff.pendingFor(leader.id()));
-            assertEquals(1, handoff.pendingFor(replica1.id()));
-            assertEquals(1, handoff.pendingFor(replica2.id()));
+
+            // When
+            RuntimeException ex = assertThrows(RuntimeException.class, () -> client.set("clientKey", "value", null), "Should throw an exception if set quorum fails completely");
+
+            // Then
+            assertTrue(ex.getMessage().contains("set"), "Exception message should indicate a set failure");
+            assertEquals(1, handoff.pendingFor(leader.id()), "Hinted handoff should queue a message for the failed leader");
+            assertEquals(1, handoff.pendingFor(replica1.id()), "Hinted handoff should queue a message for the failed replica1");
+            assertEquals(1, handoff.pendingFor(replica2.id()), "Hinted handoff should queue a message for the failed replica2");
         }
     }
 
     @Nested
     class ReadOperations
     {
-        // Bu test ilk başarılı replikanın değerini döndürdüğünü doğrular.
+        /**
+         * Verifies that the value is returned from the first successful replica.
+         */
         @Test
-        void get_returns_value_from_first_successful_replica()
+        void shouldReturnFirstSuccessfulReplicaValueOnGet()
         {
+            // Given
             replica1.preset("value");
-            assertEquals("value", client.get("clientKey"));
+
+            // When
+            String result = client.get("clientKey");
+
+            // Then
+            assertEquals("value", result, "Get should return the value from the successful replica");
         }
 
-        // Bu test hiçbir replika değer döndürmezse null geldiğini gösterir.
+        /**
+         * Demonstrates that null is returned if no replicas yield a value.
+         */
         @Test
-        void get_returns_null_when_all_replicas_empty()
+        void shouldReturnNullWhenAllReplicasEmptyOnGet()
         {
-            assertNull(client.get("clientKey"));
+            // Given (Replicas are empty by default)
+
+            // When
+            String result = client.get("clientKey");
+
+            // Then
+            assertNull(result, "Get should return null if the value doesn't exist on any replica");
         }
 
-        // Bu test ilk node'un exception fırlatıp ikinci node'un başarılı değer döndürdüğü durumu doğrular.
+        /**
+         * Verifies that the process continues to the next node and succeeds if the first node throws an exception.
+         */
         @Test
-        void get_continues_to_next_node_on_exception()
+        void shouldContinueToNextNodeOnExceptionDuringGet()
         {
+            // Given
             leader.throwNextGet();
             replica1.preset("fallback-value");
-            assertEquals("fallback-value", client.get("clientKey"));
+
+            // When
+            String result = client.get("clientKey");
+
+            // Then
+            assertEquals("fallback-value", result, "Get should fall back to the next replica and retrieve the value if the first one throws");
         }
     }
 
     @Nested
     class DeleteOperations
     {
-        // Bu test iki replika silmeyi başarıyla tamamladığında true döndüğünü doğrular.
+        /**
+         * Verifies that true is returned when two replicas successfully complete the deletion.
+         */
         @Test
-        void delete_returns_true_with_quorum()
+        void shouldReturnTrueWithQuorumOnDelete()
         {
+            // Given
             replica2.failNextDelete();
-            assertTrue(client.delete("clientKey"));
-            assertEquals(1, handoff.pendingFor(replica2.id()));
+
+            // When
+            boolean result = client.delete("clientKey");
+
+            // Then
+            assertTrue(result, "Delete should succeed when quorum is met");
+            assertEquals(1, handoff.pendingFor(replica2.id()), "Failed replica should have a queued handoff item");
         }
 
-        // Bu test çoğunluk sağlanamadığında false döndüğünü ve ipucu kaydedildiğini gösterir.
+        /**
+         * Demonstrates that false is returned and a hint is saved when the quorum cannot be met.
+         */
         @Test
-        void delete_returns_false_without_quorum()
+        void shouldReturnFalseWithoutQuorumOnDelete()
         {
+            // Given
             leader.failNextDelete();
             replica1.failNextDelete();
-            assertFalse(client.delete("clientKey"));
-            assertEquals(1, handoff.pendingFor(replica1.id()));
-            assertEquals(0, handoff.pendingFor(replica2.id()));
+
+            // When
+            boolean result = client.delete("clientKey");
+
+            // Then
+            assertFalse(result, "Delete should fail when quorum is not met");
+            assertEquals(1, handoff.pendingFor(replica1.id()), "Handoff hint should be saved for replica1");
+            assertEquals(0, handoff.pendingFor(replica2.id()), "No handoff hint should be saved for successful replica2");
         }
     }
 
     @Nested
     class CasOperations
     {
-        // Bu test çoğunluk sağlandığında CAS operasyonunun true döndürdüğünü doğrular.
+        /**
+         * Verifies that the CAS operation returns true when the quorum is met.
+         */
         @Test
-        void compare_and_swap_returns_true_with_quorum()
+        void shouldReturnTrueWithQuorumOnCompareAndSwap()
         {
+            // Given
             replica2.failNextCas();
-            assertTrue(client.compareAndSwap("clientKey", "v", 1L, Duration.ofSeconds(1)));
-            assertEquals(0, handoff.pendingFor(replica2.id()));
+
+            // When
+            boolean result = client.compareAndSwap("clientKey", "v", 1L, Duration.ofSeconds(1));
+
+            // Then
+            assertTrue(result, "CAS should succeed when quorum is met");
+            assertEquals(0, handoff.pendingFor(replica2.id()), "No hinted handoff queue expected for CAS"); // Wait, the original assertion checks for 0 here
         }
 
-        // Bu test lider hata verdiğinde ve çoğunluk sağlanamadığında istisna fırlatıldığını gösterir.
+        /**
+         * Demonstrates that an exception is thrown when the leader fails and a quorum cannot be met.
+         */
         @Test
-        void compare_and_swap_throws_when_leader_fails()
+        void shouldThrowWhenLeaderFailsOnCompareAndSwap()
         {
+            // Given
             leader.throwNextCas();
             replica1.failNextCas();
             replica2.failNextCas();
-            RuntimeException ex = assertThrows(RuntimeException.class, () -> client.compareAndSwap("clientKey", "v", 1L, null));
-            assertTrue(ex.getMessage().contains("cas"));
-            assertEquals(1, handoff.pendingFor(leader.id()));
+
+            // When
+            RuntimeException ex = assertThrows(RuntimeException.class, () -> client.compareAndSwap("clientKey", "v", 1L, null), "Exception expected when CAS quorum fails");
+
+            // Then
+            assertTrue(ex.getMessage().contains("cas"), "Exception message should indicate a CAS failure");
+            assertEquals(1, handoff.pendingFor(leader.id()), "Hinted handoff queued for leader (as per original logic)");
         }
     }
 
     @Nested
     class MaintenanceOperations
     {
-        // Bu test clear çağrısının tüm düğümlerde yürütüldüğünü doğrular.
+        /**
+         * Verifies that the clear call is executed across all nodes.
+         */
         @Test
-        void clear_invokes_all_nodes()
+        void shouldInvokeClearOnAllNodes()
         {
+            // Given / When
             client.clear();
-            assertEquals(1, leader.clearCalls);
-            assertEquals(1, replica1.clearCalls);
-            assertEquals(1, replica2.clearCalls);
+
+            // Then
+            assertEquals(1, leader.clearCalls, "Leader should receive clear call");
+            assertEquals(1, replica1.clearCalls, "Replica1 should receive clear call");
+            assertEquals(1, replica2.clearCalls, "Replica2 should receive clear call");
         }
     }
 
