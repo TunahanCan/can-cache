@@ -11,7 +11,8 @@ public final class JavaSerializerCodec<T extends Serializable> implements Codec<
 {
 
     @Override
-    public byte[] encode(T obj) {
+    public byte[] encode(T obj)
+    {
         if (obj == null) return new byte[0];
         try (var baos = new ByteArrayOutputStream();
              var oos = new ObjectOutputStream(baos)) {
@@ -23,7 +24,8 @@ public final class JavaSerializerCodec<T extends Serializable> implements Codec<
 
 
     @Override
-    public T decode(byte[] bytes) {
+    public T decode(byte[] bytes)
+    {
         if (bytes == null || bytes.length == 0) return null;
         try (var bais = new ByteArrayInputStream(bytes);
              var ois = new ObjectInputStream(bais)) {

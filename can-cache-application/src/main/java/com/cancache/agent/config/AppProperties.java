@@ -3,6 +3,8 @@ package com.cancache.agent.config;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
+import java.time.Duration; // Duration için import eklendi
+import java.util.List;   // List için import eklendi
 import java.util.Optional;
 
 /**
@@ -66,9 +68,13 @@ public interface AppProperties
         Discovery discovery();
         Replication replication();
         Coordination coordination();
+        Gossip gossip(); // Yeni eklendi
     }
 
     interface Discovery {
+        @WithDefault("MULTICAST") // Varsayılan keşif stratejisi
+        DiscoveryType type(); // Yeni eklendi
+
         @WithDefault("230.0.0.1")
         String multicastGroup();
 
@@ -82,6 +88,33 @@ public interface AppProperties
         long failureTimeoutMillis();
 
         Optional<String> nodeId();
+    }
+
+    // Yeni eklendi
+    interface Gossip {
+        @WithDefault("0.0.0.0")
+        String bindHost();
+
+        @WithDefault("45566") // Multicast portundan farklı bir port
+        int port();
+
+        @WithDefault("PT1S") // 1 saniyede bir ping
+        Duration pingInterval();
+
+        @WithDefault("PT500MS") // 500ms'de bir dedikodu değişimi
+        Duration gossipInterval();
+
+        @WithDefault("PT10S") // 10 saniye yanıt yoksa şüpheli
+        Duration failureTimeout();
+
+        @WithDefault("PT30S") // 30 saniye sonra ölü üyeyi temizle
+        Duration deadMemberCleanupDelay();
+
+        @WithDefault("PT5S") // Yeni eklendi: Temizlik görevlerinin çalışma aralığı
+        Duration cleanupInterval();
+
+        @WithDefault("localhost:45566") // Başlangıç tohum düğümleri
+        List<String> seedNodes();
     }
 
     interface Replication {
@@ -168,4 +201,10 @@ public interface AppProperties
         boolean requiredOnStartup();
     }
 
+    // Yeni eklendi
+    enum DiscoveryType {
+        MULTICAST,
+        DNS,
+        GOSSIP
+    }
 }

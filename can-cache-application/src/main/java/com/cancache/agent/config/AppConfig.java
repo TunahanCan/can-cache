@@ -7,6 +7,9 @@ import com.cancache.agent.cluster.HashFn;
 import com.cancache.agent.cluster.HintedHandoffService;
 import com.cancache.agent.cluster.Node;
 import com.cancache.agent.cluster.coordination.CoordinationService;
+import com.cancache.agent.cluster.coordination.DiscoveryStrategy; // Import eklendi
+import com.cancache.agent.cluster.coordination.MulticastDiscoveryStrategy; // Import eklendi
+import com.cancache.agent.cluster.coordination.gossip.GossipDiscoveryStrategy; // Import eklendi
 import com.cancache.agent.codec.StringCodec;
 import com.cancache.agent.core.CacheEngine;
 import com.cancache.agent.core.EvictionPolicyType;
@@ -20,6 +23,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Disposes;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
+import jakarta.inject.Named; // Import eklendi
 import jakarta.inject.Singleton;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -210,6 +214,29 @@ public class AppConfig {
     public HintedHandoffService hintedHandoffService(MetricsRegistry metrics)
     {
         return new HintedHandoffService(metrics);
+    }
+
+    @Produces
+    @Singleton
+    @Named("selectedDiscoveryStrategy")
+    public DiscoveryStrategy discoveryStrategy(Vertx vertx, AppProperties properties, ClusterState clusterState) {
+        AppProperties.DiscoveryType discoveryType = properties.cluster().discovery().type();
+        switch (discoveryType) {
+            case MULTICAST:
+                return new MulticastDiscoveryStrategy(vertx, properties, clusterState);
+            case GOSSIP:
+                return new GossipDiscoveryStrategy(vertx, properties, clusterState);
+            case DNS:
+                // TODO: Implement DnsDiscoveryStrategy
+                throw new UnsupportedOperationException("DNS Discovery Strategy is not yet implemented.");
+            default:
+                throw new IllegalArgumentException("Unknown discovery type: " + discoveryType);
+        }
+    }
+
+    // DiscoveryStrategy kaynaklarını kapatmak için dispose metodu
+    void disposeDiscoveryStrategy(@Disposes @Named("selectedDiscoveryStrategy") DiscoveryStrategy discoveryStrategy) {
+        discoveryStrategy.close();
     }
 
     @Produces

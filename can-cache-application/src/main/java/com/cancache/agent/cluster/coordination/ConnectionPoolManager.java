@@ -96,14 +96,13 @@ public class ConnectionPoolManager implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public void close()
+    {
         if (closed) {
             return;
         }
         closed = true;
-
         LOG.info("Closing ConnectionPoolManager...");
-
         pools.forEach((key, pool) -> {
             try {
                 pool.close();
@@ -112,7 +111,6 @@ public class ConnectionPoolManager implements AutoCloseable {
             }
         });
         pools.clear();
-
         LOG.info("ConnectionPoolManager closed");
     }
 }
