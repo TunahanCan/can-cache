@@ -130,7 +130,8 @@ public class CoordinationService implements AutoCloseable {
                 advertisedHost(), replicationConfig.port());
     }
 
-    private void setupSockets() throws IOException {
+    private void setupSockets() throws IOException
+    {
         groupAddress = InetAddress.getByName(discoveryConfig.multicastGroup());
         listenSocket = new MulticastSocket(discoveryConfig.multicastPort());
         listenSocket.setReuseAddress(true);
@@ -140,8 +141,10 @@ public class CoordinationService implements AutoCloseable {
         sendSocket.setReuseAddress(true);
     }
 
-    private void tryJoinMulticastGroup(NetworkInterface selectedInterface) throws IOException {
-        InetSocketAddress groupSocketAddress = new InetSocketAddress(groupAddress, discoveryConfig.multicastPort());
+    private void tryJoinMulticastGroup(NetworkInterface selectedInterface) throws IOException
+    {
+        InetSocketAddress groupSocketAddress =
+                new InetSocketAddress(groupAddress, discoveryConfig.multicastPort());
 
         // First try with the selected interface
         if (selectedInterface != null) {
@@ -225,7 +228,8 @@ public class CoordinationService implements AutoCloseable {
         }
     }
 
-    private void handlePacket(byte[] data, int length) {
+    private void handlePacket(byte[] data, int length)
+    {
         String message = new String(data, 0, length, StandardCharsets.UTF_8);
         String[] parts = message.split("\\|");
         if (parts.length < 4 || !Objects.equals(parts[0], networkConfig.agreementPackMessage())) {

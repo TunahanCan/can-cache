@@ -37,7 +37,8 @@ public class TuiDashboard {
     private boolean compactLogMode = false;
     private final Object outputLock = new Object();
 
-    public void start() {
+    public void start()
+    {
         String mode = config.dashboard().mode().toLowerCase();
         tuiMode = switch (mode) {
             case "tui" -> true;
@@ -50,7 +51,7 @@ public class TuiDashboard {
 
         if (tuiMode) {
             if (initTui()) {
-                timerId = vertx.setPeriodic(config.dashboard().refresh().toMillis(), id -> render());
+                timerId = vertx.setPeriodic(config.dashboard().refresh().toMillis(), _ -> render());
                 startKeyboardListener();
                 LOG.info("dashboard mode=tui (ansi)");
             } else {
@@ -129,7 +130,11 @@ public class TuiDashboard {
     }
 
     private boolean isLikelyCiEnvironment() {
-        List<String> envKeys = List.of("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "BUILDKITE");
+        List<String> envKeys = List.of("CI",
+                "GITHUB_ACTIONS",
+                "GITLAB_CI",
+                "JENKINS_URL",
+                "BUILDKITE");
         return envKeys.stream().anyMatch(key -> {
             String value = System.getenv(key);
             return value != null && !value.isBlank();

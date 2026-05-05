@@ -26,7 +26,8 @@ public interface AgentConfig {
 
     Shutdown shutdown();
 
-    interface Listen {
+    interface Listen
+    {
         @WithDefault("0.0.0.0")
         String host();
 

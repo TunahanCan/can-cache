@@ -98,7 +98,8 @@ public interface AppProperties
         int connectTimeoutMillis();
     }
 
-    interface Network {
+    interface Network 
+    {
         @WithDefault("0.0.0.0")
         String host();
 
