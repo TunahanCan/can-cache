@@ -1,14 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-labelledby="title desc">
-  <title id="title">Eviction alternatives animation</title>
-  <desc id="desc">Different cache eviction strategies emphasize age, randomness, recency, frequency and clock reference bits.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="540" viewBox="0 0 1120 540" role="img" aria-labelledby="title desc">
+  <title id="title">Eviction alternatives storyboard</title>
+  <desc id="desc">Compares FIFO, Random, SLRU/2Q and CLOCK eviction ideas with short explanations.</desc>
   <style>
-    .bg{fill:#071013}.t{fill:#e6f4f1;font:700 25px system-ui}.s{fill:#9bb4b0;font:500 13px system-ui}.p{fill:#102126;stroke:#31535a;stroke-width:2;rx:14}.tile{fill:#142b31;stroke:#22d3ee;stroke-width:2;rx:8}.hot{stroke:#4ade80}.bad{stroke:#fb7185}.spin{animation:spin 4s linear infinite;transform-origin:760px 205px}.blink{animation:blink 4s ease-in-out infinite}@keyframes spin{to{transform:rotate(360deg)}}@keyframes blink{0%,45%,100%{opacity:.35}60%,85%{opacity:1}}
+    .bg{fill:#081113}.title{fill:#f2fbf8;font:700 30px system-ui}.sub{fill:#a8beb9;font:500 16px system-ui}.panel{fill:#102126;stroke:#2e5056;stroke-width:2;rx:16}.box{fill:#183238;stroke:#3b6a72;stroke-width:2;rx:12}.txt{fill:#e6f4f1;font:700 16px system-ui}.muted{fill:#9bb4b0;font:500 13px system-ui}.tile{fill:#142b31;stroke:#67e8f9;stroke-width:2;rx:7}.bad{stroke:#fb7185}.good{stroke:#4ade80}.spin{animation:spin 5s linear infinite;transform-origin:852px 274px}.blink{animation:blink 5s ease-in-out infinite}@keyframes spin{to{transform:rotate(360deg)}}@keyframes blink{0%,40%,100%{opacity:.35}55%,82%{opacity:1}}
   </style>
-  <rect class="bg" width="920" height="360"/>
-  <text class="t" x="34" y="48">Eviction Alternatifleri</text>
-  <text class="s" x="34" y="76">Her algoritma farkli bir sezgiyi kullanir: yas, rastgelelik, recency, frequency veya reference bit.</text>
-  <rect class="p" x="42" y="116" width="190" height="170"/><text class="s" x="94" y="148">FIFO</text><rect class="tile bad blink" x="70" y="178" width="36" height="44"/><rect class="tile" x="118" y="178" width="36" height="44"/><rect class="tile" x="166" y="178" width="36" height="44"/><text class="s" x="64" y="256">ilk giren cikar</text>
-  <rect class="p" x="258" y="116" width="190" height="170"/><text class="s" x="314" y="148">Random</text><circle class="tile" cx="312" cy="196" r="19"/><circle class="tile bad blink" cx="354" cy="220" r="19"/><circle class="tile" cx="390" cy="188" r="19"/><text class="s" x="292" y="256">rastgele kurban</text>
-  <rect class="p" x="474" y="116" width="190" height="170"/><text class="s" x="536" y="148">SLRU / 2Q</text><rect class="tile" x="505" y="184" width="58" height="44"/><rect class="tile hot blink" x="574" y="184" width="58" height="44"/><text class="s" x="504" y="256">tekrar gorulen yukselir</text>
-  <rect class="p" x="690" y="116" width="190" height="170"/><text class="s" x="744" y="148">CLOCK</text><circle cx="760" cy="205" r="48" fill="none" stroke="#31535a" stroke-width="5"/><line class="spin" x1="760" y1="205" x2="804" y2="205" stroke="#f59e0b" stroke-width="5" stroke-linecap="round"/><circle class="tile hot" cx="760" cy="157" r="9"/><circle class="tile bad blink" cx="806" cy="205" r="9"/><circle class="tile" cx="760" cy="253" r="9"/><text class="s" x="728" y="285">reference bit</text>
+  <rect class="bg" width="1120" height="540"/>
+  <text class="title" x="36" y="50">Eviction Alternatifleri: Hangi sezgi?</text>
+  <text class="sub" x="36" y="80">Her algoritma farkli sinyal kullanir: giris zamani, rastgelelik, tekrar erisim veya reference bit.</text>
+  <rect class="panel" x="36" y="118" width="1048" height="360"/>
+
+  <rect class="box" x="76" y="152" width="230" height="260"/>
+  <text class="txt" x="108" y="184">FIFO</text>
+  <text class="muted" x="108" y="210">Soru: ilk kim geldi?</text>
+  <rect class="tile bad blink" x="108" y="244" width="44" height="46"/><text class="muted blink" x="124" y="273">A</text>
+  <rect class="tile" x="166" y="244" width="44" height="46"/><text class="muted" x="182" y="273">B</text>
+  <rect class="tile" x="224" y="244" width="44" height="46"/><text class="muted" x="240" y="273">C</text>
+  <text class="muted" x="108" y="342">En eski giren silinir.</text>
+
+  <rect class="box" x="326" y="152" width="230" height="260"/>
+  <text class="txt" x="358" y="184">Random</text>
+  <text class="muted" x="358" y="210">Soru yok: sans secimi</text>
+  <circle class="tile" cx="386" cy="266" r="22"/><text class="muted" x="380" y="271">A</text>
+  <circle class="tile bad blink" cx="442" cy="284" r="22"/><text class="muted blink" x="436" y="289">B</text>
+  <circle class="tile" cx="498" cy="250" r="22"/><text class="muted" x="492" y="255">C</text>
+  <text class="muted" x="358" y="342">Ucuzdur ama hot key gidebilir.</text>
+
+  <rect class="box" x="576" y="152" width="230" height="260"/>
+  <text class="txt" x="608" y="184">SLRU / 2Q</text>
+  <text class="muted" x="608" y="210">Soru: ikinci kez goruldu mu?</text>
+  <rect class="tile" x="610" y="252" width="72" height="46"/><text class="muted" x="624" y="281">prob</text>
+  <rect class="tile good blink" x="700" y="252" width="72" height="46"/><text class="muted blink" x="716" y="281">prot</text>
+  <text class="muted" x="608" y="342">Tek seferlik veri hot set'i bozmaz.</text>
+
+  <rect class="box" x="826" y="152" width="230" height="260"/>
+  <text class="txt" x="858" y="184">CLOCK</text>
+  <text class="muted" x="858" y="210">Soru: reference bit 1 mi?</text>
+  <circle cx="852" cy="274" r="54" fill="none" stroke="#3b6a72" stroke-width="6"/>
+  <line class="spin" x1="852" y1="274" x2="904" y2="274" stroke="#f59e0b" stroke-width="5" stroke-linecap="round"/>
+  <circle class="tile good" cx="852" cy="220" r="10"/><circle class="tile bad blink" cx="906" cy="274" r="10"/><circle class="tile" cx="852" cy="328" r="10"/>
+  <text class="muted" x="858" y="370">Bit 0 ise kurban olabilir.</text>
 </svg>

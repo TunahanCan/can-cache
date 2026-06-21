@@ -1,17 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-labelledby="title desc">
-  <title id="title">TinyLFU admission animation</title>
-  <desc id="desc">A candidate key is compared with a victim using approximate frequency sketch counters.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="540" viewBox="0 0 1120 540" role="img" aria-labelledby="title desc">
+  <title id="title">TinyLFU admission storyboard</title>
+  <desc id="desc">Explains how TinyLFU estimates candidate and victim frequencies before admitting a new key.</desc>
   <style>
-    .bg{fill:#071013}.t{fill:#e6f4f1;font:700 25px system-ui}.s{fill:#9bb4b0;font:500 14px system-ui}.b{fill:#102126;stroke:#31535a;stroke-width:2;rx:14}.c{fill:#142b31;stroke:#22d3ee;stroke-width:2;rx:10}.v{stroke:#fb7185}.ok{stroke:#4ade80}.bar{fill:#60a5fa;animation:bar 4s ease-in-out infinite}.gate{animation:gate 4s ease-in-out infinite;transform-origin:center}.line{fill:none;stroke:#f59e0b;stroke-width:3;stroke-dasharray:8 10;animation:dash 1s linear infinite}@keyframes dash{to{stroke-dashoffset:-18}}@keyframes bar{0%,100%{transform:scaleY(.35)}45%,75%{transform:scaleY(1)}}@keyframes gate{0%,40%{opacity:.45;transform:scale(.96)}60%,90%{opacity:1;transform:scale(1.05)}100%{opacity:.45;transform:scale(.96)}}
+    .bg{fill:#081113}.title{fill:#f2fbf8;font:700 30px system-ui}.sub{fill:#a8beb9;font:500 16px system-ui}.card{fill:#102126;stroke:#2e5056;stroke-width:2;rx:16}.step{fill:#183238;stroke:#3b6a72;stroke-width:2;rx:12}.txt{fill:#e6f4f1;font:600 15px system-ui}.muted{fill:#9bb4b0;font:500 13px system-ui}.ok{stroke:#4ade80}.bad{stroke:#fb7185}.warn{stroke:#f59e0b}.bar{fill:#60a5fa;animation:bar 6s ease-in-out infinite;transform-origin:bottom}.bar2{fill:#4ade80;animation:bar2 6s ease-in-out infinite;transform-origin:bottom}.arrow{fill:none;stroke:#60a5fa;stroke-width:3;stroke-linecap:round;stroke-dasharray:10 10;animation:dash 1.1s linear infinite}.gate{animation:gate 6s ease-in-out infinite;transform-origin:center}@keyframes dash{to{stroke-dashoffset:-20}}@keyframes bar{0%,100%{transform:scaleY(.35)}40%,80%{transform:scaleY(.7)}}@keyframes bar2{0%,100%{transform:scaleY(.4)}40%,80%{transform:scaleY(1)}}@keyframes gate{0%,45%{opacity:.45;transform:scale(.98)}62%,90%{opacity:1;transform:scale(1.04)}100%{opacity:.45;transform:scale(.98)}}
   </style>
-  <rect class="bg" width="920" height="360"/>
-  <text class="t" x="34" y="48">TinyLFU: Frequency ile Admission</text>
-  <text class="s" x="34" y="76">Aday her zaman cache'e girmez; once kurban entry ile tahmini frekansi karsilastirilir.</text>
-  <rect class="c ok" x="72" y="142" width="150" height="74"/><text class="s" x="104" y="184">candidate X</text>
-  <rect class="c v" x="72" y="238" width="150" height="74"/><text class="s" x="112" y="280">victim A</text>
-  <path class="line" d="M222 178 H360"/><path class="line" d="M222 274 H360"/>
-  <rect class="b" x="360" y="120" width="220" height="210"/><text class="s" x="418" y="154">FrequencySketch</text>
-  <rect class="bar" x="410" y="248" width="22" height="58"/><rect class="bar" x="452" y="210" width="22" height="96"/><rect class="bar" x="494" y="174" width="22" height="132"/><rect class="bar" x="536" y="228" width="22" height="78"/>
-  <rect class="b gate" x="662" y="164" width="188" height="106"/><text class="s" x="702" y="204">X freq &gt; A freq</text><text class="s" x="724" y="236">ADMIT</text>
-  <path class="line" d="M580 220 H662"/>
+  <rect class="bg" width="1120" height="540"/>
+  <text class="title" x="36" y="50">TinyLFU: Admission Karari</text>
+  <text class="sub" x="36" y="80">Ana fikir: cache doluyken yeni key otomatik giremez; once frekansi kurbanla karsilastirilir.</text>
+  <rect class="card" x="36" y="118" width="1048" height="360"/>
+
+  <rect class="step ok" x="92" y="148" width="190" height="78"/>
+  <text class="txt" x="124" y="178">Aday key: X</text>
+  <text class="muted" x="124" y="202">cache'e girmek istiyor</text>
+  <rect class="step bad" x="92" y="264" width="190" height="78"/>
+  <text class="txt" x="124" y="294">Kurban: A</text>
+  <text class="muted" x="124" y="318">LRU en eskiyi onerir</text>
+
+  <path class="arrow" d="M282 188 H408"/>
+  <path class="arrow" d="M282 304 H408"/>
+
+  <rect class="step" x="408" y="142" width="292" height="214"/>
+  <text class="txt" x="454" y="176">FrequencySketch</text>
+  <text class="muted" x="454" y="200">Hash + birkac counter</text>
+  <rect class="bar2" x="470" y="296" width="26" height="72"/>
+  <rect class="bar2" x="512" y="246" width="26" height="122"/>
+  <rect class="bar2" x="554" y="220" width="26" height="148"/>
+  <rect class="bar" x="608" y="292" width="26" height="76"/>
+  <rect class="bar" x="650" y="310" width="26" height="58"/>
+  <text class="muted" x="474" y="384">X estimate: 8</text>
+  <text class="muted" x="604" y="384">A estimate: 3</text>
+
+  <path class="arrow" d="M700 248 H808"/>
+
+  <rect class="step warn gate" x="808" y="174" width="214" height="138"/>
+  <text class="txt" x="840" y="210">Karar kapisi</text>
+  <text class="muted" x="840" y="238">X freq &gt; A freq</text>
+  <text class="txt" x="840" y="270">A evict, X admit</text>
+
+  <rect class="step" x="130" y="396" width="860" height="48"/>
+  <text class="muted" x="156" y="426">LRU "en eskiyi sil" der; TinyLFU "once aday gercekten degerli mi?" diye sorar.</text>
 </svg>

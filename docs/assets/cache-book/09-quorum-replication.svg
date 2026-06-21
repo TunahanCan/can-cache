@@ -1,20 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-labelledby="title desc">
-  <title id="title">Quorum replication animation</title>
-  <desc id="desc">A coordinator writes to three replicas and succeeds when two acknowledgements arrive.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="540" viewBox="0 0 1120 540" role="img" aria-labelledby="title desc">
+  <title id="title">Quorum replication storyboard</title>
+  <desc id="desc">Explains replication factor three, majority quorum two, failed replica hinting and success response.</desc>
   <style>
-    .bg{fill:#071013}.t{fill:#e6f4f1;font:700 25px system-ui}.s{fill:#9bb4b0;font:500 14px system-ui}.n{fill:#102126;stroke:#31535a;stroke-width:2;rx:14}.ok{stroke:#4ade80}.bad{stroke:#fb7185}.line{fill:none;stroke:#60a5fa;stroke-width:3;stroke-dasharray:8 10;animation:dash 1s linear infinite}.ack{stroke:#4ade80}.fail{stroke:#fb7185}.pulse{animation:pulse 4s ease-in-out infinite;transform-origin:center}@keyframes dash{to{stroke-dashoffset:-18}}@keyframes pulse{0%,35%,100%{opacity:.45;transform:scale(1)}55%,85%{opacity:1;transform:scale(1.08)}}
+    .bg{fill:#081113}.title{fill:#f2fbf8;font:700 30px system-ui}.sub{fill:#a8beb9;font:500 16px system-ui}.panel{fill:#102126;stroke:#2e5056;stroke-width:2;rx:16}.node{fill:#183238;stroke:#67e8f9;stroke-width:2;rx:12}.ok{stroke:#4ade80}.bad{stroke:#fb7185}.warn{stroke:#f59e0b}.txt{fill:#e6f4f1;font:700 15px system-ui}.muted{fill:#9bb4b0;font:500 13px system-ui}.flow{fill:none;stroke:#60a5fa;stroke-width:3;stroke-linecap:round;stroke-dasharray:10 10;animation:dash 1.1s linear infinite}.ack{stroke:#4ade80}.fail{stroke:#fb7185}.pulse{animation:pulse 6s ease-in-out infinite;transform-origin:center}.hint{animation:hint 6s ease-in-out infinite}@keyframes dash{to{stroke-dashoffset:-20}}@keyframes pulse{0%,35%,100%{opacity:.45;transform:scale(1)}55%,86%{opacity:1;transform:scale(1.05)}}@keyframes hint{0%,55%{opacity:.15;transform:translateY(0)}72%,100%{opacity:1;transform:translateY(44px)}}
   </style>
-  <rect class="bg" width="920" height="360"/>
-  <text class="t" x="34" y="48">Replication + Quorum</text>
-  <text class="s" x="34" y="76">RF=3 ise majority=2; iki replica OK donerse yazma basarili kabul edilir.</text>
-  <rect class="n pulse" x="84" y="158" width="150" height="76"/><text class="s" x="118" y="202">coordinator</text>
-  <rect class="n ok" x="620" y="82" width="150" height="60"/><text class="s" x="674" y="118">A ok</text>
-  <rect class="n ok" x="620" y="170" width="150" height="60"/><text class="s" x="674" y="206">B ok</text>
-  <rect class="n bad" x="620" y="258" width="150" height="60"/><text class="s" x="666" y="294">C fail</text>
-  <path class="line" d="M234 176 C380 96 482 100 620 112"/>
-  <path class="line" d="M234 196 H620"/>
-  <path class="line fail" d="M234 216 C380 292 482 292 620 288"/>
-  <path class="line ack" d="M620 124 C486 152 378 164 234 188"/>
-  <path class="line ack" d="M620 202 H234"/>
-  <text class="s" x="352" y="312">2 / 3 ACK -> STORED, failed replica icin hint.</text>
+  <rect class="bg" width="1120" height="540"/>
+  <text class="title" x="36" y="50">Replication + Quorum</text>
+  <text class="sub" x="36" y="80">Ana fikir: RF=3 yazmada her replica denenir; 2 ACK gelirse client basarili yanit alir.</text>
+  <rect class="panel" x="36" y="118" width="1048" height="360"/>
+
+  <rect class="node pulse" x="84" y="220" width="180" height="82"/>
+  <text class="txt" x="124" y="254">Coordinator</text>
+  <text class="muted" x="124" y="278">set(key,value)</text>
+
+  <rect class="node ok" x="690" y="150" width="180" height="64"/>
+  <text class="txt" x="752" y="178">Replica A</text><text class="muted" x="760" y="198">ACK</text>
+  <rect class="node ok" x="690" y="240" width="180" height="64"/>
+  <text class="txt" x="752" y="268">Replica B</text><text class="muted" x="760" y="288">ACK</text>
+  <rect class="node bad" x="690" y="330" width="180" height="64"/>
+  <text class="txt" x="752" y="358">Replica C</text><text class="muted" x="750" y="378">timeout</text>
+
+  <path class="flow" d="M264 244 C430 164 550 166 690 182"/>
+  <path class="flow" d="M264 262 H690"/>
+  <path class="flow fail" d="M264 280 C430 362 550 362 690 362"/>
+  <path class="flow ack" d="M690 194 C540 214 424 224 264 246"/>
+  <path class="flow ack" d="M690 272 H264"/>
+
+  <rect class="node ok" x="350" y="132" width="250" height="64"/>
+  <text class="txt" x="386" y="160">Quorum hesabı</text>
+  <text class="muted" x="386" y="180">majority(3) = 2</text>
+
+  <rect class="node warn hint" x="420" y="318" width="210" height="58"/>
+  <text class="txt" x="452" y="344">Hint queue</text>
+  <text class="muted" x="452" y="364">C icin missed write</text>
+
+  <text class="txt" x="112" y="426">Sonuc: 2 ACK geldigi icin client STORED alir; C geri gelince hint replay edilir.</text>
 </svg>

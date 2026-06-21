@@ -6,7 +6,7 @@ Bu doküman internet araştırması yapılmadan hazırlanmıştır. İçerik, bu
 
 ## Görsel Algoritma Atlası
 
-Bu kitapta anlatılan ana algoritmalar ayrı animasyonlu SVG dosyalarıyla desteklenir. Dosyalar doğrudan tarayıcıda açıldığında CSS animasyonları çalışır.
+Bu kitapta anlatılan ana algoritmalar ayrı animasyonlu SVG dosyalarıyla desteklenir. Dosyalar doğrudan tarayıcıda açıldığında CSS animasyonları çalışır. Her görsel artık küçük bir storyboard gibi tasarlanmıştır: önce ana fikir verilir, sonra numaralı adımlar ve sonuç kutusu ile algoritmanın neden öyle davrandığı gösterilir.
 
 | Konu | Animasyon |
 | --- | --- |

@@ -1,17 +1,34 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-labelledby="title desc">
-  <title id="title">CAS optimistic concurrency animation</title>
-  <desc id="desc">Two clients read the same CAS value, but only the first compare-and-swap succeeds.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="540" viewBox="0 0 1120 540" role="img" aria-labelledby="title desc">
+  <title id="title">CAS optimistic concurrency storyboard</title>
+  <desc id="desc">Explains why only one writer succeeds when two clients use the same expected CAS value.</desc>
   <style>
-    .bg{fill:#071013}.t{fill:#e6f4f1;font:700 25px system-ui}.s{fill:#9bb4b0;font:500 14px system-ui}.b{fill:#102126;stroke:#31535a;stroke-width:2;rx:14}.ok{stroke:#4ade80}.fail{stroke:#fb7185}.line{fill:none;stroke:#60a5fa;stroke-width:3;stroke-dasharray:8 10;animation:dash 1s linear infinite}.go{animation:go 5s ease-in-out infinite}.shake{animation:shake 5s ease-in-out infinite}.pulse{animation:pulse 5s ease-in-out infinite;transform-origin:center}@keyframes dash{to{stroke-dashoffset:-18}}@keyframes go{0%{transform:translateX(0)}35%,60%{transform:translateX(230px)}100%{transform:translateX(0)}}@keyframes shake{0%,50%,100%{transform:translateX(0)}62%{transform:translateX(-8px)}68%{transform:translateX(8px)}74%{transform:translateX(-4px)}}@keyframes pulse{0%,40%,100%{opacity:.55}55%,80%{opacity:1}}
+    .bg{fill:#081113}.title{fill:#f2fbf8;font:700 30px system-ui}.sub{fill:#a8beb9;font:500 16px system-ui}.card{fill:#102126;stroke:#2e5056;stroke-width:2;rx:16}.step{fill:#183238;stroke:#3b6a72;stroke-width:2;rx:12}.txt{fill:#e6f4f1;font:600 15px system-ui}.muted{fill:#9bb4b0;font:500 13px system-ui}.ok{stroke:#4ade80}.bad{stroke:#fb7185}.store{fill:#142b31;stroke:#67e8f9;stroke-width:2;rx:14}.arrow{fill:none;stroke:#60a5fa;stroke-width:3;stroke-linecap:round;stroke-dasharray:10 10;animation:dash 1.1s linear infinite}.a{animation:a 7s ease-in-out infinite}.b{animation:b 7s ease-in-out infinite}.pulse{animation:pulse 7s ease-in-out infinite;transform-origin:center}@keyframes dash{to{stroke-dashoffset:-20}}@keyframes a{0%,25%{opacity:.4}38%,60%{opacity:1}100%{opacity:.4}}@keyframes b{0%,50%{opacity:.4}66%,88%{opacity:1}100%{opacity:.4}}@keyframes pulse{0%,30%,100%{transform:scale(1)}42%,58%{transform:scale(1.06)}}
   </style>
-  <rect class="bg" width="920" height="360"/>
-  <text class="t" x="34" y="48">CAS: Optimistic Concurrency</text>
-  <text class="s" x="34" y="76">Versiyon ayniysa yaz; biri once davranirsa digerinin beklenen CAS'i artik gecersizdir.</text>
-  <rect class="b" x="60" y="122" width="160" height="70"/><text class="s" x="96" y="162">Client A</text>
-  <rect class="b" x="60" y="224" width="160" height="70"/><text class="s" x="96" y="264">Client B</text>
-  <rect class="b pulse" x="380" y="148" width="180" height="118"/><text class="s" x="415" y="188">key=v1</text><text class="s" x="415" y="222">cas=5</text>
-  <path class="line" d="M220 156 H380"/><path class="line" d="M220 258 H380"/>
-  <rect class="b ok go" x="620" y="122" width="210" height="70"/><text class="s" x="660" y="162">expected 5 -> OK</text>
-  <rect class="b fail shake" x="620" y="224" width="210" height="70"/><text class="s" x="650" y="264">expected 5 -> FAIL</text>
-  <path class="line" d="M560 182 H620"/><path class="line" d="M560 236 H620"/>
+  <rect class="bg" width="1120" height="540"/>
+  <text class="title" x="36" y="50">CAS: Optimistic Concurrency</text>
+  <text class="sub" x="36" y="80">Ana fikir: okudugun versiyon hala ayniysa yazarsin; degismisse yazma reddedilir.</text>
+  <rect class="card" x="36" y="118" width="1048" height="360"/>
+
+  <rect class="step" x="86" y="156" width="190" height="72"/><text class="txt" x="128" y="188">Client A</text><text class="muted" x="112" y="210">read cas=5</text>
+  <rect class="step" x="86" y="286" width="190" height="72"/><text class="txt" x="128" y="318">Client B</text><text class="muted" x="112" y="340">read cas=5</text>
+
+  <rect class="store pulse" x="430" y="200" width="230" height="128"/>
+  <text class="txt" x="486" y="238">Cache entry</text>
+  <text class="muted" x="482" y="268">value = v1</text>
+  <text class="muted" x="482" y="292">cas = 5</text>
+
+  <path class="arrow a" d="M276 192 H430"/>
+  <path class="arrow b" d="M276 322 C334 322 360 292 430 292"/>
+  <path class="arrow a ok" d="M660 238 H860"/>
+  <path class="arrow b bad" d="M660 292 H860"/>
+
+  <rect class="step ok a" x="860" y="186" width="170" height="80"/>
+  <text class="txt" x="890" y="218">A yazar</text>
+  <text class="muted" x="886" y="242">expected 5 OK</text>
+
+  <rect class="step bad b" x="860" y="286" width="170" height="80"/>
+  <text class="txt" x="890" y="318">B reddedilir</text>
+  <text class="muted" x="886" y="342">entry artik cas=6</text>
+
+  <text class="txt" x="128" y="432">Akilda kalacak cumle: CAS lock degildir; yazma aninda versiyon kontroludur.</text>
 </svg>
