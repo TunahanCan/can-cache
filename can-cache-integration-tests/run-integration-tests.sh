@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-COMPOSE_FILE="docker-compose.integration.yml"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.integration.yml"
 
 cleanup() {
   docker compose -f "$COMPOSE_FILE" down --remove-orphans -v >/dev/null 2>&1 || true

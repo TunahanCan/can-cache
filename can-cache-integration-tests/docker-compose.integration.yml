@@ -5,8 +5,14 @@ services:
       context: ..
       dockerfile: Dockerfile
     image: can-cache:integration
+    environment:
+      QUARKUS_HTTP_PORT: "9000"
+      APP_NETWORK_HOST: 0.0.0.0
+      APP_NETWORK_PORT: "11211"
+      APP_AGENT_ENABLED: "false"
     ports:
       - "11211:11211"
+      - "9000:9000"
   integration-tests:
     build:
       context: .

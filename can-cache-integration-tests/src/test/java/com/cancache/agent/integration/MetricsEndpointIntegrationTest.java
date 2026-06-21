@@ -1,98 +1,114 @@
 package com.cancache.agent.integration;
 
-import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MetricsEndpointIntegrationTest
 {
-    @Test
-    void prometheusEndpointExposesClusterLabels() throws Exception
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(2);
+    private static final Duration EVENTUAL_TIMEOUT = Duration.ofSeconds(30);
+
+    private static IntegrationEnvironment.CacheEndpoint cacheEndpoint;
+    private static IntegrationEnvironment.MetricsEndpoint metricsEndpoint;
+
+    @BeforeAll
+    static void waitForTargets() throws Exception
     {
-        String host = System.getenv("CAN_CACHE_HOST");
-        Assumptions.assumeTrue(host != null && !host.isBlank(), "CAN_CACHE_HOST must be provided by the integration environment");
-
-        int port = parseInt(System.getenv("CAN_CACHE_METRICS_PORT"), 9000);
-        String path = normalisePath(System.getenv("CAN_CACHE_METRICS_PATH"));
-
-        URI metricsUri = buildUri(host, port, path);
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(2))
-                .build();
-
-        String body = fetchMetrics(client, metricsUri);
-
-        assertTrue(body.contains("# TYPE cache_hits_total counter"), "cache_hits_total counter must be exported");
-        assertTrue(body.contains("node_id=\""), "node_id label should be present");
-        assertTrue(body.contains("role=\""), "role label should be present");
-        assertTrue(body.contains("hint_replay_result=\"success\""), "successful hint replay label should be exported");
-        assertTrue(body.contains("hint_replay_result=\"failure\""), "failed hint replay label should be exported");
+        cacheEndpoint = IntegrationEnvironment.requireCacheEndpoint();
+        metricsEndpoint = IntegrationEnvironment.requireMetricsEndpoint();
+        IntegrationEnvironment.awaitCacheReady(cacheEndpoint);
     }
 
-    private static String fetchMetrics(HttpClient client, URI uri) throws IOException, InterruptedException
+    @Test
+    void prometheusEndpointExposesCacheAndClusterMetrics() throws Exception
     {
+        exerciseCacheCounters();
+
+        String body = fetchMetricsUntil(metricsEndpoint.uri(), MetricsEndpointIntegrationTest::containsExpectedMetrics);
+
+        assertAll(
+                () -> assertContains(body, "# TYPE cache_misses counter"),
+                () -> assertContains(body, "cache_misses_total{"),
+                () -> assertContains(body, "# TYPE cache_get_seconds summary"),
+                () -> assertContains(body, "# TYPE cache_set_seconds summary"),
+                () -> assertContains(body, "node_id=\""),
+                () -> assertContains(body, "role=\""),
+                () -> assertContains(body, "hinted_handoff_failures_total{"),
+                () -> assertContains(body, "cluster_epoch_increments_total{")
+        );
+    }
+
+    private static void exerciseCacheCounters() throws IOException
+    {
+        try (CanCacheClient client = IntegrationEnvironment.connect(cacheEndpoint)) {
+            client.flushAll();
+            client.set("metrics:hit", 0, 0, "value");
+            client.getValue("metrics:hit");
+            client.getValue("metrics:miss");
+        }
+    }
+
+    private static String fetchMetricsUntil(URI uri, MetricsPredicate predicate) throws IOException, InterruptedException
+    {
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(REQUEST_TIMEOUT)
+                .build();
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(2))
+                .timeout(REQUEST_TIMEOUT)
                 .GET()
                 .build();
 
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(30));
-        IOException lastException = null;
+        IOException lastError = null;
+        Instant deadline = Instant.now().plus(EVENTUAL_TIMEOUT);
         while (Instant.now().isBefore(deadline)) {
             try {
                 HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() == 200 && response.body() != null && !response.body().isBlank()) {
-                    return response.body();
+                String body = response.body();
+                if (response.statusCode() == 200 && body != null && predicate.matches(body)) {
+                    return body;
                 }
-                lastException = new IOException("Unexpected status code: " + response.statusCode());
+                lastError = new IOException("Unexpected metrics response status=" + response.statusCode());
             }
-            catch (IOException e) {
-                lastException = e;
+            catch (IOException error) {
+                lastError = error;
             }
-            Thread.sleep(500);
+            Thread.sleep(250);
         }
 
-        IOException failure = lastException != null ? lastException : new IOException("No response body");
-        throw new IOException("Failed to fetch metrics from " + uri, failure);
+        throw new IOException("Metrics endpoint did not expose expected data at " + uri, lastError);
     }
 
-    private static int parseInt(String value, int fallback)
+    private static boolean containsExpectedMetrics(String body)
     {
-        if (value == null || value.isBlank()) {
-            return fallback;
-        }
-        try {
-            return Integer.parseInt(value.trim());
-        }
-        catch (NumberFormatException e) {
-            return fallback;
-        }
+        return body.contains("# TYPE cache_misses counter")
+                && body.contains("cache_misses_total{")
+                && body.contains("# TYPE cache_get_seconds summary")
+                && body.contains("# TYPE cache_set_seconds summary")
+                && body.contains("node_id=\"")
+                && body.contains("role=\"")
+                && body.contains("hinted_handoff_failures_total{")
+                && body.contains("cluster_epoch_increments_total{");
     }
 
-    private static String normalisePath(String path)
+    private static void assertContains(String body, String expected)
     {
-        if (path == null || path.isBlank()) {
-            return "/metrics";
-        }
-        String trimmed = path.trim();
-        if (!trimmed.startsWith("/")) {
-            trimmed = '/' + trimmed;
-        }
-        return trimmed;
+        assertTrue(body.contains(expected), "Metrics body should contain: " + expected);
     }
 
-    private static URI buildUri(String host, int port, String path) throws URISyntaxException
+    @FunctionalInterface
+    private interface MetricsPredicate
     {
-        return new URI("http", null, host, port, path, null, null);
+        boolean matches(String body);
     }
 }

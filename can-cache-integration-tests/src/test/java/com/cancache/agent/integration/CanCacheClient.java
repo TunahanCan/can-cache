@@ -38,15 +38,28 @@ final class CanCacheClient implements Closeable
     {
         String host = Optional.ofNullable(System.getenv("CAN_CACHE_HOST")).orElse("127.0.0.1");
         int port = Integer.parseInt(Optional.ofNullable(System.getenv("CAN_CACHE_PORT")).orElse("11211"));
+        return connect(host, port, Duration.ofSeconds(5));
+    }
+
+    static CanCacheClient connect(String host, int port, Duration timeout) throws IOException
+    {
+        Objects.requireNonNull(host, "host");
+        Objects.requireNonNull(timeout, "timeout");
         Socket socket = new Socket();
-        socket.setSoTimeout(5000);
-        socket.connect(new InetSocketAddress(host, port), 5000);
+        int timeoutMillis = Math.toIntExact(timeout.toMillis());
+        socket.setSoTimeout(timeoutMillis);
+        socket.connect(new InetSocketAddress(host, port), timeoutMillis);
         return new CanCacheClient(socket);
     }
 
     String set(String key, int flags, long exptimeSeconds, String value) throws IOException
     {
         return store("set", key, flags, exptimeSeconds, encodePayload(value), null);
+    }
+
+    String set(String key, int flags, long exptimeSeconds, byte[] value) throws IOException
+    {
+        return store("set", key, flags, exptimeSeconds, value, null);
     }
 
     String add(String key, int flags, long exptimeSeconds, String value) throws IOException

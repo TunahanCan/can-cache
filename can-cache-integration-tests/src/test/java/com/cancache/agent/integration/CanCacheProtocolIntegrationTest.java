@@ -1,42 +1,50 @@
 package com.cancache.agent.integration;
 
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CanCacheProtocolIntegrationTest
 {
+    private static final Duration EVENTUAL_TIMEOUT = Duration.ofSeconds(4);
+    private static IntegrationEnvironment.CacheEndpoint endpoint;
+
     private CanCacheClient client;
 
     @BeforeAll
-    static void requireConfiguredTarget()
+    static void waitForCache() throws Exception
     {
-        Assumptions.assumeTrue(System.getenv("CAN_CACHE_HOST") != null,
-                "CAN_CACHE_HOST must be provided by the integration environment");
+        endpoint = IntegrationEnvironment.requireCacheEndpoint();
+        IntegrationEnvironment.awaitCacheReady(endpoint);
     }
 
     @BeforeEach
-    void setUp() throws IOException
+    void openClient() throws Exception
     {
-        client = CanCacheClient.connectDefault();
-        client.flushAll();
+        client = IntegrationEnvironment.connect(endpoint);
+        expect("OK", client.flushAll());
     }
 
     @AfterEach
-    void tearDown() throws Exception
+    void closeClient() throws Exception
     {
         if (client != null) {
             client.close();
@@ -44,246 +52,265 @@ class CanCacheProtocolIntegrationTest
     }
 
     @Test
-    void shouldStoreRetrieveAndDeleteValues() throws Exception
+    void storageCommandsRoundTripValuesAndCasMetadata() throws Exception
     {
-        String key = "basic:key";
-        assertEquals("STORED", client.set(key, 0, 0, "hello"));
-        Optional<CanCacheClient.CacheValue> stored = client.getValue(key);
-        assertTrue(stored.isPresent(), "Value must be retrievable after set");
-        assertEquals("hello", stored.get().asString());
+        String key = key("basic");
 
-        Map<String, CanCacheClient.CacheValue> multi = client.getValues(key, "missing");
-        assertEquals(1, multi.size());
-        assertEquals("hello", multi.get(key).asString());
+        expect("STORED", client.set(key, 7, 0, "hello"));
 
-        Map<String, CanCacheClient.CacheValue> casSnapshot = client.gets(key);
-        assertEquals(1, casSnapshot.size());
-        Long cas = casSnapshot.get(key).cas();
-        assertNotNull(cas, "CAS token must be present");
+        CanCacheClient.CacheValue value = value(key);
+        Map<String, CanCacheClient.CacheValue> getValues = client.getValues(key, key("missing"));
+        Map<String, CanCacheClient.CacheValue> getsValues = client.gets(key);
 
-        assertEquals("DELETED", client.delete(key));
-        assertTrue(client.getValue(key).isEmpty(), "Value should be gone after delete");
+        assertAll(
+                () -> assertEquals("hello", value.asString()),
+                () -> assertEquals(7, value.flags()),
+                () -> assertEquals(1, getValues.size()),
+                () -> assertEquals("hello", getValues.get(key).asString()),
+                () -> assertEquals(1, getsValues.size()),
+                () -> assertNotNull(getsValues.get(key).cas())
+        );
+
+        expect("DELETED", client.delete(key));
+        assertMissing(key);
+        expect("NOT_FOUND", client.delete(key));
     }
 
     @Test
-    void shouldHandleAddReplaceAppendAndPrepend() throws Exception
+    void mutationCommandsRespectExistingAndMissingKeys() throws Exception
     {
-        assertEquals("STORED", client.add("mut", 0, 0, "one"));
-        assertEquals("NOT_STORED", client.add("mut", 0, 0, "two"));
+        String key = key("mutation");
 
-        assertEquals("STORED", client.replace("mut", 0, 0, "two"));
-        assertEquals("NOT_STORED", client.replace("missing", 0, 0, "value"));
+        expect("STORED", client.add(key, 0, 0, "one"));
+        expect("NOT_STORED", client.add(key, 0, 0, "two"));
+        expect("STORED", client.replace(key, 0, 0, "two"));
+        expect("NOT_STORED", client.replace(key("missing"), 0, 0, "value"));
+        expect("STORED", client.append(key, "-tail"));
+        expect("STORED", client.prepend(key, "head-"));
 
-        assertEquals("STORED", client.append("mut", "-app"));
-        assertEquals("STORED", client.prepend("mut", "pre-"));
-
-        Optional<CanCacheClient.CacheValue> combined = client.getValue("mut");
-        assertTrue(combined.isPresent());
-        assertEquals("pre-two-app", combined.get().asString());
-
-        assertEquals("NOT_STORED", client.append("missing", "x"));
-        assertEquals("NOT_STORED", client.prepend("missing", "x"));
+        assertValue(key, "head-two-tail");
+        expect("NOT_STORED", client.append(key("append-missing"), "x"));
+        expect("NOT_STORED", client.prepend(key("prepend-missing"), "x"));
     }
 
     @Test
-    void shouldRetrieveMultipleKeysWithConsistentMetadata() throws Exception
+    void multiGetReturnsOnlyFoundKeysWithFlags() throws Exception
     {
-        // Senaryo: Çoklu get isteğinde birden fazla anahtarın aynı anda okunurken bayrak ve değer bilgilerinin doğru döndüğünü doğruluyoruz.
-        assertEquals("STORED", client.set("multi:one", 123, 0, "deger-1"));
-        assertEquals("STORED", client.set("multi:two", 321, 0, "deger-2"));
+        String first = key("multi-one");
+        String second = key("multi-two");
+        String missing = key("multi-missing");
 
-        Map<String, CanCacheClient.CacheValue> values = client.getValues("multi:one", "multi:two", "multi:missing");
-        assertEquals(2, values.size());
-        assertTrue(values.containsKey("multi:one"));
-        assertTrue(values.containsKey("multi:two"));
-        assertEquals("deger-1", values.get("multi:one").asString());
-        assertEquals("deger-2", values.get("multi:two").asString());
-        assertEquals(123, values.get("multi:one").flags());
-        assertEquals(321, values.get("multi:two").flags());
+        expect("STORED", client.set(first, 123, 0, "value-1"));
+        expect("STORED", client.set(second, 321, 0, "value-2"));
 
-        Map<String, CanCacheClient.CacheValue> casValues = client.gets("multi:one", "multi:two");
-        assertEquals(2, casValues.size());
-        assertNotNull(casValues.get("multi:one").cas());
-        assertNotNull(casValues.get("multi:two").cas());
+        Map<String, CanCacheClient.CacheValue> values = client.getValues(first, second, missing);
+        Map<String, CanCacheClient.CacheValue> casValues = client.gets(first, second, missing);
+
+        assertAll(
+                () -> assertEquals(List.of(first, second), new ArrayList<>(values.keySet())),
+                () -> assertEquals("value-1", values.get(first).asString()),
+                () -> assertEquals("value-2", values.get(second).asString()),
+                () -> assertEquals(123, values.get(first).flags()),
+                () -> assertEquals(321, values.get(second).flags()),
+                () -> assertFalse(values.containsKey(missing)),
+                () -> assertEquals(2, casValues.size()),
+                () -> assertNotNull(casValues.get(first).cas()),
+                () -> assertNotNull(casValues.get(second).cas())
+        );
     }
 
     @Test
-    void shouldSupportCasOperations() throws Exception
+    void casCommandsRejectStaleTokensAndUpdateWithCurrentToken() throws Exception
     {
-        String key = "cas:key";
-        assertEquals("STORED", client.set(key, 0, 0, "v1"));
-        long originalCas = client.gets(key).get(key).cas();
+        String key = key("cas");
 
-        assertEquals("EXISTS", client.cas(key, 0, 0, "v2", originalCas + 1));
-        assertEquals("v1", client.getValue(key).orElseThrow().asString(),
-                "Başarısız CAS denemesi değeri değiştirmemeli");
+        expect("STORED", client.set(key, 0, 0, "v1"));
+        long firstToken = casToken(key);
 
-        long currentCas = client.gets(key).get(key).cas();
-        assertEquals(originalCas, currentCas, "Başarısız CAS yeni bir token üretmemeli");
-        assertEquals("NOT_FOUND", client.cas("cas:missing", 0, 0, "v", currentCas));
+        expect("EXISTS", client.cas(key, 0, 0, "stale-write", firstToken + 1));
+        assertValue(key, "v1");
+        assertEquals(firstToken, casToken(key));
+        expect("NOT_FOUND", client.cas(key("cas-missing"), 0, 0, "value", firstToken));
 
-        assertEquals("STORED", client.cas(key, 0, 0, "v2", currentCas));
-        assertEquals("v2", client.getValue(key).orElseThrow().asString());
+        expect("STORED", client.cas(key, 0, 0, "v2", firstToken));
+        long secondToken = casToken(key);
+
+        assertAll(
+                () -> assertValue(key, "v2"),
+                () -> assertNotEquals(firstToken, secondToken),
+                () -> expect("EXISTS", client.cas(key, 0, 0, "old-token", firstToken)),
+                () -> expect("STORED", client.cas(key, 0, 0, "v3", secondToken)),
+                () -> assertValue(key, "v3")
+        );
     }
 
     @Test
-    void shouldUpdateCasTokensAfterMutation() throws Exception
+    void numericCommandsHandleBoundsAndTypeErrors() throws Exception
     {
-        // Senaryo: Aynı anahtar üzerinde güncelleme yapıldığında CAS bilgisinin değiştiğini ve eski token ile güncellemenin reddedildiğini kontrol ediyoruz.
-        String key = "cas:tracking";
-        assertEquals("STORED", client.set(key, 0, 0, "once"));
+        String numeric = key("numeric");
+        String text = key("text");
 
-        long firstCas = client.gets(key).get(key).cas();
-        assertNotNull(firstCas);
+        expect("STORED", client.set(numeric, 0, 0, "42"));
+        expect("STORED", client.set(text, 0, 0, "abc"));
 
-        assertEquals("STORED", client.set(key, 0, 0, "iki"));
-
-        long secondCas = client.gets(key).get(key).cas();
-        assertNotNull(secondCas);
-        assertNotEquals(firstCas, secondCas);
-
-        assertEquals("EXISTS", client.cas(key, 0, 0, "uc", firstCas));
-        assertEquals("STORED", client.cas(key, 0, 0, "uc", secondCas));
-        assertEquals("uc", client.getValue(key).orElseThrow().asString());
+        assertAll(
+                () -> expect("50", client.incr(numeric, 8)),
+                () -> expect("45", client.decr(numeric, 5)),
+                () -> expect("0", client.decr(numeric, 100)),
+                () -> expect("NOT_FOUND", client.incr(key("numeric-missing"), 1)),
+                () -> expect("CLIENT_ERROR cannot increment or decrement non-numeric value", client.incr(text, 1))
+        );
     }
 
     @Test
-    void shouldSupportNumericOperations() throws Exception
+    void expirationAndTouchCommandsFollowMemcachedTtlSemantics() throws Exception
     {
-        String key = "num:key";
-        assertEquals("STORED", client.set(key, 0, 0, "42"));
-        assertEquals("STORED", client.set("num:string", 0, 0, "abc"));
-        assertEquals("50", client.incr(key, 8));
-        assertEquals("45", client.decr(key, 5));
-        assertEquals("0", client.decr(key, 100));
+        String expiring = key("expires");
+        String touched = key("touch");
 
-        assertEquals("NOT_FOUND", client.incr("num:missing", 1));
-        assertEquals("CLIENT_ERROR cannot increment or decrement non-numeric value", client.incr("num:string", 1));
+        expect("STORED", client.set(expiring, 0, 1, "short-lived"));
+        assertValue(expiring, "short-lived");
+        awaitMissing(expiring);
+
+        expect("STORED", client.set(touched, 0, 1, "extend-me"));
+        TimeUnit.MILLISECONDS.sleep(500);
+        expect("TOUCHED", client.touch(touched, 2));
+        TimeUnit.MILLISECONDS.sleep(800);
+        assertValue(touched, "extend-me");
+        awaitMissing(touched);
+
+        expect("NOT_FOUND", client.touch(key("touch-missing"), 100));
     }
 
     @Test
-    void shouldCacheArrayListOfDtoPayloads() throws Exception
+    void flushAllSupportsImmediateAndDelayedInvalidation() throws Exception
     {
-        // Senaryo: Örnek DTO nesnelerinden oluşan bir ArrayList'i JSON'a çevirerek saklayıp tekrar okuduğumuzda veri bütünlüğü
-        // korunuyor mu kontrol ediyoruz.
-        List<ExampleDto> originalDtos = new ArrayList<>();
-        originalDtos.add(new ExampleDto(101, "ilk", true));
-        originalDtos.add(new ExampleDto(102, "ikinci", false));
-        originalDtos.add(new ExampleDto(103, "ucuncu", true));
+        String immediate = key("flush-now");
+        String delayed = key("flush-later");
 
-        String jsonPayload = toJson(originalDtos);
-        String key = "dto:list";
+        expect("STORED", client.set(immediate, 0, 0, "1"));
+        expect("OK", client.flushAll());
+        assertMissing(immediate);
 
-        assertEquals("STORED", client.set(key, 0, 0, jsonPayload));
-
-        String cachedJson = client.getValue(key).orElseThrow().asString();
-        List<ExampleDto> cachedDtos = fromJson(cachedJson);
-
-        assertEquals(jsonPayload, cachedJson, "Serileştirilmiş JSON metni cache tarafından eksiksiz korunmalıdır");
-        assertEquals(originalDtos, cachedDtos, "Cache'ten dönen DTO listesi orijinal listeyle birebir aynı olmalıdır");
+        expect("STORED", client.set(delayed, 0, 0, "2"));
+        expect("OK", client.flushAll(Duration.ofSeconds(1)));
+        assertValue(delayed, "2");
+        awaitMissing(delayed);
     }
 
     @Test
-    void shouldRespectExpirationTimes() throws Exception
-    {
-        // Senaryo: Kısa yaşam süresi ile yazılan bir değerin süre sonunda otomatik olarak silindiğini gözlemliyoruz.
-        String key = "expire:key";
-        assertEquals("STORED", client.set(key, 0, 1, "gecici"));
-        assertTrue(client.getValue(key).isPresent());
-
-        TimeUnit.MILLISECONDS.sleep(1200);
-        assertTrue(client.getValue(key).isEmpty(), "Değer süre sonunda otomatik düşmelidir");
-    }
-
-    @Test
-    void shouldRefreshExpirationWithTouch() throws Exception
-    {
-        String key = "touch:key";
-        assertEquals("STORED", client.set(key, 0, 1, "temp"));
-
-        TimeUnit.MILLISECONDS.sleep(600);
-        assertEquals("TOUCHED", client.touch(key, 2));
-
-        TimeUnit.MILLISECONDS.sleep(1100);
-        assertTrue(client.getValue(key).isPresent(), "Value should still exist after touch");
-
-        TimeUnit.MILLISECONDS.sleep(1500);
-        assertTrue(client.getValue(key).isEmpty(), "Value should expire after extended TTL");
-    }
-
-    @Test
-    void shouldFlushAllImmediatelyAndWithDelay() throws Exception
-    {
-        assertEquals("STORED", client.set("flush:one", 0, 0, "1"));
-        assertEquals("STORED", client.set("flush:two", 0, 0, "2"));
-        assertEquals("OK", client.flushAll());
-        assertTrue(client.getValue("flush:one").isEmpty());
-
-        assertEquals("STORED", client.set("flush:delayed", 0, 0, "v"));
-        assertEquals("OK", client.flushAll(Duration.ofSeconds(1)));
-        assertTrue(client.getValue("flush:delayed").isPresent(), "Value should remain until delay passes");
-
-        TimeUnit.MILLISECONDS.sleep(1200);
-        assertTrue(client.getValue("flush:delayed").isEmpty(), "Value should be gone after delayed flush executes");
-    }
-
-    @Test
-    void shouldHandleTouchForMissingKeys() throws Exception
-    {
-        // Senaryo: Olmayan bir anahtar üzerinde touch çağrısı yapıldığında NOT_FOUND yanıtının döndüğünü test ediyoruz.
-        assertEquals("NOT_FOUND", client.touch("touch:missing", 100));
-    }
-
-    @Test
-    void shouldExposeStatsAndVersion() throws Exception
+    void statsAndVersionReflectProtocolTraffic() throws Exception
     {
         Map<String, String> before = client.stats();
+        String hit = key("stats-hit");
 
-        assertEquals("STORED", client.set("stats:one", 0, 0, "v1"));
-        assertEquals("STORED", client.set("stats:two", 0, 0, "v2"));
-        assertTrue(client.getValue("stats:one").isPresent());
-        assertTrue(client.getValue("missing").isEmpty());
+        expect("STORED", client.set(hit, 0, 0, "value"));
+        assertValue(hit, "value");
+        assertMissing(key("stats-miss"));
 
         Map<String, String> after = client.stats();
 
-        long cmdSetDelta = parseLong(after, "cmd_set") - parseLong(before, "cmd_set");
-        long cmdGetDelta = parseLong(after, "cmd_get") - parseLong(before, "cmd_get");
-        long hitsDelta = parseLong(after, "get_hits") - parseLong(before, "get_hits");
-        long missesDelta = parseLong(after, "get_misses") - parseLong(before, "get_misses");
-
-        assertEquals(2L, cmdSetDelta);
-        assertEquals(2L, cmdGetDelta);
-        assertEquals(1L, hitsDelta);
-        assertEquals(1L, missesDelta);
-        assertEquals(2L, parseLong(after, "curr_items"));
-
-        String version = client.version();
-        assertTrue(version.startsWith("VERSION "));
+        assertAll(
+                () -> assertEquals(1L, statDelta(before, after, "cmd_set")),
+                () -> assertEquals(2L, statDelta(before, after, "cmd_get")),
+                () -> assertEquals(1L, statDelta(before, after, "get_hits")),
+                () -> assertEquals(1L, statDelta(before, after, "get_misses")),
+                () -> assertTrue(stat(after, "curr_items") >= 1),
+                () -> assertTrue(client.version().startsWith("VERSION "))
+        );
     }
 
     @Test
-    void shouldPreserveBinaryPayloads() throws Exception
+    void payloadCommandsPreserveStructuredTextAndBinaryBytes() throws Exception
     {
-        // Senaryo: Binary içerikli verinin saklanıp tekrar okunurken hiçbir byte kaybı yaşanmadığını doğruluyoruz.
+        List<ExampleDto> originalDtos = List.of(
+                new ExampleDto(101, "first", true),
+                new ExampleDto(102, "second", false),
+                new ExampleDto(103, "third", true)
+        );
+        String jsonKey = key("dto-list");
+        String binaryKey = key("binary");
+        byte[] binaryPayload = binaryPayload();
+
+        expect("STORED", client.set(jsonKey, 0, 0, toJson(originalDtos)));
+        expect("STORED", client.set(binaryKey, 0, 0, binaryPayload));
+
+        String cachedJson = value(jsonKey).asString();
+        CanCacheClient.CacheValue cachedBinary = value(binaryKey);
+
+        assertAll(
+                () -> assertEquals(originalDtos, fromJson(cachedJson)),
+                () -> assertEquals(0, cachedBinary.flags()),
+                () -> assertArrayEquals(binaryPayload, cachedBinary.data())
+        );
+    }
+
+    private static String key(String suffix)
+    {
+        return "it:" + suffix;
+    }
+
+    private static byte[] binaryPayload()
+    {
         byte[] payload = new byte[256];
         for (int i = 0; i < payload.length; i++) {
             payload[i] = (byte) i;
         }
-
-        String key = "bin:key";
-        assertEquals("STORED", client.set(key, 0, 0, new String(payload, StandardCharsets.ISO_8859_1)));
-
-        CanCacheClient.CacheValue value = client.getValue(key).orElseThrow();
-        assertEquals(payload.length, value.data().length);
-        for (int i = 0; i < payload.length; i++) {
-            assertEquals(payload[i], value.data()[i]);
-        }
+        return payload;
     }
 
-    private String toJson(List<ExampleDto> dtos)
+    private CanCacheClient.CacheValue value(String key) throws IOException
     {
-        StringBuilder builder = new StringBuilder();
-        builder.append('[');
+        return client.getValue(key).orElseThrow(() -> new AssertionError("Expected cache value for key " + key));
+    }
+
+    private void assertValue(String key, String expected) throws IOException
+    {
+        assertEquals(expected, value(key).asString(), "Unexpected cache value for " + key);
+    }
+
+    private void assertMissing(String key) throws IOException
+    {
+        assertTrue(client.getValue(key).isEmpty(), "Expected missing cache key " + key);
+    }
+
+    private long casToken(String key) throws IOException
+    {
+        Long cas = client.gets(key).get(key).cas();
+        assertNotNull(cas, "Expected CAS token for " + key);
+        return cas;
+    }
+
+    private void awaitMissing(String key) throws Exception
+    {
+        Instant deadline = Instant.now().plus(EVENTUAL_TIMEOUT);
+        while (Instant.now().isBefore(deadline)) {
+            if (client.getValue(key).isEmpty()) {
+                return;
+            }
+            TimeUnit.MILLISECONDS.sleep(100);
+        }
+        assertMissing(key);
+    }
+
+    private static void expect(String expected, String actual)
+    {
+        assertEquals(expected, actual);
+    }
+
+    private static long statDelta(Map<String, String> before, Map<String, String> after, String key)
+    {
+        return stat(after, key) - stat(before, key);
+    }
+
+    private static long stat(Map<String, String> stats, String key)
+    {
+        return Long.parseLong(stats.getOrDefault(key, "0"));
+    }
+
+    private static String toJson(List<ExampleDto> dtos)
+    {
+        StringBuilder builder = new StringBuilder("[");
         for (int i = 0; i < dtos.size(); i++) {
             ExampleDto dto = dtos.get(i);
             builder.append('{')
@@ -295,45 +322,41 @@ class CanCacheProtocolIntegrationTest
                 builder.append(',');
             }
         }
-        builder.append(']');
-        return builder.toString();
+        return builder.append(']').toString();
     }
 
-    private List<ExampleDto> fromJson(String json)
+    private static List<ExampleDto> fromJson(String json)
     {
         String trimmed = json.trim();
-        List<ExampleDto> result = new ArrayList<>();
-        if (trimmed.equals("[]")) {
-            return result;
+        if ("[]".equals(trimmed)) {
+            return List.of();
         }
 
-        String inner = trimmed.substring(1, trimmed.length() - 1);
-        String[] entries = inner.split("\\},\\{");
-        for (String entry : entries) {
-            String normalized = entry.replace("{", "").replace("}", "");
-            String[] fields = normalized.split(",");
-            int id = 0;
-            String name = "";
-            boolean active = false;
-            for (String field : fields) {
-                String[] keyValue = field.split(":", 2);
-                String key = keyValue[0].replace("\"", "").trim();
-                String value = keyValue[1].replace("\"", "").trim();
-                switch (key) {
-                    case "id" -> id = Integer.parseInt(value);
-                    case "name" -> name = value;
-                    case "active" -> active = Boolean.parseBoolean(value);
-                    default -> throw new IllegalStateException("Unexpected key: " + key);
-                }
-            }
-            result.add(new ExampleDto(id, name, active));
-        }
-        return result;
+        return Arrays.stream(trimmed.substring(1, trimmed.length() - 1).split("\\},\\{"))
+                .map(CanCacheProtocolIntegrationTest::fromJsonObject)
+                .toList();
     }
 
-    private long parseLong(Map<String, String> stats, String key)
+    private static ExampleDto fromJsonObject(String raw)
     {
-        return Long.parseLong(stats.getOrDefault(key, "0"));
+        String normalized = raw.replace("{", "").replace("}", "");
+        int id = 0;
+        String name = "";
+        boolean active = false;
+
+        for (String field : normalized.split(",")) {
+            String[] keyValue = field.split(":", 2);
+            String key = keyValue[0].replace("\"", "").trim();
+            String value = keyValue[1].replace("\"", "").trim();
+            switch (key) {
+                case "id" -> id = Integer.parseInt(value);
+                case "name" -> name = value;
+                case "active" -> active = Boolean.parseBoolean(value);
+                default -> throw new IllegalStateException("Unexpected JSON key: " + key);
+            }
+        }
+
+        return new ExampleDto(id, name, active);
     }
 
     private record ExampleDto(int id, String name, boolean active)
