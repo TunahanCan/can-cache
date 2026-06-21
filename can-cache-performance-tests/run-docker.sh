@@ -25,7 +25,7 @@ Environment overrides:
   PAYLOAD_SIZE           Payload size in bytes
   DURATION_SECONDS       Thread group duration override in seconds
   RESULT_FILE            Result path under the repository
-  JMETER_IMAGE           JMeter image (default: alpine/jmeter:5.6.3)
+  JMETER_IMAGE           JMeter image (default: anasoid/jmeter:5.6.3-plugins-21-jre)
   JMETER_HEAP            JMeter JVM heap (default: -Xms64m -Xmx256m -XX:MaxMetaspaceSize=128m)
   MVN_IMAGE              Maven/JDK image for sampler build
   ALLOW_JMETER_ERRORS    Set to 1 to keep exit code 0 when samples fail

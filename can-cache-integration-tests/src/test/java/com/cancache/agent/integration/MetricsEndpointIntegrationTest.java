@@ -20,14 +20,17 @@ class MetricsEndpointIntegrationTest
     private static final Duration EVENTUAL_TIMEOUT = Duration.ofSeconds(30);
 
     private static IntegrationEnvironment.CacheEndpoint cacheEndpoint;
+    private static IntegrationEnvironment.CacheEndpoint metricsCacheEndpoint;
     private static IntegrationEnvironment.MetricsEndpoint metricsEndpoint;
 
     @BeforeAll
     static void waitForTargets() throws Exception
     {
         cacheEndpoint = IntegrationEnvironment.requireCacheEndpoint();
+        metricsCacheEndpoint = IntegrationEnvironment.requireMetricsCacheEndpoint();
         metricsEndpoint = IntegrationEnvironment.requireMetricsEndpoint();
         IntegrationEnvironment.awaitCacheReady(cacheEndpoint);
+        IntegrationEnvironment.awaitCacheReady(metricsCacheEndpoint);
     }
 
     @Test
@@ -51,7 +54,7 @@ class MetricsEndpointIntegrationTest
 
     private static void exerciseCacheCounters() throws IOException
     {
-        try (CanCacheClient client = IntegrationEnvironment.connect(cacheEndpoint)) {
+        try (CanCacheClient client = IntegrationEnvironment.connect(metricsCacheEndpoint)) {
             client.flushAll();
             client.set("metrics:hit", 0, 0, "value");
             client.getValue("metrics:hit");

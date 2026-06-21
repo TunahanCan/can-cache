@@ -29,9 +29,9 @@ a JMeter container.
 ./mvnw -f can-cache-performance-tests/pom.xml package
 ```
 
-The sampler is compiled with Java 8 bytecode so it can be loaded by the default
-`alpine/jmeter:5.6.3` Docker image. The full cache applications still use the
-repository's Java 25 Docker build.
+The sampler is compiled with Java 21 bytecode and the Docker flow uses the
+Java 21 based `anasoid/jmeter:5.6.3-plugins-21-jre` image by default. The full
+cache applications still use the repository's Java 25 Docker build.
 
 ### Run with Docker + JMeter
 
@@ -70,8 +70,7 @@ PAYLOAD_SIZE=512 DURATION_SECONDS=60 ./can-cache-performance-tests/run-docker.sh
 ### Notes
 
 - `run-docker.sh` targets `can-cache-agent:11211` inside the Compose network by default.
-- The default Docker JMeter image is `alpine/jmeter:5.6.3`; override with `JMETER_IMAGE`.
-- Use `JMETER_IMAGE=anasoid/jmeter:5.6.3-plugins-21-jre` if a plugin-manager image is needed.
+- The default Docker JMeter image is `anasoid/jmeter:5.6.3-plugins-21-jre`; override with `JMETER_IMAGE`.
 - JMeter uses a bounded default heap; override with `JMETER_HEAP` or `HEAP`.
 - The scripts fail when a `.jtl` contains failed samples; set `ALLOW_JMETER_ERRORS=1` to only collect results.
 - `run-local.sh` targets `127.0.0.1:11211` by default.
@@ -105,10 +104,10 @@ healthy görünene kadar bekler ve seçilen `.jmx` profilini JMeter container'ı
 ./mvnw -f can-cache-performance-tests/pom.xml package
 ```
 
-Sampler Java 8 bytecode ile derlenir; bu sayede varsayılan
-`alpine/jmeter:5.6.3` Docker imajı tarafından yüklenebilir. Cache
-uygulamalarının tam Docker build'i ise repo'nun Java 25 akışını kullanmaya
-devam eder.
+Sampler Java 21 bytecode ile derlenir ve Docker akışı varsayılan olarak Java 21
+tabanlı `anasoid/jmeter:5.6.3-plugins-21-jre` imajını kullanır. Cache
+uygulamalarının tam Docker build'i repo'nun Java 25 akışını kullanmaya devam
+eder.
 
 ### Docker + JMeter ile çalıştırma
 
@@ -146,8 +145,7 @@ PAYLOAD_SIZE=512 DURATION_SECONDS=60 ./can-cache-performance-tests/run-docker.sh
 ### Notlar
 
 - `run-docker.sh` varsayılan olarak Compose ağı içinde `can-cache-agent:11211` hedefine gider.
-- Varsayılan Docker JMeter imajı `alpine/jmeter:5.6.3`; `JMETER_IMAGE` ile değiştirilebilir.
-- Plugin-manager imajı gerekiyorsa `JMETER_IMAGE=anasoid/jmeter:5.6.3-plugins-21-jre` kullanılabilir.
+- Varsayılan Docker JMeter imajı `anasoid/jmeter:5.6.3-plugins-21-jre`; `JMETER_IMAGE` ile değiştirilebilir.
 - JMeter sınırlı heap ile başlar; `JMETER_HEAP` veya `HEAP` ile değiştirilebilir.
 - Scriptler `.jtl` içinde başarısız sample görürse hata koduyla çıkar; yalnızca sonuç toplamak için `ALLOW_JMETER_ERRORS=1` verilebilir.
 - `run-local.sh` varsayılan olarak `127.0.0.1:11211` hedefine gider.

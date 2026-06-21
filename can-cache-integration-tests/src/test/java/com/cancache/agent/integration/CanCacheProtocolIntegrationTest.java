@@ -245,6 +245,42 @@ class CanCacheProtocolIntegrationTest
         );
     }
 
+    @Test
+    void payloadCommandsPreserveEmptyAndLargeValues() throws Exception
+    {
+        String emptyKey = key("empty");
+        String largeKey = key("large");
+        String largePayload = "payload-".repeat(2048);
+
+        expect("STORED", client.set(emptyKey, 11, 0, ""));
+        expect("STORED", client.set(largeKey, 22, 0, largePayload));
+
+        CanCacheClient.CacheValue emptyValue = value(emptyKey);
+        CanCacheClient.CacheValue largeValue = value(largeKey);
+
+        assertAll(
+                () -> assertEquals(11, emptyValue.flags()),
+                () -> assertArrayEquals(new byte[0], emptyValue.data()),
+                () -> assertEquals(22, largeValue.flags()),
+                () -> assertEquals(largePayload, largeValue.asString())
+        );
+    }
+
+    @Test
+    void protocolErrorsDoNotPoisonConnection() throws Exception
+    {
+        expect("ERROR", client.command("definitely_unknown_command"));
+        expect("CLIENT_ERROR bad command line format", client.command("set incomplete"));
+
+        String key = key("after-error");
+        expect("STORED", client.set(key, 0, 0, "still-works"));
+
+        assertAll(
+                () -> assertValue(key, "still-works"),
+                () -> assertTrue(client.version().startsWith("VERSION "))
+        );
+    }
+
     private static String key(String suffix)
     {
         return "it:" + suffix;

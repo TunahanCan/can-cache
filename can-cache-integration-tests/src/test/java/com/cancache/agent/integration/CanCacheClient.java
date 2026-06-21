@@ -166,6 +166,12 @@ final class CanCacheClient implements Closeable
         return readLine();
     }
 
+    String command(String command) throws IOException
+    {
+        sendLine(command);
+        return readLine();
+    }
+
     private Map<String, CacheValue> multiGet(String command, String... keys) throws IOException
     {
         if (keys == null || keys.length == 0) {

@@ -31,9 +31,40 @@ final class IntegrationEnvironment
     static MetricsEndpoint requireMetricsEndpoint()
     {
         CacheEndpoint cacheEndpoint = requireCacheEndpoint();
+        String host = Optional.ofNullable(System.getenv("CAN_CACHE_METRICS_HOST"))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .orElse(cacheEndpoint.host());
         int port = parseInt(System.getenv("CAN_CACHE_METRICS_PORT"), 9000);
         String path = normalisePath(System.getenv("CAN_CACHE_METRICS_PATH"));
-        return new MetricsEndpoint(buildUri(cacheEndpoint.host(), port, path));
+        return new MetricsEndpoint(buildUri(host, port, path));
+    }
+
+    static CacheEndpoint requireMetricsCacheEndpoint()
+    {
+        CacheEndpoint cacheEndpoint = requireCacheEndpoint();
+        String host = Optional.ofNullable(System.getenv("CAN_CACHE_METRICS_CACHE_HOST"))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .orElseGet(() -> Optional.ofNullable(System.getenv("CAN_CACHE_METRICS_HOST"))
+                        .map(String::trim)
+                        .filter(s -> !s.isBlank())
+                        .orElse(cacheEndpoint.host()));
+        int port = parseInt(System.getenv("CAN_CACHE_METRICS_CACHE_PORT"), cacheEndpoint.port());
+        return new CacheEndpoint(host, port);
+    }
+
+    static AgentEndpoint requireAgentEndpoint()
+    {
+        CacheEndpoint cacheEndpoint = requireCacheEndpoint();
+        String host = Optional.ofNullable(System.getenv("CAN_CACHE_AGENT_HOST"))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .orElse(cacheEndpoint.host());
+        int port = parseInt(System.getenv("CAN_CACHE_AGENT_HTTP_PORT"), 8080);
+        String path = normalisePath(Optional.ofNullable(System.getenv("CAN_CACHE_AGENT_STATUS_PATH"))
+                .orElse("/agent/instances"));
+        return new AgentEndpoint(buildUri(host, port, path));
     }
 
     static CanCacheClient connect(CacheEndpoint endpoint) throws IOException
@@ -107,6 +138,10 @@ final class IntegrationEnvironment
     }
 
     record MetricsEndpoint(URI uri)
+    {
+    }
+
+    record AgentEndpoint(URI statusUri)
     {
     }
 }

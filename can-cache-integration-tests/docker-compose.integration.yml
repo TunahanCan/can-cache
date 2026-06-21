@@ -1,26 +1,76 @@
 
 services:
-  can-cache:
+  can-cache-agent:
+    build:
+      context: ..
+      dockerfile: Dockerfile.agent
+    image: can-cache-agent:integration
+    environment:
+      AGENT_LISTEN_HOST: 0.0.0.0
+      AGENT_LISTEN_PORT: "11211"
+      AGENT_REGISTRATION_ENABLED: "true"
+      AGENT_REGISTRATION_HOST: 0.0.0.0
+      AGENT_REGISTRATION_PORT: "11311"
+      AGENT_DISCOVERY_ENABLED: "false"
+      AGENT_DASHBOARD_MODE: "off"
+      QUARKUS_LOG_LEVEL: INFO
+
+  can-cache-app-1:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: can-cache:integration
+    image: can-cache-app:integration
     environment:
-      QUARKUS_HTTP_PORT: "9000"
+      QUARKUS_HTTP_PORT: "9001"
       APP_NETWORK_HOST: 0.0.0.0
-      APP_NETWORK_PORT: "11211"
-      APP_AGENT_ENABLED: "false"
-    ports:
-      - "11211:11211"
-      - "9000:9000"
+      APP_NETWORK_PORT: "11212"
+      APP_AGENT_ENABLED: "true"
+      APP_AGENT_HOST: can-cache-agent
+      APP_AGENT_PORT: "11211"
+      APP_AGENT_REGISTRATION_PORT: "11311"
+      APP_AGENT_ADVERTISED_HOST: can-cache-app-1
+      APP_CLUSTER_DISCOVERY_NODE_ID: can-cache-app-1
+      APP_CLUSTER_REPLICATION_ADVERTISE_HOST: can-cache-app-1
+      APP_CLUSTER_REPLICATION_PORT: "18080"
+    depends_on:
+      - can-cache-agent
+
+  can-cache-app-2:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: can-cache-app:integration
+    environment:
+      QUARKUS_HTTP_PORT: "9002"
+      APP_NETWORK_HOST: 0.0.0.0
+      APP_NETWORK_PORT: "11212"
+      APP_AGENT_ENABLED: "true"
+      APP_AGENT_HOST: can-cache-agent
+      APP_AGENT_PORT: "11211"
+      APP_AGENT_REGISTRATION_PORT: "11311"
+      APP_AGENT_ADVERTISED_HOST: can-cache-app-2
+      APP_CLUSTER_DISCOVERY_NODE_ID: can-cache-app-2
+      APP_CLUSTER_REPLICATION_ADVERTISE_HOST: can-cache-app-2
+      APP_CLUSTER_REPLICATION_PORT: "18080"
+    depends_on:
+      - can-cache-agent
+
   integration-tests:
     build:
       context: .
     depends_on:
-      - can-cache
+      - can-cache-agent
+      - can-cache-app-1
+      - can-cache-app-2
     environment:
-      CAN_CACHE_HOST: can-cache
+      CAN_CACHE_HOST: can-cache-agent
       CAN_CACHE_PORT: "11211"
-      CAN_CACHE_METRICS_PORT: "9000"
+      CAN_CACHE_AGENT_HOST: can-cache-agent
+      CAN_CACHE_AGENT_HTTP_PORT: "8080"
+      CAN_CACHE_AGENT_STATUS_PATH: "/agent/instances"
+      CAN_CACHE_METRICS_HOST: can-cache-app-1
+      CAN_CACHE_METRICS_PORT: "9001"
       CAN_CACHE_METRICS_PATH: "/metrics"
+      CAN_CACHE_METRICS_CACHE_HOST: can-cache-app-1
+      CAN_CACHE_METRICS_CACHE_PORT: "11212"
     command: ["mvn", "-B", "test"]

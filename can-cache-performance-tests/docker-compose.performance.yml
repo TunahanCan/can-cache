@@ -91,7 +91,7 @@ services:
       - can-cache-app-2
 
   jmeter:
-    image: ${JMETER_IMAGE:-alpine/jmeter:5.6.3}
+    image: ${JMETER_IMAGE:-anasoid/jmeter:5.6.3-plugins-21-jre}
     entrypoint: ["jmeter"]
     working_dir: /workspace
     environment:
