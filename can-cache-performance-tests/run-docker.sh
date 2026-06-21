@@ -5,8 +5,9 @@ usage() {
   cat <<'USAGE'
 Usage: run-docker.sh [PROFILE] [-- JMETER_ARGS...]
 
-Runs a Can Cache JMeter performance profile using a Dockerised JMeter
-installation.
+Builds the custom JMeter Java sampler, starts one can-cache-agent plus two
+can-cache-application containers, waits until both apps are registered and
+healthy, then runs the selected JMeter plan in Docker.
 
 Profiles:
   small   Lightweight smoke workload (default)
@@ -15,19 +16,21 @@ Profiles:
   xl      Saturation-level workload
 
 Environment overrides:
-  TARGET_HOST            Target hostname/IP (default: 127.0.0.1)
+  TARGET_HOST            Target inside Docker network (default: can-cache-agent)
   TARGET_PORT            Target TCP port (default: 11211)
   TTL_SECONDS            TTL in seconds for generated SET commands
   CONNECT_TIMEOUT_MILLIS Socket connect timeout (ms)
   READ_TIMEOUT_MILLIS    Socket read timeout (ms)
   KEY_PREFIX             Prefix for generated cache keys
-  PAYLOAD_SIZE           Payload size in bytes (plan default if unset)
+  PAYLOAD_SIZE           Payload size in bytes
   DURATION_SECONDS       Thread group duration override in seconds
-  RESULT_FILE            Path for the JMeter results (.jtl) file
-  JMETER_IMAGE           Docker image to use for JMeter (default: justb4/jmeter:5.6.2)
+  RESULT_FILE            Result path under the repository
+  JMETER_IMAGE           JMeter image (default: alpine/jmeter:5.6.3)
+  JMETER_HEAP            JMeter JVM heap (default: -Xms64m -Xmx256m -XX:MaxMetaspaceSize=128m)
+  MVN_IMAGE              Maven/JDK image for sampler build
+  KEEP_STACK             Set to 1 to leave containers running after the test
 
-Any arguments after `--` are passed directly to the JMeter command inside the
-container.
+Arguments after `--` are passed directly to JMeter.
 USAGE
 }
 
@@ -36,52 +39,23 @@ if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
   exit 0
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+compose_file="${script_dir}/docker-compose.performance.yml"
+
 profile="${1:-small}"
 if [[ $# -gt 0 && ${1} != "--" ]]; then
   shift
 fi
-
 if [[ ${profile} == "--" ]]; then
   profile="small"
 fi
-
-sampler_jar_rel="performance-tests/java-sampler/target/can-cache-jmeter-sampler-0.0.1-SNAPSHOT.jar"
-
-build_sampler_jar() {
-  if [[ -x ./mvnw ]]; then
-    echo "Building Java sampler JAR" >&2
-    ./mvnw -q -f performance-tests/java-sampler/pom.xml package >&2
-    return 0
-  fi
-
-  sibling_mvnw="$(dirname "$0")/../mvnw"
-  if [[ -x ${sibling_mvnw} ]]; then
-    echo "Building Java sampler JAR" >&2
-    "${sibling_mvnw}" -q -f performance-tests/java-sampler/pom.xml package >&2
-    return 0
-  fi
-
-  echo "Unable to locate mvnw to build the Java sampler. Ensure the repository root contains mvnw." >&2
-  return 1
-}
-
-build_sampler_jar
-
-if [[ ! -f "${sampler_jar_rel}" ]]; then
-  echo "Java sampler JAR not found at ${sampler_jar_rel} after build." >&2
-  exit 1
-fi
-
-if ! command -v docker >/dev/null 2>&1; then
-  echo "Docker is not available on PATH. Install Docker to run the plans in a container." >&2
-  exit 1
+if [[ ${1:-} == "--" ]]; then
+  shift
 fi
 
 case "${profile}" in
-  small) plan="jmeter/can-cache-small.jmx" ;;
-  medium) plan="jmeter/can-cache-medium.jmx" ;;
-  large) plan="jmeter/can-cache-large.jmx" ;;
-  xl) plan="jmeter/can-cache-xl.jmx" ;;
+  small|medium|large|xl) ;;
   *)
     echo "Unknown profile: ${profile}" >&2
     usage >&2
@@ -89,19 +63,52 @@ case "${profile}" in
     ;;
 esac
 
-if [[ ${1:-} == "--" ]]; then
-  shift
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is not available on PATH." >&2
+  exit 1
 fi
 
-results_dir="performance-tests/results"
+if ! docker compose version >/dev/null 2>&1; then
+  echo "Docker Compose v2 is required." >&2
+  exit 1
+fi
+
+results_dir="${script_dir}/results"
 mkdir -p "${results_dir}"
 
-# Build default result file name if not provided via env or args.
-default_result_file="${results_dir}/$(basename "${plan}" .jmx).jtl"
-result_file="${RESULT_FILE:-${default_result_file}}"
+plan="can-cache-performance-tests/jmeter/can-cache-${profile}.jmx"
+timestamp="$(date -u +%Y%m%d-%H%M%S)"
+result_file="${RESULT_FILE:-can-cache-performance-tests/results/can-cache-${profile}-${timestamp}.jtl}"
+sampler_jar="can-cache-performance-tests/target/can-cache-performance-test-0.0.1-SNAPSHOT.jar"
+mvn_image="${MVN_IMAGE:-maven:3.9.11-eclipse-temurin-21}"
+
+echo "[build] packaging JMeter sampler with ${mvn_image}" >&2
+docker run --rm \
+  -v "${repo_root}:/workspace" \
+  -w /workspace \
+  "${mvn_image}" \
+  ./mvnw -q -f can-cache-performance-tests/pom.xml clean package
+
+if [[ ! -f "${repo_root}/${sampler_jar}" ]]; then
+  echo "Sampler JAR not found at ${sampler_jar}" >&2
+  exit 1
+fi
+
+cleanup() {
+  if [[ ${KEEP_STACK:-0} != "1" ]]; then
+    docker compose -f "${compose_file}" down --remove-orphans >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+echo "[stack] starting can-cache-agent + 2 can-cache-application containers" >&2
+docker compose -f "${compose_file}" up -d --build can-cache-agent can-cache-app-1 can-cache-app-2
+
+echo "[wait] waiting for two healthy cache applications behind the agent" >&2
+docker compose -f "${compose_file}" run --rm wait-for-agent
 
 props=(
-  "-JtargetHost=${TARGET_HOST:-127.0.0.1}"
+  "-JtargetHost=${TARGET_HOST:-can-cache-agent}"
   "-JtargetPort=${TARGET_PORT:-11211}"
   "-JresultFile=${result_file}"
 )
@@ -113,18 +120,11 @@ props=(
 [[ -n ${PAYLOAD_SIZE:-} ]] && props+=("-JpayloadSize=${PAYLOAD_SIZE}")
 [[ -n ${DURATION_SECONDS:-} ]] && props+=("-JdurationSeconds=${DURATION_SECONDS}")
 
-jmeter_image="${JMETER_IMAGE:-justb4/jmeter:5.6.2}"
+jmeter_cmd=(-n -t "${plan}" -l "${result_file}")
+jmeter_cmd+=("${props[@]}")
+jmeter_cmd+=("$@")
 
-docker_cmd=(docker run --rm)
-if [[ -n ${JMETER_ADD_CLASSPATH:-} ]]; then
-  docker_cmd+=(-e "JMETER_ADD_CLASSPATH=${JMETER_ADD_CLASSPATH}:/workspace/${sampler_jar_rel}")
-else
-  docker_cmd+=(-e "JMETER_ADD_CLASSPATH=/workspace/${sampler_jar_rel}")
-fi
+echo "[jmeter] jmeter ${jmeter_cmd[*]}" >&2
+docker compose -f "${compose_file}" run --rm jmeter "${jmeter_cmd[@]}"
 
-docker_cmd+=(-v "$(pwd)":/workspace)
-docker_cmd+=(-w /workspace "${jmeter_image}" jmeter -n -t "${plan}" -l "${result_file}")
-docker_cmd+=("${props[@]}")
-
-echo "Running Dockerised JMeter: ${docker_cmd[*]} $*"
-"${docker_cmd[@]}" "$@"
+echo "JMeter result: ${result_file}" >&2

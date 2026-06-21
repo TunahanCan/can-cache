@@ -2,7 +2,9 @@ package com.cancache.agent.service;
 
 import com.cancache.agent.config.AgentConfig;
 import com.cancache.agent.model.NodeStats;
+import com.cancache.agent.model.UpstreamAddress;
 import com.cancache.agent.model.UpstreamState;
+import io.quarkus.runtime.Startup;
 import io.vertx.core.Vertx;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetClientOptions;
@@ -13,6 +15,7 @@ import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
+@Startup
 public class HealthService {
 
     private static final Logger LOG = Logger.getLogger(HealthService.class);
@@ -37,6 +40,7 @@ public class HealthService {
         client = vertx.createNetClient(new NetClientOptions()
                 .setConnectTimeout((int) config.health().connectTimeout().toMillis()));
 
+        checkAll();
         timerId = vertx.setPeriodic(config.health().interval().toMillis(), id -> checkAll());
     }
 
@@ -50,19 +54,27 @@ public class HealthService {
         }
     }
 
-    private void checkAll() {
+    public void checkAll() {
         for (NodeStats node : registry.all()) {
-            String[] hostPort = node.address().split(":");
-            client.connect(Integer.parseInt(hostPort[1]), hostPort[0])
-                    .onSuccess(socket -> {
-                        socket.close();
-                        transition(node, UpstreamState.UP, null);
-                    })
-                    .onFailure(err -> {
-                        node.incError();
-                        transition(node, UpstreamState.DOWN, err.getMessage());
-                    });
+            check(node);
         }
+    }
+
+    public void check(NodeStats node) {
+        if (client == null) {
+            return;
+        }
+
+        UpstreamAddress address = node.upstreamAddress();
+        client.connect(address.port(), address.host())
+                .onSuccess(socket -> {
+                    socket.close();
+                    transition(node, UpstreamState.UP, null);
+                })
+                .onFailure(err -> {
+                    node.incError();
+                    transition(node, UpstreamState.DOWN, err.getMessage());
+                });
     }
 
     private void transition(NodeStats node, UpstreamState next, String error) {

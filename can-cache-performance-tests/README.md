@@ -6,7 +6,12 @@ This document is bilingual (English + Türkçe).
 
 ## English
 
-`can-cache-performance-tests` contains JMeter plans and a custom Java sampler for non-functional testing of `can-cache`.
+`can-cache-performance-tests` contains the JMeter plans and the custom Java sampler used for non-functional testing of `can-cache`.
+
+The Docker flow also runs JMeter. It starts one `can-cache-agent`, two
+`can-cache-application` containers, waits until both applications are registered
+as healthy behind the agent, and then executes the selected `.jmx` profile from
+a JMeter container.
 
 ### Directory layout
 
@@ -14,16 +19,37 @@ This document is bilingual (English + Türkçe).
 - `nfr/`: profile-specific NFR targets.
 - `src/main/java/.../CancachedRoundTripSampler.java`: custom sampler implementation.
 - `run-local.sh`: run tests with local JMeter.
-- `run-docker.sh`: run tests in Docker.
+- `docker-compose.performance.yml`: performance topology (`agent + 2 apps + JMeter`).
+- `run-docker.sh`: run the full Docker/JMeter performance flow.
 - `results/`: output folder for `.jtl` files.
 
-### Build sampler
+### Build sampler locally
 
 ```bash
 ./mvnw -f can-cache-performance-tests/pom.xml package
 ```
 
-### Run profiles
+The sampler is compiled with Java 17 bytecode so it can be loaded by common
+JMeter Docker images. The full cache applications still use the repository's
+Java 25 Docker build.
+
+### Run with Docker + JMeter
+
+Docker is the recommended path because it brings the agent, both cache
+applications, build images, a JMeter image, and the custom Java sampler on
+JMeter's classpath:
+
+```bash
+./can-cache-performance-tests/run-docker.sh small
+./can-cache-performance-tests/run-docker.sh medium
+./can-cache-performance-tests/run-docker.sh large
+./can-cache-performance-tests/run-docker.sh xl
+```
+
+### Run with local JMeter
+
+Use this only when the target stack is already running locally and JMeter is
+installed on the host:
 
 ```bash
 ./can-cache-performance-tests/run-local.sh small
@@ -32,23 +58,23 @@ This document is bilingual (English + Türkçe).
 ./can-cache-performance-tests/run-local.sh xl
 ```
 
-Docker alternative:
-
-```bash
-./can-cache-performance-tests/run-docker.sh medium
-```
-
 ### Typical overrides
 
 Use extra JMeter args after `--`:
 
 ```bash
+PAYLOAD_SIZE=512 DURATION_SECONDS=60 ./can-cache-performance-tests/run-docker.sh small
 ./can-cache-performance-tests/run-local.sh medium -- -JtargetHost=127.0.0.1 -JtargetPort=11211
 ```
 
 ### Notes
 
-- Start `can-cache-application` before running load tests.
+- `run-docker.sh` targets `can-cache-agent:11211` inside the Compose network by default.
+- The default Docker JMeter image is `alpine/jmeter:5.6.3`; override with `JMETER_IMAGE`.
+- Use `JMETER_IMAGE=anasoid/jmeter:5.6.3-plugins-21-jre` if a plugin-manager image is needed.
+- JMeter uses a bounded default heap; override with `JMETER_HEAP` or `HEAP`.
+- `run-local.sh` targets `127.0.0.1:11211` by default.
+- `KEEP_STACK=1` leaves the Docker performance stack running after the JMeter run.
 - Compare `.jtl` results with the corresponding `nfr/*.md` acceptance criteria.
 
 ---
@@ -57,22 +83,47 @@ Use extra JMeter args after `--`:
 
 `can-cache-performance-tests`, `can-cache` için fonksiyonel olmayan testlerde kullanılan JMeter planlarını ve özel Java sampler'ı içerir.
 
+Docker akışı da JMeter çalıştırır. Bir `can-cache-agent`, iki
+`can-cache-application` container'ı ayağa kaldırır, iki uygulama agent arkasında
+healthy görünene kadar bekler ve seçilen `.jmx` profilini JMeter container'ında
+çalıştırır.
+
 ### Dizin yapısı
 
 - `jmeter/`: JMeter planları (`can-cache-small.jmx`, `medium`, `large`, `xl`).
 - `nfr/`: profile özel NFR hedefleri.
 - `src/main/java/.../CancachedRoundTripSampler.java`: özel sampler implementasyonu.
 - `run-local.sh`: testleri yerel JMeter ile çalıştırır.
-- `run-docker.sh`: testleri Docker içinde çalıştırır.
+- `docker-compose.performance.yml`: performans topolojisi (`agent + 2 app + JMeter`).
+- `run-docker.sh`: tüm Docker/JMeter performans akışını çalıştırır.
 - `results/`: `.jtl` çıktı klasörü.
 
-### Sampler derleme
+### Sampler'ı yerelde derleme
 
 ```bash
 ./mvnw -f can-cache-performance-tests/pom.xml package
 ```
 
-### Profil çalıştırma
+Sampler Java 17 bytecode ile derlenir; bu sayede yaygın JMeter Docker imajları
+tarafından yüklenebilir. Cache uygulamalarının tam Docker build'i ise repo'nun
+Java 25 akışını kullanmaya devam eder.
+
+### Docker + JMeter ile çalıştırma
+
+Önerilen yol Docker'dır; agent, iki cache uygulaması, build imajları, JMeter
+imajı ve classpath'e eklenmiş özel Java sampler'ı birlikte getirir:
+
+```bash
+./can-cache-performance-tests/run-docker.sh small
+./can-cache-performance-tests/run-docker.sh medium
+./can-cache-performance-tests/run-docker.sh large
+./can-cache-performance-tests/run-docker.sh xl
+```
+
+### Yerel JMeter ile çalıştırma
+
+Bunu hedef stack zaten yerelde çalışırken ve host üzerinde JMeter kuruluysa
+kullanın:
 
 ```bash
 ./can-cache-performance-tests/run-local.sh small
@@ -81,21 +132,21 @@ Use extra JMeter args after `--`:
 ./can-cache-performance-tests/run-local.sh xl
 ```
 
-Docker alternatifi:
-
-```bash
-./can-cache-performance-tests/run-docker.sh medium
-```
-
 ### Sık kullanılan override'lar
 
 `--` sonrasında ekstra JMeter argümanları verilebilir:
 
 ```bash
+PAYLOAD_SIZE=512 DURATION_SECONDS=60 ./can-cache-performance-tests/run-docker.sh small
 ./can-cache-performance-tests/run-local.sh medium -- -JtargetHost=127.0.0.1 -JtargetPort=11211
 ```
 
 ### Notlar
 
-- Yük testinden önce `can-cache-application` çalışıyor olmalıdır.
+- `run-docker.sh` varsayılan olarak Compose ağı içinde `can-cache-agent:11211` hedefine gider.
+- Varsayılan Docker JMeter imajı `alpine/jmeter:5.6.3`; `JMETER_IMAGE` ile değiştirilebilir.
+- Plugin-manager imajı gerekiyorsa `JMETER_IMAGE=anasoid/jmeter:5.6.3-plugins-21-jre` kullanılabilir.
+- JMeter sınırlı heap ile başlar; `JMETER_HEAP` veya `HEAP` ile değiştirilebilir.
+- `run-local.sh` varsayılan olarak `127.0.0.1:11211` hedefine gider.
+- `KEEP_STACK=1`, JMeter koşusundan sonra Docker performans stack'ini açık bırakır.
 - `.jtl` sonuçlarını ilgili `nfr/*.md` kabul kriterleriyle karşılaştırın.

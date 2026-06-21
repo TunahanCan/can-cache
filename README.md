@@ -92,6 +92,7 @@ Run one local agent + two local cache nodes:
 ```bash
 ./local-setup.sh start
 ./local-setup.sh status
+./local-setup.sh test
 # connect client to 127.0.0.1:11211
 ./local-setup.sh stop
 ```
@@ -184,6 +185,7 @@ Localde 1 agent + 2 cache node ayağa kaldırma:
 ```bash
 ./local-setup.sh start
 ./local-setup.sh status
+./local-setup.sh test
 # istemciyi 127.0.0.1:11211 adresine bağla
 ./local-setup.sh stop
 ```

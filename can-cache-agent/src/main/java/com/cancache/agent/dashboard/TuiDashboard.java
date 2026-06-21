@@ -40,6 +40,11 @@ public class TuiDashboard {
     public void start()
     {
         String mode = config.dashboard().mode().toLowerCase();
+        if ("off".equals(mode) || "none".equals(mode)) {
+            LOG.info("dashboard mode=off");
+            return;
+        }
+
         tuiMode = switch (mode) {
             case "tui" -> true;
             case "log", "compact" -> false;
@@ -124,6 +129,13 @@ public class TuiDashboard {
         return supportsInlineRefresh();
     }
 
+    private String discoveryLabel() {
+        if (!config.discovery().enabled() || config.discovery().dns().isBlank()) {
+            return "disabled";
+        }
+        return config.discovery().dns();
+    }
+
     private boolean supportsInlineRefresh() {
         String termName = System.getenv("TERM");
         return termName != null && !termName.isBlank() && !"dumb".equalsIgnoreCase(termName);
@@ -186,7 +198,7 @@ public class TuiDashboard {
         appendIfVisible(sb, startY + 1, 0, contentBottom,
             "\033[37m" + cut("Listen: " + config.listen().host() + ":" + config.listen().port(), width));
         appendIfVisible(sb, startY + 2, 0, contentBottom,
-            cut("DNS: " + config.discovery().dns() + "    Nodes: " + up + "/" + total + " UP", width));
+            cut("DNS: " + discoveryLabel() + "    Nodes: " + up + "/" + total + " UP", width));
         appendIfVisible(sb, startY + 3, 0, contentBottom,
             cut("Policy: " + config.selection().policy() + "    Active: " + metrics.activeConnections(), width));
         appendIfVisible(sb, startY + 4, 0, contentBottom,

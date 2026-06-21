@@ -36,6 +36,10 @@ public interface AgentConfig {
     }
 
     interface Discovery {
+        @WithDefault("false")
+        boolean enabled();
+
+        @WithDefault("")
         String dns();
 
         @WithDefault("5s")

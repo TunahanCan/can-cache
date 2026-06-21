@@ -1,6 +1,7 @@
 package com.cancache.agent.service;
 
 import com.cancache.agent.config.AgentConfig;
+import io.quarkus.runtime.Startup;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.dns.DnsClient;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 @ApplicationScoped
+@Startup
 public class DiscoveryService {
 
     private static final Logger LOG = Logger.getLogger(DiscoveryService.class);
@@ -39,6 +41,11 @@ public class DiscoveryService {
 
     @PostConstruct
     void start() {
+        if (!config.discovery().enabled() || config.discovery().dns().isBlank()) {
+            LOG.infov("dns discovery disabled");
+            return;
+        }
+
         dnsClient = vertx.createDnsClient(new DnsClientOptions());
         refreshNow();
         timerId = vertx.setPeriodic(config.discovery().interval().toMillis(), id -> refreshNow());
@@ -52,6 +59,10 @@ public class DiscoveryService {
     }
 
     public Future<Void> refreshNowAsync() {
+        if (dnsClient == null || !config.discovery().enabled() || config.discovery().dns().isBlank()) {
+            return Future.succeededFuture();
+        }
+
         return dnsClient.resolveA(config.discovery().dns())
                 .onSuccess(this::apply)
                 .recover(err -> {
@@ -64,6 +75,9 @@ public class DiscoveryService {
     }
 
     public void refreshNow() {
+        if (dnsClient == null || !config.discovery().enabled() || config.discovery().dns().isBlank()) {
+            return;
+        }
         refreshNowAsync();
     }
 

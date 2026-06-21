@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class NodeStats {
-    private final String address;
+    private final UpstreamAddress address;
     private volatile UpstreamState state = UpstreamState.UNKNOWN;
     private volatile Instant lastCheck = Instant.EPOCH;
     private volatile String lastError = "-";
@@ -18,10 +18,18 @@ public final class NodeStats {
     private final AtomicLong errorCount = new AtomicLong();
 
     public NodeStats(String address) {
+        this(UpstreamAddress.parse(address));
+    }
+
+    public NodeStats(UpstreamAddress address) {
         this.address = address;
     }
 
     public String address() {
+        return address.toString();
+    }
+
+    public UpstreamAddress upstreamAddress() {
         return address;
     }
 

@@ -1,6 +1,7 @@
 package com.cancache.agent.service;
 
 import com.cancache.agent.model.NodeStats;
+import com.cancache.agent.model.UpstreamAddress;
 import com.cancache.agent.model.UpstreamState;
 import jakarta.enterprise.context.ApplicationScoped;
 
@@ -18,9 +19,9 @@ public class UpstreamRegistry {
     public synchronized void replace(List<String> ips, int port) {
         Set<String> nextDiscovered = new HashSet<>();
         for (String ip : ips) {
-            String address = ip + ":" + port;
-            nextDiscovered.add(address);
-            nodes.computeIfAbsent(address, NodeStats::new);
+            UpstreamAddress address = UpstreamAddress.of(ip, port);
+            nextDiscovered.add(address.toString());
+            nodes.computeIfAbsent(address.toString(), ignored -> new NodeStats(address));
         }
 
         discoveredAddresses.clear();
@@ -28,11 +29,12 @@ public class UpstreamRegistry {
         pruneOrphans();
     }
 
-    public void register(String host, int port, long ttlMillis) {
-        String address = host + ":" + port;
-        nodes.computeIfAbsent(address, NodeStats::new);
+    public NodeStats register(String host, int port, long ttlMillis) {
+        UpstreamAddress address = UpstreamAddress.of(host, port);
+        NodeStats node = nodes.computeIfAbsent(address.toString(), ignored -> new NodeStats(address));
         long expiresAt = System.currentTimeMillis() + Math.max(1000L, ttlMillis);
-        registeredUntilEpochMillis.put(address, expiresAt);
+        registeredUntilEpochMillis.put(address.toString(), expiresAt);
+        return node;
     }
 
     public void cleanupExpiredRegistrations() {
@@ -47,7 +49,7 @@ public class UpstreamRegistry {
 
     public List<NodeStats> all() {
         List<NodeStats> list = new ArrayList<>(nodes.values());
-        list.sort(Comparator.comparing(NodeStats::address));
+        list.sort(Comparator.comparing(NodeStats::upstreamAddress));
         return list;
     }
 
@@ -58,7 +60,7 @@ public class UpstreamRegistry {
                 ready.add(node);
             }
         }
-        ready.sort(Comparator.comparing(NodeStats::address));
+        ready.sort(Comparator.comparing(NodeStats::upstreamAddress));
         return ready;
     }
 

@@ -24,6 +24,7 @@ Environment overrides:
   PAYLOAD_SIZE           Payload size in bytes (plan default if unset)
   DURATION_SECONDS       Thread group duration override in seconds
   RESULT_FILE            Path for the JMeter results (.jtl) file
+  JMETER_HEAP            JMeter JVM heap if HEAP is unset
 
 Any arguments after `--` are passed directly to the JMeter command.
 USAGE
@@ -53,13 +54,13 @@ mvnw_path="${repo_root}/mvnw"
 build_sampler_jar() {
   if [[ -x ${mvnw_path} ]]; then
     echo "Building Java sampler JAR" >&2
-    "${mvnw_path}" -q -f "${sampler_module}/pom.xml" package >&2
+    "${mvnw_path}" -q -f "${sampler_module}/pom.xml" clean package >&2
     return 0
   fi
 
   if command -v mvn >/dev/null 2>&1; then
     echo "Building Java sampler JAR with system Maven" >&2
-    mvn -q -f "${sampler_module}/pom.xml" package >&2
+    mvn -q -f "${sampler_module}/pom.xml" clean package >&2
     return 0
   fi
 
@@ -97,6 +98,10 @@ fi
 if [[ ! -d "${jmeter_home}/lib/ext" ]]; then
   echo "Could not locate lib/ext directory under ${jmeter_home}." >&2
   exit 1
+fi
+
+if [[ -z ${HEAP:-} ]]; then
+  export HEAP="${JMETER_HEAP:--Xms64m -Xmx256m -XX:MaxMetaspaceSize=128m}"
 fi
 
 sampler_target="${jmeter_home}/lib/ext/$(basename "${sampler_jar}")"
@@ -141,6 +146,7 @@ jmeter_cmd+=("${props[@]}")
 jmeter_cmd+=("$@")
 
 echo "Running JMeter locally: ${jmeter_cmd[*]}"
+echo "JMeter HEAP=${HEAP}" >&2
 "${jmeter_cmd[@]}"
 
 echo "JMeter execution finished. Results available at ${result_file}" >&2

@@ -1,6 +1,8 @@
 package com.cancache.agent.service;
 
 import com.cancache.agent.config.AgentConfig;
+import com.cancache.agent.model.NodeStats;
+import io.quarkus.runtime.Startup;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.net.NetServer;
@@ -13,13 +15,12 @@ import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 import java.time.Duration;
-import java.util.regex.Pattern;
 
 @ApplicationScoped
+@Startup
 public class RegistrationService {
 
     private static final Logger LOG = Logger.getLogger(RegistrationService.class);
-    private static final Pattern IPV4 = Pattern.compile("^[a-zA-Z0-9_.:-]+$");
 
     @Inject
     Vertx vertx;
@@ -32,6 +33,9 @@ public class RegistrationService {
 
     @Inject
     MetricsModel metrics;
+
+    @Inject
+    HealthService healthService;
 
     private NetServer server;
     private long cleanupTimerId = -1L;
@@ -58,23 +62,37 @@ public class RegistrationService {
     }
 
     private void handleConnection(NetSocket socket) {
-        socket.handler(buffer -> processPayload(socket, buffer));
+        StringBuilder payload = new StringBuilder(128);
+        socket.handler(buffer -> processPayload(socket, buffer, payload));
         socket.exceptionHandler(err -> {
             metrics.addEvent("[ERR ] registration io=" + err.getMessage());
             socket.close();
         });
     }
 
-    private void processPayload(NetSocket socket, Buffer buffer) {
-        String[] lines = buffer.toString().split("\\r?\\n");
-        for (String line : lines) {
-            String trimmed = line.trim();
-            if (trimmed.isEmpty()) {
-                continue;
+    private void processPayload(NetSocket socket, Buffer buffer, StringBuilder payload) {
+        payload.append(buffer.toString());
+
+        int newlineIndex;
+        boolean processed = false;
+        while ((newlineIndex = findNewline(payload)) >= 0) {
+            String line = payload.substring(0, newlineIndex).trim();
+            payload.delete(0, newlineIndex + 1);
+            if (!line.isEmpty()) {
+                handleLine(line);
+                processed = true;
             }
-            handleLine(trimmed);
         }
-        socket.close();
+
+        if (processed) {
+            socket.close();
+            return;
+        }
+
+        if (payload.length() > 256) {
+            metrics.addEvent("[ERR ] registration message too large");
+            socket.close();
+        }
     }
 
     private void handleLine(String line) {
@@ -85,11 +103,6 @@ public class RegistrationService {
         }
 
         String host = parts[1];
-        if (!IPV4.matcher(host).matches()) {
-            metrics.addEvent("[ERR ] invalid registration host=" + host);
-            return;
-        }
-
         int port;
         try {
             port = Integer.parseInt(parts[2]);
@@ -99,8 +112,24 @@ public class RegistrationService {
         }
 
         long ttlMillis = config.registration().ttl().toMillis();
-        registry.register(host, port, ttlMillis);
+        NodeStats node;
+        try {
+            node = registry.register(host, port, ttlMillis);
+        } catch (IllegalArgumentException e) {
+            metrics.addEvent("[ERR ] invalid registration address=" + host + ":" + port);
+            return;
+        }
         metrics.addEvent("[REG ] registered upstream=" + host + ":" + port);
+        healthService.check(node);
+    }
+
+    private int findNewline(StringBuilder payload) {
+        for (int i = 0; i < payload.length(); i++) {
+            if (payload.charAt(i) == '\n') {
+                return i;
+            }
+        }
+        return -1;
     }
 
     @PreDestroy

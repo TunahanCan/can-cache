@@ -4,6 +4,8 @@ import com.cancache.agent.config.AgentConfig;
 import com.cancache.agent.model.ConnectionContext;
 import com.cancache.agent.model.ConnectionRecord;
 import com.cancache.agent.model.NodeStats;
+import com.cancache.agent.model.UpstreamAddress;
+import io.quarkus.runtime.Startup;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.net.*;
@@ -20,6 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 @ApplicationScoped
+@Startup
 public class TcpProxyServer {
 
     private static final Logger LOG = Logger.getLogger(TcpProxyServer.class);
@@ -58,6 +61,7 @@ public class TcpProxyServer {
 
     private void handleClient(NetSocket downstream) {
         active.add(downstream);
+        downstream.pause();
         selector.select(registry.ready()).ifPresentOrElse(node -> connectUpstream(downstream, node),
                 () -> {
                     metrics.addEvent("[ERR ] no ready upstream for client=" + downstream.remoteAddress());
@@ -67,9 +71,9 @@ public class TcpProxyServer {
     }
 
     private void connectUpstream(NetSocket downstream, NodeStats node) {
-        String[] hp = node.address().split(":");
+        UpstreamAddress address = node.upstreamAddress();
         String clientAddr = downstream.remoteAddress().toString();
-        client.connect(Integer.parseInt(hp[1]), hp[0])
+        client.connect(address.port(), address.host())
                 .onSuccess(upstream -> {
                     ConnectionContext ctx = new ConnectionContext(clientAddr, node.address());
                     node.incActiveConn();
@@ -129,6 +133,8 @@ public class TcpProxyServer {
             metrics.addEvent("[ERR ] upstream io=" + err.getMessage());
             upstream.close();
         });
+
+        downstream.resume();
     }
 
     private void forward(Buffer buffer, NetSocket target, NetSocket source, boolean downstreamToUpstream, ConnectionContext ctx,

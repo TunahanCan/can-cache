@@ -29,5 +29,11 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
+### Runtime logs ###
+.local-runtime/
+logs/
+jmeter.log
+can-cache-application/logs/
+
 ### VS Code ###
 .vscode/

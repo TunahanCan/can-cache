@@ -16,7 +16,7 @@
 ### Core capabilities
 
 - Single external TCP listener (`agent.listen.port`, default `11211`).
-- Upstream discovery by DNS (`agent.discovery.dns`) and optional app-driven registration.
+- Optional upstream discovery by DNS (`agent.discovery.enabled`, `agent.discovery.dns`) and app-driven registration.
 - Registration protocol support on `agent.registration.port` (default `11311`).
 - Health checks and upstream status tracking.
 - Selection policies: `RR` and `LEAST_CONN`.
@@ -66,7 +66,7 @@ See `src/main/resources/application.yaml`.
 
 - `agent.listen.host/port`
 - `agent.registration.enabled/host/port/ttl/cleanup-interval`
-- `agent.discovery.dns/interval`
+- `agent.discovery.enabled/dns/interval`
 - `agent.health.interval/connect-timeout`
 - `agent.selection.policy`
 - `agent.timeouts.idle`
@@ -83,7 +83,7 @@ See `src/main/resources/application.yaml`.
 ### Temel yetenekler
 
 - Tek dış TCP dinleme noktası (`agent.listen.port`, varsayılan `11211`).
-- DNS ile upstream keşfi (`agent.discovery.dns`) ve opsiyonel uygulama tabanlı kayıt.
+- Opsiyonel DNS ile upstream keşfi (`agent.discovery.enabled`, `agent.discovery.dns`) ve uygulama tabanlı kayıt.
 - `agent.registration.port` (varsayılan `11311`) üzerinden kayıt protokolü desteği.
 - Sağlık kontrolleri ve upstream durum takibi.
 - Seçim politikaları: `RR` ve `LEAST_CONN`.
@@ -132,7 +132,7 @@ java -jar can-cache-agent/target/quarkus-app/quarkus-run.jar
 
 - `agent.listen.host/port`
 - `agent.registration.enabled/host/port/ttl/cleanup-interval`
-- `agent.discovery.dns/interval`
+- `agent.discovery.enabled/dns/interval`
 - `agent.health.interval/connect-timeout`
 - `agent.selection.policy`
 - `agent.timeouts.idle`

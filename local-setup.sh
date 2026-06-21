@@ -16,15 +16,27 @@ AGENT_PID_FILE="${PID_DIR}/agent.pid"
 APP1_PID_FILE="${PID_DIR}/app-1.pid"
 APP2_PID_FILE="${PID_DIR}/app-2.pid"
 
+AGENT_HOST="127.0.0.1"
+AGENT_PROXY_PORT="11211"
+AGENT_HTTP_PORT="8080"
+AGENT_REGISTRATION_PORT="11311"
+APP1_PORT="11212"
+APP2_PORT="11213"
+APP1_HTTP_PORT="8081"
+APP2_HTTP_PORT="8082"
+APP1_REPLICATION_PORT="18081"
+APP2_REPLICATION_PORT="18082"
+
 usage() {
   cat <<'USAGE'
-Usage: ./local-setup.sh <start|stop|restart|status|logs>
+Usage: ./local-setup.sh <start|stop|restart|status|test|logs>
 
 Commands:
   start    Build and start 1 can-cache-agent + 2 can-cache-application instances.
   stop     Stop all started local processes.
   restart  Stop then start.
   status   Show whether processes are running.
+  test     Verify the running stack through the agent proxy.
   logs     Tail all logs.
 USAGE
 }
@@ -98,10 +110,93 @@ stop_process() {
 
 build_apps() {
   echo "[build] packaging can-cache-agent"
-  "${MVNW}" -q -f "${REPO_ROOT}/can-cache-agent/pom.xml" package -DskipTests
+  "${MVNW}" -q -f "${REPO_ROOT}/can-cache-agent/pom.xml" clean package -DskipTests
 
   echo "[build] packaging can-cache-application"
-  "${MVNW}" -q -f "${REPO_ROOT}/can-cache-application/pom.xml" package -DskipTests
+  "${MVNW}" -q -f "${REPO_ROOT}/can-cache-application/pom.xml" clean package -DskipTests
+}
+
+wait_for_port() {
+  local name="$1"
+  local host="$2"
+  local port="$3"
+  local attempts="${4:-60}"
+
+  echo "[wait] ${name} ${host}:${port}"
+  for _ in $(seq 1 "${attempts}"); do
+    if (echo >"/dev/tcp/${host}/${port}") >/dev/null 2>&1; then
+      echo "[wait] ${name} is reachable"
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  echo "[wait] ${name} did not become reachable at ${host}:${port}" >&2
+  return 1
+}
+
+agent_status_json() {
+  curl -fsS "http://${AGENT_HOST}:${AGENT_HTTP_PORT}/agent/instances"
+}
+
+wait_for_agent_health() {
+  echo "[wait] agent sees two healthy cache nodes"
+  for _ in $(seq 1 80); do
+    local body
+    body="$(agent_status_json 2>/dev/null || true)"
+    if [[ "${body}" == *'"totalInstances":2'* && "${body}" == *'"healthyInstances":2'* ]]; then
+      echo "[wait] agent health is ready"
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  echo "[wait] agent did not report two healthy nodes" >&2
+  agent_status_json >&2 || true
+  return 1
+}
+
+agent_request() {
+  local payload="$1"
+  PAYLOAD="${payload}" python3 - "${AGENT_HOST}" "${AGENT_PROXY_PORT}" <<'PY'
+import os
+import socket
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+payload = os.environ["PAYLOAD"].encode()
+
+with socket.create_connection((host, port), timeout=3) as sock:
+    sock.settimeout(3)
+    sock.sendall(payload)
+    chunks = []
+    while True:
+        try:
+            chunk = sock.recv(4096)
+        except socket.timeout:
+            break
+        if not chunk:
+            break
+        chunks.append(chunk)
+
+sys.stdout.buffer.write(b"".join(chunks))
+PY
+}
+
+test_stack() {
+  wait_for_port "agent proxy" "${AGENT_HOST}" "${AGENT_PROXY_PORT}" 20
+  wait_for_agent_health
+
+  local response
+  response="$(agent_request $'flush_all\r\nset agent:smoke 0 60 2\r\nok\r\nget agent:smoke\r\nquit\r\n')"
+  if [[ "${response}" != *"STORED"* || "${response}" != *"VALUE agent:smoke 0 2"* || "${response}" != *"ok"* ]]; then
+    echo "[test] smoke test failed" >&2
+    printf "%s\n" "${response}" >&2
+    return 1
+  fi
+
+  echo "[test] agent proxy smoke test passed"
 }
 
 start_all() {
@@ -110,41 +205,48 @@ start_all() {
 
   start_process "agent" "${AGENT_PID_FILE}" "${AGENT_LOG}" \
     java \
-    -Dagent.listen.port=11211 \
-    -Dagent.registration.port=11311 \
+    -Dagent.listen.port="${AGENT_PROXY_PORT}" \
+    -Dagent.registration.port="${AGENT_REGISTRATION_PORT}" \
+    -Dagent.discovery.enabled=false \
     -Dagent.dashboard.mode=off \
     -jar "${REPO_ROOT}/can-cache-agent/target/quarkus-app/quarkus-run.jar"
 
+  wait_for_port "agent registration" "${AGENT_HOST}" "${AGENT_REGISTRATION_PORT}" 60
+
   start_process "app-1" "${APP1_PID_FILE}" "${APP1_LOG}" \
     java \
-    -Dquarkus.http.port=8081 \
-    -Dapp.network.port=11212 \
-    -Dapp.cluster.replication.port=18081 \
+    -Dquarkus.http.port="${APP1_HTTP_PORT}" \
+    -Dapp.network.port="${APP1_PORT}" \
+    -Dapp.cluster.replication.port="${APP1_REPLICATION_PORT}" \
     -Dapp.cluster.discovery.node-id=node-1 \
     -Dapp.agent.enabled=true \
-    -Dapp.agent.host=127.0.0.1 \
-    -Dapp.agent.port=11211 \
-    -Dapp.agent.registration-port=11311 \
-    -Dapp.agent.advertised-host=127.0.0.1 \
+    -Dapp.agent.host="${AGENT_HOST}" \
+    -Dapp.agent.port="${AGENT_PROXY_PORT}" \
+    -Dapp.agent.registration-port="${AGENT_REGISTRATION_PORT}" \
+    -Dapp.agent.advertised-host="${AGENT_HOST}" \
     -jar "${REPO_ROOT}/can-cache-application/target/quarkus-app/quarkus-run.jar"
 
   start_process "app-2" "${APP2_PID_FILE}" "${APP2_LOG}" \
     java \
-    -Dquarkus.http.port=8082 \
-    -Dapp.network.port=11213 \
-    -Dapp.cluster.replication.port=18082 \
+    -Dquarkus.http.port="${APP2_HTTP_PORT}" \
+    -Dapp.network.port="${APP2_PORT}" \
+    -Dapp.cluster.replication.port="${APP2_REPLICATION_PORT}" \
     -Dapp.cluster.discovery.node-id=node-2 \
     -Dapp.agent.enabled=true \
-    -Dapp.agent.host=127.0.0.1 \
-    -Dapp.agent.port=11211 \
-    -Dapp.agent.registration-port=11311 \
-    -Dapp.agent.advertised-host=127.0.0.1 \
+    -Dapp.agent.host="${AGENT_HOST}" \
+    -Dapp.agent.port="${AGENT_PROXY_PORT}" \
+    -Dapp.agent.registration-port="${AGENT_REGISTRATION_PORT}" \
+    -Dapp.agent.advertised-host="${AGENT_HOST}" \
     -jar "${REPO_ROOT}/can-cache-application/target/quarkus-app/quarkus-run.jar"
+
+  wait_for_port "app-1 cache" "${AGENT_HOST}" "${APP1_PORT}" 60
+  wait_for_port "app-2 cache" "${AGENT_HOST}" "${APP2_PORT}" 60
+  test_stack
 
   echo
   echo "Local stack ready:"
-  echo "  Agent endpoint: 127.0.0.1:11211"
-  echo "  Cache nodes:    127.0.0.1:11212, 127.0.0.1:11213"
+  echo "  Agent endpoint: ${AGENT_HOST}:${AGENT_PROXY_PORT}"
+  echo "  Cache nodes:    ${AGENT_HOST}:${APP1_PORT}, ${AGENT_HOST}:${APP2_PORT}"
   echo "  Logs:           ${LOG_DIR}"
 }
 
@@ -191,6 +293,9 @@ main() {
       ;;
     status)
       status_all
+      ;;
+    test)
+      test_stack
       ;;
     logs)
       logs_all

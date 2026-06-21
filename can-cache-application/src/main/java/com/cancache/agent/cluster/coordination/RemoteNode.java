@@ -411,6 +411,7 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
             }
         });
         socket.exceptionHandler(promise::tryFail);
+        socket.resume();
         socket.write(request, ar -> {
             if (ar.failed()) {
                 promise.tryFail(ar.cause());
