@@ -223,7 +223,8 @@ public class AppConfig {
         var readRepair = properties.cluster().readRepair();
         return new ClusterClient(ring, properties.cluster().replicationFactor(), StringCodec.UTF8,
                 hintedHandoffService, metrics, new ClusterClient.ReadRepairSettings(
-                readRepair.enabled(), readRepair.mode(), readRepair.async()));
+                readRepair.enabled(), readRepair.mode(), readRepair.async(), readRepair.quorumPolicy(),
+                readRepair.maxThreads(), readRepair.queueCapacity(), readRepair.rateLimitPerSecond()));
     }
 
     void disposeClusterClient(@Disposes ClusterClient clusterClient)

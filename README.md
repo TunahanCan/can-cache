@@ -99,7 +99,8 @@ Run one local agent + two local cache nodes:
 
 ### Documentation index
 
-- Detailed architecture: `help.md`
+- Detailed architecture: `ARCHITECTURE.md`
+- Usage and operations guide: `help.md`
 - Agent-specific guide: `can-cache-agent/README.md`
 - Performance test guide: `can-cache-performance-tests/README.md`
 
@@ -192,6 +193,7 @@ Localde 1 agent + 2 cache node ayağa kaldırma:
 
 ### Doküman dizini
 
-- Detaylı mimari: `help.md`
+- Detaylı mimari: `ARCHITECTURE.md`
+- Kullanım ve operasyon rehberi: `help.md`
 - Agent rehberi: `can-cache-agent/README.md`
 - Performans test rehberi: `can-cache-performance-tests/README.md`

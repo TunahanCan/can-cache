@@ -31,9 +31,12 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Multicast tabanlı hafif bir koordinasyon katmanı. Her düğüm belirli aralıklarla
@@ -64,6 +67,7 @@ public class CoordinationService implements AutoCloseable {
     private final String clientAdvertisedHost;
     private final int clientPort;
     private final AntiEntropyRepairer antiEntropyRepairer;
+    private final AtomicBoolean antiEntropyInFlight = new AtomicBoolean();
 
     private final Map<String, RemoteMember> members = new ConcurrentHashMap<>();
     private final Object membershipLock = new Object();
@@ -101,7 +105,14 @@ public class CoordinationService implements AutoCloseable {
         this.antiEntropyIntervalMillis = Math.max(0L, coordination.antiEntropyIntervalMillis());
         this.vertx = vertx;
         ThreadFactory threadFactory = Thread.ofVirtual().name("coordination-task-", 0).factory();
-        this.taskExecutor = Executors.newThreadPerTaskExecutor(threadFactory);
+        this.taskExecutor = new ThreadPoolExecutor(
+                Math.max(1, coordination.taskThreads()),
+                Math.max(1, coordination.taskThreads()),
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(Math.max(1, coordination.taskQueueCapacity())),
+                threadFactory,
+                new ThreadPoolExecutor.AbortPolicy());
 
         this.connectionPoolManager = new ConnectionPoolManager(
                 Runtime.getRuntime().availableProcessors() * 2,
@@ -110,7 +121,8 @@ public class CoordinationService implements AutoCloseable {
 
         this.clientPort = Math.max(1, networkConfig.port());
         this.clientAdvertisedHost = resolveClientAdvertisedHost();
-        this.antiEntropyRepairer = new AntiEntropyRepairer(ring, localNode, localEngine, this.replicationFactor, metrics);
+        this.antiEntropyRepairer = new AntiEntropyRepairer(ring, localNode, localEngine, this.replicationFactor, metrics,
+                coordination.antiEntropyMaxRepairsPerRun(), coordination.antiEntropyRepairRatePerSecond());
     }
 
     @PostConstruct
@@ -485,6 +497,9 @@ public class CoordinationService implements AutoCloseable {
                 if (expireAt > 0L && expireAt <= now) continue;
 
                 String key = new String(keyBytes, StandardCharsets.UTF_8);
+                if (!replicatesToLocalNode(key)) {
+                    continue;
+                }
                 String value = new String(valueBytes, StandardCharsets.UTF_8);
 
                 Duration ttl = null;
@@ -510,6 +525,18 @@ public class CoordinationService implements AutoCloseable {
             }
             member.completeBootstrap(success);
         }
+    }
+
+    private boolean replicatesToLocalNode(String key)
+    {
+        List<Node<String, String>> replicas =
+                ring.getReplicas(key.getBytes(StandardCharsets.UTF_8), replicationFactor);
+        for (Node<String, String> replica : replicas) {
+            if (Objects.equals(replica.id(), localNode.id())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -566,9 +593,19 @@ public class CoordinationService implements AutoCloseable {
 
     void submitAntiEntropyRepair()
     {
+        if (!antiEntropyInFlight.compareAndSet(false, true)) {
+            return;
+        }
         try {
-            taskExecutor.execute(antiEntropyRepairer::runOnce);
+            taskExecutor.execute(() -> {
+                try {
+                    antiEntropyRepairer.runOnce();
+                } finally {
+                    antiEntropyInFlight.set(false);
+                }
+            });
         } catch (RejectedExecutionException e) {
+            antiEntropyInFlight.set(false);
             if (running) {
                 LOG.debug("Anti-entropy task rejected", e);
             }

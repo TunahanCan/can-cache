@@ -12,10 +12,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Tutarlı hash halkası üzerinden anahtarları ilgili düğümlere yönlendirerek
@@ -34,6 +38,8 @@ public final class ClusterClient implements AutoCloseable
     private final HintedHandoffService hintedHandoffService;
     private final ReadRepairSettings readRepairSettings;
     private final ExecutorService repairExecutor;
+    private final Set<String> repairsInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final AtomicLong nextRepairNanos = new AtomicLong();
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final Counter readRepairAttempts;
     private final Counter readRepairRepairs;
@@ -59,17 +65,29 @@ public final class ClusterClient implements AutoCloseable
         this.keyCodec = Objects.requireNonNull(keyCodec, "keyCodec");
         this.hintedHandoffService = Objects.requireNonNull(hintedHandoffService, "hintedHandoffService");
         this.readRepairSettings = readRepairSettings == null ? ReadRepairSettings.defaults() : readRepairSettings;
-        this.repairExecutor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("read-repair-", 0).factory());
+        this.repairExecutor = boundedExecutor("read-repair-", this.readRepairSettings.maxThreads(),
+                this.readRepairSettings.queueCapacity());
         this.readRepairAttempts = counter(metrics, "read_repair_attempts_total");
         this.readRepairRepairs = counter(metrics, "read_repair_repairs_total");
         this.readRepairConflicts = counter(metrics, "read_repair_conflicts_total");
     }
 
-    public record ReadRepairSettings(boolean enabled, ReadRepairMode mode, boolean async)
+    public record ReadRepairSettings(boolean enabled, ReadRepairMode mode, boolean async,
+                                     QuorumPolicy quorumPolicy, int maxThreads, int queueCapacity,
+                                     int rateLimitPerSecond)
     {
         public ReadRepairSettings
         {
             mode = mode == null ? ReadRepairMode.FAST : mode;
+            quorumPolicy = quorumPolicy == null ? QuorumPolicy.DEGRADED : quorumPolicy;
+            maxThreads = Math.max(1, maxThreads);
+            queueCapacity = Math.max(1, queueCapacity);
+            rateLimitPerSecond = Math.max(0, rateLimitPerSecond);
+        }
+
+        public ReadRepairSettings(boolean enabled, ReadRepairMode mode, boolean async)
+        {
+            this(enabled, mode, async, QuorumPolicy.DEGRADED, 4, 1024, 500);
         }
 
         public static ReadRepairSettings defaults()
@@ -156,7 +174,7 @@ public final class ClusterClient implements AutoCloseable
         for (Node<String, String> node : nodes) {
             ReplicaRead read = readReplica(key, node);
             if (read.value() != null) {
-                scheduleRepair(() -> repairMissingReplicas(key, read.value(), nodes, read.node()));
+                scheduleRepair(key, () -> repairMissingReplicas(key, read.value(), nodes, read.node()));
                 return read.value();
             }
         }
@@ -179,7 +197,9 @@ public final class ClusterClient implements AutoCloseable
             }
         }
 
-        int quorum = majority(reachableNodes);
+        int quorum = readRepairSettings.quorumPolicy() == QuorumPolicy.STRICT
+                ? majority(nodes.size())
+                : majority(reachableNodes);
         String winner = null;
         int winnerCount = 0;
         for (Map.Entry<String, Integer> entry : counts.entrySet()) {
@@ -197,7 +217,7 @@ public final class ClusterClient implements AutoCloseable
         }
 
         String winningValue = winner;
-        scheduleRepair(() -> repairKnownMissingReplicas(key, winningValue, reads));
+        scheduleRepair(key, () -> repairKnownMissingReplicas(key, winningValue, reads));
         return winningValue;
     }
 
@@ -215,19 +235,54 @@ public final class ClusterClient implements AutoCloseable
         }
     }
 
-    private void scheduleRepair(Runnable task)
+    private void scheduleRepair(String key, Runnable task)
     {
         if (closed.get()) {
             return;
         }
+        if (!repairsInFlight.add(key)) {
+            return;
+        }
+        if (!tryAcquireRepairSlot()) {
+            repairsInFlight.remove(key);
+            return;
+        }
+        Runnable guardedTask = () -> {
+            try {
+                task.run();
+            } finally {
+                repairsInFlight.remove(key);
+            }
+        };
         if (!readRepairSettings.async()) {
-            task.run();
+            guardedTask.run();
             return;
         }
         try {
-            repairExecutor.execute(task);
+            repairExecutor.execute(guardedTask);
         } catch (RejectedExecutionException e) {
+            repairsInFlight.remove(key);
             LOG.debug("Read repair task rejected", e);
+        }
+    }
+
+    private boolean tryAcquireRepairSlot()
+    {
+        int rateLimit = readRepairSettings.rateLimitPerSecond();
+        if (rateLimit <= 0) {
+            return true;
+        }
+        long now = System.nanoTime();
+        long interval = TimeUnit.SECONDS.toNanos(1) / rateLimit;
+        while (true) {
+            long next = nextRepairNanos.get();
+            if (now < next) {
+                return false;
+            }
+            long updated = now + interval;
+            if (nextRepairNanos.compareAndSet(next, updated)) {
+                return true;
+            }
         }
     }
 
@@ -396,6 +451,18 @@ public final class ClusterClient implements AutoCloseable
     private static Counter counter(MetricsRegistry metrics, String name)
     {
         return metrics == null ? null : metrics.counter(name);
+    }
+
+    private static ExecutorService boundedExecutor(String threadNamePrefix, int maxThreads, int queueCapacity)
+    {
+        return new ThreadPoolExecutor(
+                maxThreads,
+                maxThreads,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(queueCapacity),
+                Thread.ofVirtual().name(threadNamePrefix, 0).factory(),
+                new ThreadPoolExecutor.AbortPolicy());
     }
 
     private static void increment(Counter counter)

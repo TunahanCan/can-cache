@@ -238,13 +238,31 @@ class ClusterClientTest
             replica1.preset("reachable-value");
             replica2.throwNextGet();
 
-            try (ClusterClient repairClient = clientWith(ReadRepairMode.QUORUM)) {
+            try (ClusterClient repairClient = clientWith(ReadRepairMode.QUORUM, QuorumPolicy.DEGRADED)) {
                 String result = repairClient.get("clientKey");
 
                 assertAll(
                         () -> assertEquals("reachable-value", result),
                         () -> assertNull(leader.storedValue()),
                         () -> assertNull(replica2.storedValue()),
+                        () -> assertEquals(0L, metrics.counter("read_repair_repairs_total").get())
+                );
+            }
+        }
+
+        @Test
+        void shouldRequireFullReplicaSetMajorityInStrictQuorumMode()
+        {
+            leader.throwNextGet();
+            replica1.preset("reachable-value");
+            replica2.throwNextGet();
+
+            try (ClusterClient repairClient = clientWith(ReadRepairMode.QUORUM, QuorumPolicy.STRICT)) {
+                String result = repairClient.get("clientKey");
+
+                assertAll(
+                        () -> assertNull(result),
+                        () -> assertEquals(1L, metrics.counter("read_repair_conflicts_total").get()),
                         () -> assertEquals(0L, metrics.counter("read_repair_repairs_total").get())
                 );
             }
@@ -374,8 +392,13 @@ class ClusterClientTest
 
     private ClusterClient clientWith(ReadRepairMode mode)
     {
+        return clientWith(mode, QuorumPolicy.DEGRADED);
+    }
+
+    private ClusterClient clientWith(ReadRepairMode mode, QuorumPolicy quorumPolicy)
+    {
         return new ClusterClient(ring, 3, StringCodec.UTF8, handoff, metrics,
-                new ClusterClient.ReadRepairSettings(true, mode, false));
+                new ClusterClient.ReadRepairSettings(true, mode, false, quorumPolicy, 4, 1024, 0));
     }
 
     private static String encodedValue(String value, int flags, long cas, long expireAt)

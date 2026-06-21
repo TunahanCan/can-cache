@@ -1,0 +1,196 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-labelledby="title desc">
+  <title id="title">can-cache critical algorithm animation</title>
+  <desc id="desc">Animated overview of consistent hashing, quorum write, bootstrap filtering, read repair, anti-entropy and backpressure in can-cache.</desc>
+  <style>
+    :root {
+      --bg: #071013;
+      --panel: #102024;
+      --panel2: #142a2f;
+      --text: #e6f4f1;
+      --muted: #93aaa6;
+      --green: #4ade80;
+      --cyan: #22d3ee;
+      --blue: #60a5fa;
+      --amber: #f59e0b;
+      --red: #fb7185;
+      --line: #33545a;
+      --cycle: 14s;
+    }
+
+    .bg { fill: var(--bg); }
+    .title { fill: var(--text); font: 700 34px system-ui, -apple-system, Segoe UI, sans-serif; }
+    .subtitle { fill: var(--muted); font: 400 16px system-ui, -apple-system, Segoe UI, sans-serif; }
+    .panel { fill: var(--panel); stroke: #25484f; stroke-width: 1.5; rx: 14; }
+    .panel-title { fill: var(--text); font: 700 18px system-ui, -apple-system, Segoe UI, sans-serif; }
+    .label { fill: var(--text); font: 600 14px system-ui, -apple-system, Segoe UI, sans-serif; }
+    .small { fill: var(--muted); font: 500 12px system-ui, -apple-system, Segoe UI, sans-serif; }
+    .tiny { fill: var(--muted); font: 500 11px system-ui, -apple-system, Segoe UI, sans-serif; }
+    .node { fill: var(--panel2); stroke: var(--cyan); stroke-width: 2; }
+    .local { stroke: var(--green); }
+    .remote { stroke: var(--blue); }
+    .warn { stroke: var(--amber); }
+    .bad { stroke: var(--red); }
+    .ring { fill: none; stroke: #31555d; stroke-width: 8; }
+    .ring-progress { fill: none; stroke: var(--cyan); stroke-width: 8; stroke-linecap: round; stroke-dasharray: 70 430; animation: ringSweep var(--cycle) linear infinite; }
+    .edge { fill: none; stroke: var(--line); stroke-width: 2; marker-end: url(#arrow); }
+    .flow { fill: none; stroke-width: 3; stroke-linecap: round; marker-end: url(#arrow); stroke-dasharray: 8 12; animation: dash 1.2s linear infinite; }
+    .flow-write { stroke: var(--green); }
+    .flow-repair { stroke: var(--amber); }
+    .flow-bootstrap { stroke: var(--cyan); }
+    .flow-backpressure { stroke: var(--red); }
+    .packet { opacity: 0; animation: packet var(--cycle) ease-in-out infinite; }
+    .packet2 { animation-delay: 2.2s; }
+    .packet3 { animation-delay: 4.4s; }
+    .packet4 { animation-delay: 6.6s; }
+    .packet5 { animation-delay: 8.8s; }
+    .pulse { animation: pulse var(--cycle) ease-in-out infinite; transform-origin: center; }
+    .stage1 { animation: stage1 var(--cycle) ease-in-out infinite; }
+    .stage2 { animation: stage2 var(--cycle) ease-in-out infinite; }
+    .stage3 { animation: stage3 var(--cycle) ease-in-out infinite; }
+    .stage4 { animation: stage4 var(--cycle) ease-in-out infinite; }
+    .stage5 { animation: stage5 var(--cycle) ease-in-out infinite; }
+
+    @keyframes dash {
+      to { stroke-dashoffset: -20; }
+    }
+
+    @keyframes ringSweep {
+      0% { stroke-dashoffset: 0; }
+      100% { stroke-dashoffset: -500; }
+    }
+
+    @keyframes packet {
+      0%, 8% { opacity: 0; transform: translateX(0); }
+      12%, 28% { opacity: 1; }
+      34%, 100% { opacity: 0; transform: translateX(80px); }
+    }
+
+    @keyframes pulse {
+      0%, 12%, 100% { opacity: .55; transform: scale(1); }
+      18%, 30% { opacity: 1; transform: scale(1.08); }
+    }
+
+    @keyframes stage1 {
+      0%, 17% { opacity: 1; }
+      23%, 100% { opacity: .28; }
+    }
+
+    @keyframes stage2 {
+      0%, 18%, 40%, 100% { opacity: .28; }
+      24%, 36% { opacity: 1; }
+    }
+
+    @keyframes stage3 {
+      0%, 38%, 60%, 100% { opacity: .28; }
+      44%, 56% { opacity: 1; }
+    }
+
+    @keyframes stage4 {
+      0%, 58%, 80%, 100% { opacity: .28; }
+      64%, 76% { opacity: 1; }
+    }
+
+    @keyframes stage5 {
+      0%, 78%, 100% { opacity: .28; }
+      84%, 96% { opacity: 1; }
+    }
+  </style>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7aa8ad" />
+    </marker>
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect class="bg" width="1280" height="760"/>
+  <text x="48" y="62" class="title">can-cache kritik algoritmalar</text>
+  <text x="48" y="92" class="subtitle">Ring secimi, quorum, bootstrap filtresi, repair ve backpressure ayni veri yolunda calisir.</text>
+
+  <g class="stage1">
+    <rect class="panel" x="48" y="128" width="360" height="264"/>
+    <text x="72" y="164" class="panel-title">1. Consistent hash ring</text>
+    <circle class="ring" cx="228" cy="262" r="82"/>
+    <circle class="ring-progress" cx="228" cy="262" r="82" filter="url(#softGlow)"/>
+    <circle class="node local pulse" cx="185" cy="192" r="18"/>
+    <text x="175" y="197" class="label">A</text>
+    <circle class="node remote" cx="306" cy="238" r="18"/>
+    <text x="296" y="243" class="label">B</text>
+    <circle class="node remote" cx="238" cy="344" r="18"/>
+    <text x="228" y="349" class="label">C</text>
+    <circle cx="166" cy="292" r="8" fill="var(--amber)" filter="url(#softGlow)"/>
+    <text x="72" y="364" class="small">key hash -> clockwise walk -> unique replicas</text>
+  </g>
+
+  <g class="stage2">
+    <rect class="panel" x="460" y="128" width="360" height="264"/>
+    <text x="484" y="164" class="panel-title">2. Quorum write</text>
+    <rect class="node local" x="498" y="232" width="82" height="50" rx="10"/>
+    <text x="522" y="263" class="label">A ok</text>
+    <rect class="node remote" x="610" y="232" width="82" height="50" rx="10"/>
+    <text x="634" y="263" class="label">B ok</text>
+    <rect class="node bad" x="722" y="232" width="62" height="50" rx="10"/>
+    <text x="739" y="263" class="label">C</text>
+    <path class="flow flow-write" d="M530 205 C560 185 610 185 650 225"/>
+    <path class="flow flow-write" d="M610 205 C640 182 704 185 744 225"/>
+    <path class="flow flow-backpressure" d="M700 278 C720 310 746 310 764 286"/>
+    <text x="484" y="332" class="small">RF=3 -> majority=2. A+B yeterli, C icin hint yazilir.</text>
+  </g>
+
+  <g class="stage3">
+    <rect class="panel" x="872" y="128" width="360" height="264"/>
+    <text x="896" y="164" class="panel-title">3. Bootstrap filter</text>
+    <rect class="node remote" x="910" y="226" width="92" height="56" rx="10"/>
+    <text x="931" y="259" class="label">stream</text>
+    <rect class="node local pulse" x="1110" y="190" width="86" height="50" rx="10"/>
+    <text x="1130" y="221" class="label">keep</text>
+    <rect class="node warn" x="1110" y="286" width="86" height="50" rx="10"/>
+    <text x="1134" y="317" class="label">skip</text>
+    <path class="flow flow-bootstrap" d="M1008 244 C1038 220 1070 215 1104 215"/>
+    <path class="flow flow-backpressure" d="M1008 268 C1040 292 1072 308 1104 310"/>
+    <text x="896" y="360" class="small">Her key tekrar ring'e sorulur; local replica degilse yazilmaz.</text>
+  </g>
+
+  <g class="stage4">
+    <rect class="panel" x="48" y="444" width="560" height="240"/>
+    <text x="72" y="480" class="panel-title">4. Read-repair ve anti-entropy</text>
+    <rect class="node local" x="88" y="546" width="90" height="52" rx="10"/>
+    <text x="114" y="578" class="label">A:v1</text>
+    <rect class="node warn" x="260" y="546" width="90" height="52" rx="10"/>
+    <text x="285" y="578" class="label">B:MISS</text>
+    <rect class="node remote" x="432" y="546" width="90" height="52" rx="10"/>
+    <text x="459" y="578" class="label">C:v1</text>
+    <path class="flow flow-repair" d="M180 572 C215 524 260 524 304 544"/>
+    <path class="flow flow-repair" d="M348 572 C384 532 418 532 454 548"/>
+    <circle class="packet packet4" cx="210" cy="536" r="9" fill="var(--amber)" filter="url(#softGlow)"/>
+    <text x="72" y="642" class="small">Per-key dedupe + bounded executor + rate limit repair firtinasini onler.</text>
+  </g>
+
+  <g class="stage5">
+    <rect class="panel" x="672" y="444" width="560" height="240"/>
+    <text x="696" y="480" class="panel-title">5. Pool ve backpressure</text>
+    <rect class="node local" x="708" y="542" width="94" height="58" rx="10"/>
+    <text x="731" y="576" class="label">caller</text>
+    <rect x="858" y="530" width="150" height="82" rx="12" fill="#142a2f" stroke="#f59e0b" stroke-width="2"/>
+    <text x="884" y="560" class="label">bounded queue</text>
+    <text x="890" y="584" class="tiny">reject when full</text>
+    <rect class="node remote" x="1070" y="542" width="94" height="58" rx="10"/>
+    <text x="1093" y="576" class="label">socket</text>
+    <path class="flow flow-write" d="M806 570 C830 552 850 552 858 570"/>
+    <path class="flow flow-bootstrap" d="M1008 570 C1036 552 1050 552 1070 570"/>
+    <path class="flow flow-backpressure" d="M934 616 C928 650 860 650 850 614"/>
+    <circle class="packet packet5" cx="835" cy="560" r="9" fill="var(--green)" filter="url(#softGlow)"/>
+    <text x="696" y="642" class="small">RemoteNode hem executor kuyrugunu hem socket pool'u sinirlar.</text>
+  </g>
+
+  <g>
+    <rect x="48" y="704" width="1184" height="34" rx="10" fill="#0d1b1f" stroke="#25484f"/>
+    <text x="68" y="726" class="tiny">Animasyon dongusu: ring secimi -> quorum yazma -> bootstrap filtresi -> repair -> backpressure. SVG dogrudan tarayicida acildiginda CSS animasyonlari calisir.</text>
+  </g>
+</svg>

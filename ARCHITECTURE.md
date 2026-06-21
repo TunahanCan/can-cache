@@ -1,170 +1,322 @@
-# `can-cache` Detaylı Mimari ve Tasarım Dokümanı
+# can-cache Mimari Dokümanı
 
-Bu doküman, `can-cache` sisteminin iç işleyişini, veri yapılarını, dağıtık sistem algoritmalarını ve eşzamanlılık (concurrency) modelini kod seviyesinde detaylandıran kapsamlı bir rehberdir.
+`can-cache`, Memcached text protokolü konuşan, dağıtık ve bellek içi bir cache sistemidir. Bu doküman kodun güncel halini esas alır ve sistemi ayakta tutan kritik algoritmaları görünür kılmaya odaklanır.
 
----
+> Animasyonlu algoritma haritası: [docs/assets/critical-algorithms.svg](docs/assets/critical-algorithms.svg)
 
-## 1. Sistem Topolojisi ve Temel Felsefe
+![can-cache critical algorithms](docs/assets/critical-algorithms.svg)
 
-`can-cache`, düşük gecikmeli (low-latency), dağıtık, bellek-içi (in-memory) bir anahtar-değer (key-value) veri deposudur. İstemcilerle olan iletişiminde Memcached metin (text) protokolünü kullanır.
+## 1. Kısa Özet
 
-Sistem iki ayrı uygulamadan (deployable unit) oluşur:
-1. **`can-cache-application` (Data Node):** Veriyi saklayan, replikasyon yapan ve dağıtık konsensüs sağlayan asıl veritabanı düğümü.
-2. **`can-cache-agent` (Edge Proxy):** İstemciler ile Data Node'lar arasında duran, akıllı yönlendirme ve yük dengeleme (load balancing) yapan, state tutmayan (stateless) proxy katmanı.
+Sistem iki çalıştırılabilir parçadan oluşur:
 
-**Tasarım Felsefesi:**
-*   **Tamamen Bellek-İçi (In-Memory):** Diske yazma maliyeti yoktur. Yeniden başlatmalarda veri kaybolur (ephemeral data). Bu durum, önbellek kullanım senaryoları için kabul edilebilir bir ödündür (trade-off).
-*   **Paylaşılmayan (Shared-Nothing) Mimari:** Düğümler asimetrik değildir; her düğüm aynı yeteneklere sahiptir.
-*   **Non-Blocking I/O:** Ağ işlemleri Eclipse Vert.x üzerinde asenkron olarak gerçekleştirilir.
-*   **Optimistik Kilitlenme (Optimistic Locking):** Segmentli veri yapıları kullanılarak aynı anda farklı anahtarlara gelen isteklerin birbirini bloklaması (lock contention) önlenir.
+| Parça | Rol | Önemli sınıflar |
+| --- | --- | --- |
+| `can-cache-application` | Asıl cache node'u; veri tutar, cluster üyeliğini izler, replikasyon yapar. | `CanCachedServer`, `CacheEngine`, `ClusterClient`, `CoordinationService`, `ReplicationServer`, `RemoteNode` |
+| `can-cache-agent` | Stateless edge proxy; client bağlantılarını sağlıklı upstream node'lara taşır. | `AgentServer`, `UpstreamRegistry`, `HealthService`, `SelectionPolicy` |
 
----
+Temel veri yolu:
 
-## 2. Eşzamanlılık ve İş Parçacığı Modeli (Threading Model)
+```text
+client
+  -> can-cache-agent (opsiyonel proxy)
+  -> CanCachedServer
+  -> protocol parser
+  -> ClusterClient
+  -> CacheEngine veya RemoteNode
+  -> ReplicationServer
+```
 
-Sistem, Vert.x'in reaktif modelini ve Java'nın sanal iş parçacıklarını (Virtual Threads) harmanlayarak kullanır.
+Node tek başına da çalışabilir; cluster aktif olduğunda `ClusterClient` her key için replica setini ring üzerinden seçer ve quorum mantığını uygular.
 
-1.  **Event-Loop İş Parçacıkları (Vert.x):** Ağ bağlantılarını dinlemek, veriyi TCP soketinden okumak ve yazmak (Memcached protokolü ve Düğümler arası replikasyon protokolü) sadece Event-Loop iş parçacıklarında yapılır. Bu thread'ler **asla** bloklanmamalıdır.
-2.  **Worker Pool (WorkerExecutor):** Ağdan gelen komut ayrıştırıldıktan sonra, `CacheEngine` üzerindeki asıl veri okuma/yazma (bloklama potansiyeli olan) işlemleri Vert.x Worker thread'lerine veya Virtual Thread'lere devredilir.
-3.  **Koordinasyon İş Parçacıkları:** Küme keşfi (multicast dinleme) için bağımsız daemon thread'ler ve periyodik görevler için Vert.x timer'ları kullanılır.
+## 2. Katmanlar
 
----
+### 2.1. Protocol ve ağ katmanı
 
-## 3. Veri Depolama Katmanı (`core` Modülü)
+`CanCachedServer`, Vert.x `NetServer` üzerinde Memcached text protokolünü okur. TCP paketleri parçalı gelebileceği için parser state-machine gibi davranır:
 
-Verinin bellekte saklanmasından, süresinin dolmasından (TTL) ve kapasite yönetiminden (Eviction) sorumlu olan en alt katmandır.
+1. Komut satırı okunur.
+2. Storage komutları için belirtilen byte sayısı kadar payload beklenir.
+3. Komut bir `CommandResult` üretmek üzere worker tarafa aktarılır.
+4. Yanıt yine Memcached text formatında socket'e yazılır.
 
-### 3.1. `CacheEngine` ve `CacheSegment` (Lock Striping)
-Java'daki standart `ConcurrentHashMap` tek başına bazı gelişmiş TTL ve tahliye (eviction) kuralları için yetersiz veya yavaştır. `can-cache`, Java'nın eski `ConcurrentHashMap` uygulamalarına benzer şekilde **Segmentli (Lock Striping)** bir mimari kullanır.
+Bu katman cluster detayını bilmez; asıl yönlendirme `ClusterClient` üzerinde yapılır.
 
-*   **Segment Dizisi:** Önbellek, varsayılan olarak işlemci çekirdek sayısı kadar `CacheSegment` nesnesinden oluşan bir diziye bölünür.
-*   **Yönlendirme:** Gelen bir anahtarın (key) hash kodu alınarak hangi segmente ait olduğu bulunur `(hash % segmentCount)`.
-*   **İzolasyon:** Her `CacheSegment` kendi içinde bir `HashMap` ve bir `ReentrantLock` barındırır. Bu sayede Thread-A 1. segmente yazarken, Thread-B 2. segmente hiçbir bloklamaya maruz kalmadan yazabilir. CPU ölçeğinde doğrusal (linear) bir performans artışı sağlar.
+### 2.2. Bellek içi veri katmanı
 
-### 3.2. Değer Kodlaması (`StoredValueCodec`)
-Veriler bellekte ham metin olarak tutulmaz. Bir değer belleğe yazılırken `StoredValueCodec` aracılığıyla metadata ile paketlenir:
-*   **Payload (byte[]):** Asıl veri.
-*   **ExpireAt (long):** Verinin süresinin dolacağı milisaniye cinsinden mutlak zaman damgası (Epoch time).
-*   **CAS (long):** Compare-and-Swap operasyonları için benzersiz versiyon numarası. Değer her güncellendiğinde bu sayı artar (genellikle timestamp veya atomic counter tabanlı).
+`CacheEngine`, key-value verisini segmentlere bölerek tutar. Her `CacheSegment` kendi lock alanına sahiptir; farklı segmentlerdeki key'ler birbirini gereksiz yere bekletmez.
 
-### 3.3. Tahliye Politikaları (Eviction Policies)
-Bellek dolduğunda hangi verinin feda edileceği `EvictionPolicy` arayüzü ile belirlenir.
-*   **`LruEvictionPolicy`:** Çift yönlü bağlı liste (Doubly Linked List) ve HashMap kombinasyonu ile O(1) zaman karmaşıklığında En Az Yakın Zamanda Kullanılan (Least Recently Used) veriyi siler.
-*   **`TinyLfuEvictionPolicy`:** Daha modern ve isabet oranı yüksek bir algoritmadır. Verinin sadece en son ne zaman kullanıldığına değil, **ne sıklıkla** kullanıldığına bakar. Bellek kullanımını düşük tutmak için erişim sıklıklarını Count-Min Sketch benzeri olasılıksal bir veri yapısında (`FrequencySketch`) tutar.
+Veri saklama kuralları:
 
----
+- TTL, absolute expire zamanı olarak taşınır.
+- CAS, optimistic update için kullanılır.
+- Değerler `StoredValueCodec` ile metadata ve payload birleşimi olarak encode edilir.
+- Eviction politikası config ile seçilir; LRU ve TinyLFU ailesi desteklenir.
 
-## 4. İstemci Ağ Katmanı (`net` Modülü)
+### 2.3. Cluster yönlendirme katmanı
 
-İstemcilerin `can-cache-application`'a doğrudan bağlandığı (veya agent'ın yönlendirdiği) kısımdır.
+`ClusterClient`, istemci komutunu cluster operasyonuna çevirir:
 
-### 4.1. `CanCachedServer`
-Vert.x `NetServer` üzerine kuruludur. İstemciden gelen TCP paketlerini bir `Buffer` içerisine alır.
+- `set`, `delete`, `cas`: replica setindeki node'lara uygulanır ve çoğunluk başarı sayılır.
+- `get`: read-repair kapalıysa ilk başarılı replica değeri döner; açıksa FAST veya QUORUM moduna göre onarım tetiklenir.
+- Ulaşılamayan replica için `HintedHandoffService` kuyruğuna hint yazılır.
 
-### 4.2. Memcached Text Protokolü Ayrıştırıcı (Parser)
-Memcached protokolü CRLF (`\r\n`) karakterleriyle ayrılmış satırlardan oluşur.
-*   Veri boyutu çok büyük olabileceğinden, ayrıştırıcı bir state-machine (durum makinesi) olarak çalışır.
-*   `set mykey 0 900 5\r\n` (Header kısmı) okunduğunda sistem 5 byte daha veri beklentisine girer (`StorageCommand` durumu).
-*   Geri kalan `value\r\n` paketi geldiğinde komut çalıştırılmak üzere `ClusterClient`'a iletilir.
+### 2.4. Koordinasyon ve replikasyon katmanı
 
----
+`CoordinationService`, multicast heartbeat ile üyelik bilgisini yönetir. Yeni node keşfedildiğinde TCP join handshake yapılır, node ring'e eklenir ve bootstrap stream başlatılır.
 
-## 5. Dağıtık Mimari ve Kümeleme (`cluster` Modülü)
+Node'lar arası veri taşıma Memcached text protokolüyle değil, özel binary protokol ile yapılır:
 
-Sistemi tek bir makineden çıkarıp dağıtık hale getiren katmandır.
+```text
+SET frame:
+[CMD_SET:1][keyLen:4][valueLen:4][expireAt:8][key bytes][value bytes]
+```
 
-### 5.1. Tutarlı Özetleme (Consistent Hashing - `ConsistentHashRing`)
-Veriler (anahtarlar) düğümlere `ConsistentHashRing` ile dağıtılır.
-*   **Ring (Halka):** 0 ile 2^32 (veya 2^64) arasında değer alabilen mantıksal bir çemberdir. Hem düğümler (node ID'lerine göre) hem de veriler (anahtarlarına göre) bu çembere hashlenerek yerleştirilir.
-*   **Virtual Nodes (Sanal Düğümler):** Bir düğüm halkanın üzerine tek bir nokta olarak değil, `V-Node` (örneğin 100 farklı nokta) olarak yerleştirilir. Bu sayede veriler düğümler arasında çok daha dengeli (homojen) dağılır ve sıcak noktalar (hotspots) önlenir.
-*   Verinin saklanacağı düğüm, anahtarın hash değerinden sonra halka üzerinde saat yönünde ilerlerken karşılaşılan **ilk** düğümdür (ve replikasyon için ondan sonraki N düğüm).
+`RemoteNode`, uzak node'u `Node<String,String>` arayüzü gibi gösterir. Altında Vert.x `NetClient`, connection pool ve bounded request executor vardır.
 
-### 5.2. Quorum ve Replikasyon
-`ClusterClient`, işlemleri koordine eder. Bir yazma isteği (örn. `set`) geldiğinde:
-1.  `ConsistentHashRing` üzerinden anahtarın sahibi olan Ana Düğüm (Owner) ve Replika Düğümler (Replicas) bulunur (örn: Replication Factor = 3).
-2.  İstek asenkron olarak bu 3 düğüme (kendisi dahil olabilir) paralel olarak gönderilir.
-3.  **Quorum (W = 2):** Başarılı sayılması için `(Replication Factor / 2) + 1` kadar düğümden başarılı yanıt gelmesi beklenir. Çoğunluk sağlanırsa istemciye `STORED` dönülür. Sağlanamazsa işlem başarısız sayılır (Exception fırlatılır).
+## 3. Kritik Algoritmalar
 
-### 5.3. `HintedHandoffService` (Gecikmeli Tutarlılık)
-Bir yazma sırasında Quorum sağlandı ancak replikalardan biri (Düğüm C) ağ sorunu nedeniyle yanıt vermedi diyelim.
-*   Yazmayı koordine eden düğüm, Düğüm C için hedeflediği veriyi `HintedHandoffService`'e teslim eder.
-*   Bu veri "Hint" (ipucu) olarak kuyruklanır (`SetHint`, `DeleteHint` nesneleri).
-*   Düğüm C daha sonra kümeye tekrar bağlandığında, koordinatör düğüm arka planda bu kuyruktaki Hint'leri (replay) Düğüm C'ye göndererek düğümleri senkronize eder (Eventual Consistency).
+### 3.1. Consistent hash ve replica seçimi
 
----
+Kod: `ConsistentHashRing`
 
-## 6. Düğümler Arası Koordinasyon (`cluster.coordination`)
+Ring, node ID'lerini sanal node suffixleriyle hashleyip `TreeMap<Integer,N>` içinde tutar. Key hash'i bulunduktan sonra algoritma şu sırayla çalışır:
 
-Düğümlerin birbirini otomatik keşfetmesi ve replikasyon iletişimini içerir.
+1. Key hash'inden başlayan tail map taranır.
+2. Karşılaşılan node'lar `LinkedHashSet` ile tekilleştirilir.
+3. Yeterli replica bulunmazsa ring başına sarılır.
+4. `replicationFactor` kadar benzersiz node döner.
 
-### 6.1. Multicast Tabanlı Keşif (`CoordinationService`)
-*   **Discovery:** Her düğüm düzenli aralıklarla (heartbeat) yerel ağdaki bir Multicast adresine (örn. `224.0.0.x`) kendi ID'si, IP adresi, portu ve Epoch (zaman damgası/versiyon) bilgisini UDP paketi olarak anons eder.
-*   **Membership:** Bir düğüm, diğerlerinin anonslarını dinler. Yeni bir anons duyarsa, o düğümle bir "Join Handshake" (TCP üzerinden el sıkışma) yapar ve başarılı olursa `ConsistentHashRing`'e ekler. Belirli bir süre heartbeat gelmezse, ölü kabul eder ve ringden çıkarır.
+Bu yaklaşım iki özellik sağlar:
 
-### 6.2. İkili Replikasyon Protokolü (`ReplicationServer` ve `RemoteNode`)
-Performansı maksimize etmek için düğümler arası replikasyon verileri Memcached metin protokolü ile **değil**, can-cache'e özel Binary Protocol ile taşınır.
-*   **Tek Baytlık Komutlar:** Örn. `NodeProtocol.CMD_SET = 1`, `NodeProtocol.CMD_GET = 2`.
-*   **Verimli Kodlama:** String uzunlukları, expire değerleri 4 veya 8 baytlık (Integer, Long) primitif tipler olarak doğrudan TCP socketine yazılır (Örn. `[1 byte CMD][4 byte Key Len][4 byte Val Len][8 byte TTL][Key Bytes][Val Bytes]`).
-*   **`ByteBufferReader`:** Gelen parçalı (fragmented) TCP paketlerini bellek sızıntısına yol açmadan (compacting buffer) yöneten okuyucu mekanizmadır.
+- Node ekleme/çıkarma sırasında sadece ring komşuluğundaki key'ler yer değiştirir.
+- Sanal node'lar dağılımı yumuşatır ve tek node'a aşırı yük binmesini azaltır.
 
-### 6.3. Bağlantı Havuzu (`ConnectionPoolManager`)
-Her replikasyon isteğinde yeni bir TCP soketi açmak büyük bir gecikme yaratır. Sistem, diğer düğümlere olan bağlantıları bir havuzda (`SocketConnectionPool`) tutar. İstek havuzdan bir soket ödünç alır, veriyi gönderir, okur ve soketi havuza geri bırakır (`PooledSocket`).
+### 3.2. Quorum yazma
 
-### 6.4. Bootstrap (Durum Aktarımı)
-Yeni bir düğüm kümeye katıldığında boştur. El sıkışma sırasında (Join Handshake), mevcut düğümlerden biri `CMD_STREAM` komutu ile kendi verilerinin (snapshot) bir kopyasını yeni düğüme akıtır.
+Kod: `ClusterClient#set`, `ClusterClient#delete`, `ClusterClient#compareAndSwap`
 
----
+Yazma yolu `majority(nodes.size())` ile quorum eşiğini hesaplar. Replikasyon faktörü 3 ise quorum 2'dir.
 
-## 7. Edge Proxy: `can-cache-agent` Katmanı
+Akış:
 
-`can-cache-agent`, bağımsız çalışan bir Yük Dengeleyici (Load Balancer) ve Hizmet Keşfi (Service Discovery) aracıdır.
+1. Key için replica set seçilir.
+2. Her replica üzerinde işlem denenir.
+3. Başarılı işlem sayısı quorum'a ulaşırsa client başarılı yanıt alır.
+4. Başarısız veya exception atan replica için hint kaydedilir.
+5. Leader başarısızlığı quorum da sağlanamıyorsa exception olarak yukarı taşınır.
 
-### 7.1. Rolü ve Amacı
-Uygulama sunucuları (istemciler) memcached kütüphanelerine tüm IP'leri vermek yerine sadece Agent'ın IP ve portuna (örn. `127.0.0.1:11211`) bağlanır.
-*   Kümede bir sunucu çökerse veya yeni sunucu eklenirse istemcinin haberi olmaz; bu karmaşıklığı Agent yönetir.
-*   **Şeffaf Proxy:** İstemciden gelen Memcached komutlarını hiçbir şekilde ayrıştırmaz (parse etmez), sadece byte dizisi olarak seçtiği sağlıklı bir `can-cache-application` düğümüne tüneller (TCP Pipe).
+Bu model availability ile consistency arasında pratik bir denge kurar: tüm node'lar gerekmeyebilir, ama çoğunluk kaybedilmişse yazma kabul edilmez.
 
-### 7.2. Akıllı Yönlendirme (Upstream Selection)
-Agent yeni bir TCP bağlantısı aldığında bir Seçim Politikası (`SelectionPolicy`) çalıştırır:
-*   `RoundRobinPolicy`: Bağlantıları düğümlere sırayla dağıtır.
-*   `LeastConnPolicy`: O an Agent üzerinden en az aktif TCP bağlantısı olan düğümü seçerek (NodeStats'a bakarak) yükü dengeler.
+### 3.3. Hinted handoff
 
-### 7.3. Sağlık Kontrolü (Health Checking)
-*   **Kayıt (Registration):** `can-cache-application` düğümleri ayağa kalktığında özel bir port (örn 11311) üzerinden Agent'a ping atarak kendilerini kaydettirirler (`CanCacheAgentConnector`).
-*   **Aktif Kontrol (`HealthService`):** Agent, `UpstreamRegistry`'deki tüm düğümlere periyodik olarak küçük boyutlu TCP probları gönderir. Yanıt alamadıklarını geçici olarak devre dışı (Unhealthy) bırakır ve trafiği diğerlerine kaydırır.
+Kod: `HintedHandoffService`
 
----
+Bir replica geçici olarak ulaşılamadığında yazma tamamen kaybolmaz. Koordinatör node, hedef node ID'si altında bir hint kuyruğu tutar:
 
-## 8. Zaman Akış Örnekleri (Sequence Diagrams)
+- `SetHint`: değer ve TTL ile tekrar set eder.
+- `DeleteHint`: delete operasyonunu tekrarlar.
+- `CasHint`: CAS operasyonunu tekrar dener.
 
-*Daha anlaşılır bir yapı için sistem akışları diyagramlaştırılarak aşağıda sunulmuştur.*
+`CoordinationService`, heartbeat ile node'u tekrar gördüğünde `hintedHandoffService.replay(...)` çağırır. Replay başarısız olursa hint kuyruğun başına geri konur; böylece sıradaki periyotta tekrar denenebilir.
 
-### 8.1. Agent Üzerinden İstemci Okuma İşlemi (GET)
+### 3.4. Bootstrap replica filtresi
+
+Kod: `CoordinationService#bootstrapFrom`
+
+Yeni node cluster'a katıldığında mevcut node'dan `CMD_STREAM` ile snapshot alır. Kritik nokta şudur: yeni node her key'i almak zorunda değildir. Güncel davranış, stream'den gelen her key için tekrar ring hesabı yapar:
+
+```text
+stream key
+  -> ring.getReplicas(key, replicationFactor)
+  -> localNode replica setinde mi?
+  -> evet: localNode.set(...)
+  -> hayır: skip
+```
+
+Bu filtre olmazsa bootstrap node gereksiz veri taşır ve ring'in sahiplik modelini kirletir. Filtre, node katılımı sonrası veri dağılımını consistent hashing kararına hizalar.
+
+### 3.5. Read-repair
+
+Kod: `ClusterClient#get`
+
+Read-repair, okuma sırasında replica drift'ini azaltır. İki mod vardır:
+
+| Mod | Davranış | Kullanım |
+| --- | --- | --- |
+| `FAST` | İlk bulunan değeri döner, eksik replica onarımını arkaya atar. | Düşük gecikme öncelikli okuma |
+| `QUORUM` | Reachable replica değerlerini sayar, kazanan değeri döner, eksikleri onarır. | Daha güçlü okuma tutarlılığı |
+
+QUORUM modunda quorum policy ayrıca seçilir:
+
+| Policy | Quorum hesabı |
+| --- | --- |
+| `STRICT` | Tam replica set boyutu üzerinden çoğunluk ister. |
+| `DEGRADED` | Sadece ulaşılabilen replica sayısı üzerinden çoğunluk ister. |
+
+Repair işleri bounded executor ile çalışır. Aynı key için eş zamanlı repair tekrarı `repairsInFlight` setiyle engellenir ve `rateLimitPerSecond` ile repair üretimi sınırlandırılır.
+
+### 3.6. Anti-entropy
+
+Kod: `AntiEntropyRepairer`
+
+Anti-entropy, okuma beklemeden arka planda replica drift'ini azaltır. Periyodik olarak local snapshot taranır:
+
+1. Local key'in replica seti hesaplanır.
+2. Local node o replica setinde değilse key atlanır.
+3. Remote replica eksikse veya expired değer taşıyorsa local değer gönderilir.
+4. Remote değer farklıysa conflict metriği artar; değer zorla overwrite edilmez.
+
+Yeni korumalar:
+
+- Her run için `maxRepairsPerRun` bütçesi vardır.
+- Per-key dedupe ile aynı key üzerinde çakışan repair engellenir.
+- `repairRatePerSecond` ile onarım hızı sınırlanır.
+- `CoordinationService` aynı anda ikinci anti-entropy run başlatmaz.
+
+### 3.7. Pool ve backpressure
+
+Kod: `RemoteNode`, `SocketConnectionPool`, `ConnectionPoolManager`
+
+Uzak node çağrıları iki seviyede sınırlanır:
+
+- Socket sayısı pool boyutuyla sınırlıdır.
+- Non-virtual caller, bounded request executor kuyruğuna alınır.
+
+Pool doluysa `acquireConnection()` request timeout süresi kadar boş socket bekler. Executor kuyruğu dolarsa `RejectedExecutionException` kontrollü biçimde communication error'a çevrilir. Böylece sınırsız thread veya sınırsız bekleyen request birikimi oluşmaz.
+
+## 4. Uçtan Uca Akışlar
+
+### 4.1. Yazma akışı
 
 ```mermaid
 sequenceDiagram
-    participant App as Client Application
-    participant Agent as can-cache-agent (Proxy)
-    participant NodeA as can-cache Node A (Coordinator)
-    participant NodeB as can-cache Node B (Owner)
+    participant C as Client
+    participant S as CanCachedServer
+    participant CC as ClusterClient
+    participant R as ConsistentHashRing
+    participant A as Replica A
+    participant B as Replica B
+    participant H as HintedHandoff
 
-    App->>Agent: TCP Connect & "GET user:123"
-    Agent->>Agent: LeastConnPolicy selects Node A
-    Agent->>NodeA: (Proxy) "GET user:123"
-    NodeA->>NodeA: Parse command, hash "user:123"
-    NodeA->>NodeA: ConsistentHashRing says Owner is Node B
-    NodeA->>NodeB: Binary CMD_GET "user:123"
-    NodeB->>NodeB: Lookup in CacheSegment (Lock Striped)
-    NodeB-->>NodeA: Binary RESP_HIT [Value Data]
-    NodeA-->>Agent: "VALUE user:123 0 4\r\nData\r\nEND\r\n"
-    Agent-->>App: "VALUE user:123 0 4\r\nData\r\nEND\r\n"
+    C->>S: set user:42
+    S->>CC: set(key,value,ttl)
+    CC->>R: getReplicas(key, rf)
+    R-->>CC: [A,B,C]
+    CC->>A: set
+    CC->>B: set
+    B--xCC: timeout/error
+    CC->>H: recordSet(B,key,value,ttl)
+    A-->>CC: ok
+    CC-->>S: quorum ok if majority reached
+    S-->>C: STORED
 ```
 
----
+### 4.2. Read-repair akışı
 
-## 9. Gelecek İçin Genişletilebilirlik Noktaları (Roadmap Uyumluluğu)
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant CC as ClusterClient
+    participant A as Replica A
+    participant B as Replica B
+    participant Q as Repair Executor
 
-Sistemin modüler yapısı sayesinde eklenebilecek olası özellikler:
-*   **Veri Kalıcılığı (Persistence):** `CacheSegment`'ler arkasına bir Write-Ahead-Log (WAL) veya RocksDB entegrasyonu yazarak kalıcılık eklenebilir.
-*   **Gossip Protokolü:** `CoordinationService`'deki Multicast bağımlılığı, büyük bulut ortamları (AWS, GCP Multicast kısıtlamaları) için bir Gossip algoritması (örn. SWIM) yazılarak aşılabilir.
-*   **Agent HA:** Şu anda tek bir Agent darboğaz yaratabilir. Birden fazla Agent önüne Layer-4 yük dengeleyici (HAProxy) konularak agent katmanı da ölçeklenebilir.
+    C->>CC: get user:42
+    CC->>A: get
+    A-->>CC: value v1
+    CC-->>C: v1
+    CC->>Q: schedule repair(user:42)
+    Q->>B: get user:42
+    B-->>Q: MISS
+    Q->>B: set user:42 = v1
+```
+
+### 4.3. Bootstrap akışı
+
+```mermaid
+sequenceDiagram
+    participant N as New Node
+    participant C as CoordinationService
+    participant R as Remote Member
+    participant Ring as ConsistentHashRing
+    participant L as LocalNode
+
+    N->>C: heartbeat discovered
+    C->>R: CMD_JOIN
+    R-->>C: ACCEPT + epoch
+    C->>Ring: add remote node
+    C->>R: CMD_STREAM
+    R-->>C: key/value chunks
+    C->>Ring: getReplicas(key)
+    alt local node owns replica
+        C->>L: set(key,value,ttl)
+    else not in replica set
+        C->>C: skip key
+    end
+```
+
+## 5. Concurrency Modeli
+
+| İş | Çalıştığı yer | Koruma |
+| --- | --- | --- |
+| Client TCP read/write | Vert.x event loop | Event loop bloklanmaz |
+| Cache komutları | Worker executor / virtual thread | Segment lock |
+| Coordination heartbeat | Vert.x timer + listener thread | `membershipLock` |
+| Membership processing | Bounded coordination executor | Queue capacity |
+| Read-repair | Bounded repair executor | Per-key dedupe + rate limit |
+| Anti-entropy | Bounded coordination executor | Single-flight + repair budget |
+| Remote node request | Bounded request executor + socket pool | Pool timeout + queue rejection |
+
+Bu modelin amacı, arka plan bakım işlerinin client trafiğini boğmasını engellemektir.
+
+## 6. Önemli Konfigürasyonlar
+
+| Ayar | Etki |
+| --- | --- |
+| `app.cluster.replication-factor` | Her key için kaç replica seçileceği |
+| `app.cluster.virtual-nodes` | Ring dağılımını yumuşatan sanal node sayısı |
+| `app.cluster.discovery.*` | Multicast heartbeat ve failure timeout davranışı |
+| `app.cluster.coordination.task-threads` | Coordination executor thread sayısı |
+| `app.cluster.coordination.task-queue-capacity` | Coordination iş kuyruğu sınırı |
+| `app.cluster.coordination.anti-entropy-max-repairs-per-run` | Tek anti-entropy turundaki repair bütçesi |
+| `app.cluster.coordination.anti-entropy-repair-rate-per-second` | Anti-entropy repair rate limit |
+| `app.cluster.read-repair.mode` | `FAST` veya `QUORUM` |
+| `app.cluster.read-repair.quorum-policy` | `STRICT` veya `DEGRADED` |
+| `app.cluster.read-repair.max-threads` | Read-repair executor thread sayısı |
+| `app.cluster.read-repair.queue-capacity` | Read-repair kuyruğu sınırı |
+| `app.cluster.read-repair.rate-limit-per-second` | Read-repair rate limit |
+| `app.network.worker-threads` | Client komutlarının worker kapasitesi |
+
+## 7. Failure Modeli
+
+| Senaryo | Davranış |
+| --- | --- |
+| Replica yazma sırasında timeout olur | Quorum sağlanırsa client başarılı yanıt alır, failed replica için hint yazılır. |
+| Quorum sağlanamaz | Operasyon başarısız döner veya leader exception'ı yukarı taşınır. |
+| Node heartbeat kesilir | Failure timeout sonrası ring'den çıkarılır. |
+| Node geri gelir | Join handshake yapılır, ring'e eklenir, bootstrap ve hint replay tetiklenir. |
+| Replica drift oluşur | Read-repair veya anti-entropy eksik/expired replica'yı onarır. |
+| Remote pool doyar | Request timeout veya bounded executor rejection ile backpressure uygulanır. |
+
+## 8. Sınırlar ve Bilinçli Tercihler
+
+- Veri bellek içidir; process restart sonrası kalıcılık hedeflenmez.
+- Multicast discovery küçük/local cluster için uygundur; cloud ortamlarında gossip veya registry tabanlı discovery gerekebilir.
+- Conflict durumunda read-repair ve anti-entropy otomatik overwrite yapmaz; conflict metriği üretir.
+- Agent stateless proxy olarak tasarlanmıştır; tek başına veri tutarlılığı kararı vermez.
+
+## 9. Kod Okuma Rotası
+
+Dağıtık davranışı anlamak için önerilen sıra:
+
+1. `ConsistentHashRing`
+2. `ClusterClient`
+3. `HintedHandoffService`
+4. `CoordinationService`
+5. `ReplicationServer`
+6. `RemoteNode`
+7. `AntiEntropyRepairer`
+8. `CacheEngine` ve `CacheSegment`
+
+Bu sıra, key'in ring üzerinde yer bulmasından başlayıp node'lar arası onarım ve backpressure davranışına kadar aynı zihinsel modeli korur.

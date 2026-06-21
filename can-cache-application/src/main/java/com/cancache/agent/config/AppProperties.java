@@ -1,5 +1,6 @@
 package com.cancache.agent.config;
 
+import com.cancache.agent.cluster.QuorumPolicy;
 import com.cancache.agent.cluster.ReadRepairMode;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
@@ -129,6 +130,18 @@ public interface AppProperties
 
         @WithDefault("30000")
         long antiEntropyIntervalMillis();
+
+        @WithDefault("4")
+        int taskThreads();
+
+        @WithDefault("256")
+        int taskQueueCapacity();
+
+        @WithDefault("1000")
+        int antiEntropyMaxRepairsPerRun();
+
+        @WithDefault("100")
+        int antiEntropyRepairRatePerSecond();
     }
 
     interface ReadRepair
@@ -141,6 +154,18 @@ public interface AppProperties
 
         @WithDefault("true")
         boolean async();
+
+        @WithDefault("DEGRADED")
+        QuorumPolicy quorumPolicy();
+
+        @WithDefault("4")
+        int maxThreads();
+
+        @WithDefault("1024")
+        int queueCapacity();
+
+        @WithDefault("500")
+        int rateLimitPerSecond();
     }
 
     interface Cancache

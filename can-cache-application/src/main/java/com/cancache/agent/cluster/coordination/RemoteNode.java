@@ -21,9 +21,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -81,8 +82,15 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
                 .setTcpNoDelay(true)
                 .setReuseAddress(true);
         this.netClient = vertx.createNetClient(options);
-        this.requestExecutor = Executors.newThreadPerTaskExecutor(
-                Thread.ofVirtual().name("remote-node-" + id + "-", 0).factory());
+        int maxRequestThreads = Math.max(2, maxPoolSize);
+        this.requestExecutor = new ThreadPoolExecutor(
+                maxRequestThreads,
+                maxRequestThreads,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(maxPoolSize * 8),
+                Thread.ofVirtual().name("remote-node-" + id + "-", 0).factory(),
+                new ThreadPoolExecutor.AbortPolicy());
     }
 
     @Override
