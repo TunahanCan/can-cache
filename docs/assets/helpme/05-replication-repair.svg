@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Replication, quorum and repair</title>
+  <desc id="desc">Explains quorum writes, hinted handoff, read repair and anti-entropy.</desc>
+  <style>
+    .bg{fill:#081113}.title{fill:#f2fbf8;font:700 34px system-ui}.sub{fill:#a8beb9;font:500 17px system-ui}.box{fill:#102126;stroke:#2e5056;stroke-width:2;rx:16}.node{fill:#183238;stroke:#67e8f9;stroke-width:2;rx:12}.ok{stroke:#4ade80}.warn{stroke:#f59e0b}.bad{stroke:#fb7185}.txt{fill:#e6f4f1;font:700 16px system-ui}.small{fill:#9bb4b0;font:500 13px system-ui}.arrow{fill:none;stroke:#60a5fa;stroke-width:3;marker-end:url(#arrow)}.dash{stroke-dasharray:9 10}
+  </style>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#60a5fa"/></marker></defs>
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="46" y="58">Replication, quorum ve repair</text>
+  <text class="sub" x="46" y="90">ClusterClient yazmayı replica setine yollar; background mekanizmalar drift'i azaltır.</text>
+  <rect class="box" x="46" y="126" width="1188" height="500"/>
+
+  <rect class="node" x="92" y="250" width="190" height="82"/>
+  <text class="txt" x="132" y="284">ClusterClient</text>
+  <text class="small" x="132" y="308">RF=3, quorum=2</text>
+
+  <rect class="node ok" x="500" y="160" width="180" height="62"/><text class="txt" x="556" y="196">A OK</text>
+  <rect class="node ok" x="500" y="270" width="180" height="62"/><text class="txt" x="556" y="306">B OK</text>
+  <rect class="node bad" x="500" y="380" width="180" height="62"/><text class="txt" x="546" y="416">C timeout</text>
+  <path class="arrow" d="M282 276 C370 198 420 192 500 192"/>
+  <path class="arrow" d="M282 292H500"/>
+  <path class="arrow bad" d="M282 308 C370 404 420 410 500 410"/>
+
+  <rect class="node ok" x="780" y="182" width="210" height="78"/>
+  <text class="txt" x="820" y="214">Write success</text>
+  <text class="small" x="820" y="238">2 ACK geldi</text>
+  <path class="arrow ok" d="M680 192H780"/>
+  <path class="arrow ok" d="M680 302 C734 302 734 238 780 230"/>
+
+  <rect class="node warn" x="780" y="348" width="210" height="78"/>
+  <text class="txt" x="820" y="380">Hinted handoff</text>
+  <text class="small" x="820" y="404">C için missed write</text>
+  <path class="arrow warn" d="M680 410H780"/>
+
+  <rect class="node" x="116" y="468" width="286" height="70"/>
+  <text class="txt" x="148" y="500">Read-repair</text>
+  <text class="small" x="148" y="522">okuma sırasında eksik replica onarılır</text>
+
+  <rect class="node" x="470" y="468" width="286" height="70"/>
+  <text class="txt" x="502" y="500">Anti-entropy</text>
+  <text class="small" x="502" y="522">periyodik snapshot tarar</text>
+
+  <rect class="node" x="824" y="468" width="286" height="70"/>
+  <text class="txt" x="856" y="500">Backpressure guard</text>
+  <text class="small" x="856" y="522">bounded executor + rate limit</text>
+</svg>

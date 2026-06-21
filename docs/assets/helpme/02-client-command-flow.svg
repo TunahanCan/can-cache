@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Client command lifecycle</title>
+  <desc id="desc">A client command passes through agent, server parser, cluster client and cache engine.</desc>
+  <style>
+    .bg{fill:#081113}.title{fill:#f2fbf8;font:700 34px system-ui}.sub{fill:#a8beb9;font:500 17px system-ui}.box{fill:#102126;stroke:#2e5056;stroke-width:2;rx:16}.step{fill:#183238;stroke:#67e8f9;stroke-width:2;rx:12}.decision{fill:#1d2d35;stroke:#f59e0b;stroke-width:2}.txt{fill:#e6f4f1;font:700 16px system-ui}.small{fill:#9bb4b0;font:500 13px system-ui}.arrow{fill:none;stroke:#60a5fa;stroke-width:3;marker-end:url(#arrow)}.green{stroke:#4ade80}.red{stroke:#fb7185}.num{fill:#081113;font:800 14px system-ui}.badge{fill:#67e8f9}
+  </style>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#60a5fa"/></marker></defs>
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="46" y="58">Client komutu nasıl çalışır?</text>
+  <text class="sub" x="46" y="90">Örnek: client `set foo 0 60 3` gönderir; cevap `STORED` veya hata olarak geri döner.</text>
+
+  <rect class="box" x="46" y="126" width="1188" height="500"/>
+
+  <g transform="translate(88 190)">
+    <circle class="badge" cx="0" cy="0" r="16"/><text class="num" x="-5" y="5">1</text>
+    <rect class="step" x="28" y="-36" width="170" height="72"/>
+    <text class="txt" x="54" y="-6">Client</text>
+    <text class="small" x="54" y="18">memcached text</text>
+  </g>
+  <path class="arrow" d="M286 190H390"/>
+  <g transform="translate(390 190)">
+    <circle class="badge" cx="0" cy="0" r="16"/><text class="num" x="-5" y="5">2</text>
+    <rect class="step" x="28" y="-36" width="190" height="72"/>
+    <text class="txt" x="54" y="-6">Agent opsiyonel</text>
+    <text class="small" x="54" y="18">healthy upstream seçer</text>
+  </g>
+  <path class="arrow" d="M608 190H710"/>
+  <g transform="translate(710 190)">
+    <circle class="badge" cx="0" cy="0" r="16"/><text class="num" x="-5" y="5">3</text>
+    <rect class="step" x="28" y="-36" width="210" height="72"/>
+    <text class="txt" x="54" y="-6">CanCachedServer</text>
+    <text class="small" x="54" y="18">satır + payload parse</text>
+  </g>
+
+  <path class="arrow" d="M845 226V300"/>
+  <polygon class="decision" points="845,300 960,360 845,420 730,360"/>
+  <text class="txt" x="792" y="352">Komut tipi?</text>
+  <text class="small" x="780" y="378">get / set / cas / delete</text>
+
+  <path class="arrow green" d="M730 360H562"/>
+  <rect class="step" x="330" y="324" width="232" height="72"/>
+  <text class="txt" x="362" y="354">ClusterClient</text>
+  <text class="small" x="362" y="378">ring + quorum + repair</text>
+
+  <path class="arrow green" d="M446 396V492"/>
+  <rect class="step" x="302" y="492" width="288" height="72"/>
+  <text class="txt" x="334" y="522">CacheEngine / RemoteNode</text>
+  <text class="small" x="334" y="546">local segment veya uzak replica</text>
+
+  <path class="arrow" d="M590 528H760"/>
+  <rect class="step" x="760" y="492" width="254" height="72"/>
+  <text class="txt" x="792" y="522">CommandResult</text>
+  <text class="small" x="792" y="546">VALUE / STORED / END / ERROR</text>
+
+  <path class="arrow" d="M1014 528 C1130 528 1130 190 948 190"/>
+  <text class="small" x="1030" y="490">response TCP ile geri döner</text>
+</svg>

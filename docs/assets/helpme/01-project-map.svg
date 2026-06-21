@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">can-cache project map</title>
+  <desc id="desc">High level map of modules, runtime processes and their responsibilities.</desc>
+  <style>
+    .bg{fill:#081113}.title{fill:#f2fbf8;font:700 34px system-ui}.sub{fill:#a8beb9;font:500 17px system-ui}.box{fill:#102126;stroke:#2e5056;stroke-width:2;rx:16}.mod{fill:#183238;stroke:#67e8f9;stroke-width:2;rx:12}.agent{stroke:#f59e0b}.test{stroke:#4ade80}.txt{fill:#e6f4f1;font:700 17px system-ui}.small{fill:#9bb4b0;font:500 14px system-ui}.arrow{fill:none;stroke:#60a5fa;stroke-width:3;marker-end:url(#arrow)}.dash{stroke-dasharray:9 10}
+  </style>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#60a5fa"/></marker></defs>
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="46" y="58">can-cache proje haritası</text>
+  <text class="sub" x="46" y="90">Repo dört ana parçadan oluşur: cache server, edge agent, integration testleri ve performans testleri.</text>
+
+  <rect class="box" x="46" y="130" width="1188" height="500"/>
+
+  <rect class="mod" x="92" y="180" width="300" height="320"/>
+  <text class="txt" x="124" y="218">can-cache-application</text>
+  <text class="small" x="124" y="254">• Memcached text TCP server</text>
+  <text class="small" x="124" y="282">• CacheEngine + CacheSegment</text>
+  <text class="small" x="124" y="310">• TTL, CAS, eviction</text>
+  <text class="small" x="124" y="338">• Consistent hash routing</text>
+  <text class="small" x="124" y="366">• Replication + repair</text>
+  <text class="small" x="124" y="394">• Metrics endpoint</text>
+  <text class="small" x="124" y="446">Ana runtime: cache node</text>
+
+  <rect class="mod agent" x="490" y="180" width="300" height="320"/>
+  <text class="txt" x="522" y="218">can-cache-agent</text>
+  <text class="small" x="522" y="254">• TCP edge proxy</text>
+  <text class="small" x="522" y="282">• Upstream registry</text>
+  <text class="small" x="522" y="310">• Health check</text>
+  <text class="small" x="522" y="338">• Round robin / least conn</text>
+  <text class="small" x="522" y="366">• Registration API</text>
+  <text class="small" x="522" y="394">• Status/dashboard</text>
+  <text class="small" x="522" y="446">Ana runtime: client entrypoint</text>
+
+  <rect class="mod test" x="888" y="180" width="300" height="140"/>
+  <text class="txt" x="920" y="218">integration-tests</text>
+  <text class="small" x="920" y="254">• Docker cluster senaryoları</text>
+  <text class="small" x="920" y="282">• Protocol + metrics doğrulama</text>
+
+  <rect class="mod test" x="888" y="360" width="300" height="140"/>
+  <text class="txt" x="920" y="398">performance-tests</text>
+  <text class="small" x="920" y="434">• JMeter sampler</text>
+  <text class="small" x="920" y="462">• small / medium / large / xl</text>
+
+  <path class="arrow" d="M392 300H490"/>
+  <text class="small" x="408" y="286">agent proxy</text>
+  <path class="arrow dash" d="M790 266H888"/>
+  <text class="small" x="806" y="250">test eder</text>
+  <path class="arrow dash" d="M790 420H888"/>
+  <text class="small" x="806" y="404">yük basar</text>
+</svg>

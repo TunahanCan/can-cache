@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Testing and operations map</title>
+  <desc id="desc">Shows how local setup, integration tests, performance tests, metrics and logs support operations.</desc>
+  <style>
+    .bg{fill:#081113}.title{fill:#f2fbf8;font:700 34px system-ui}.sub{fill:#a8beb9;font:500 17px system-ui}.box{fill:#102126;stroke:#2e5056;stroke-width:2;rx:16}.part{fill:#183238;stroke:#4ade80;stroke-width:2;rx:12}.warn{stroke:#f59e0b}.txt{fill:#e6f4f1;font:700 16px system-ui}.small{fill:#9bb4b0;font:500 13px system-ui}.arrow{fill:none;stroke:#60a5fa;stroke-width:3;marker-end:url(#arrow)}.dash{stroke-dasharray:9 10}
+  </style>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#60a5fa"/></marker></defs>
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="46" y="58">Test ve operasyon haritası</text>
+  <text class="sub" x="46" y="90">Proje sadece runtime kodu değil; local script, integration test, performance test ve metrics ile gözlemlenir.</text>
+  <rect class="box" x="46" y="126" width="1188" height="500"/>
+
+  <rect class="part warn" x="96" y="190" width="260" height="110"/>
+  <text class="txt" x="128" y="224">local-setup.sh</text>
+  <text class="small" x="128" y="252">1 agent + 2 cache node</text>
+  <text class="small" x="128" y="276">start / status / test / stop</text>
+
+  <rect class="part" x="500" y="160" width="260" height="110"/>
+  <text class="txt" x="532" y="194">integration-tests</text>
+  <text class="small" x="532" y="222">Docker compose cluster</text>
+  <text class="small" x="532" y="246">protocol, metrics, replication</text>
+  <path class="arrow" d="M356 244H500"/>
+
+  <rect class="part" x="500" y="340" width="260" height="110"/>
+  <text class="txt" x="532" y="374">performance-tests</text>
+  <text class="small" x="532" y="402">JMeter sampler</text>
+  <text class="small" x="532" y="426">small/medium/large/xl</text>
+  <path class="arrow" d="M356 272 C430 326 446 378 500 394"/>
+
+  <rect class="part warn" x="900" y="170" width="250" height="100"/>
+  <text class="txt" x="932" y="204">Metrics</text>
+  <text class="small" x="932" y="232">/metrics Prometheus format</text>
+  <path class="arrow dash" d="M760 216H900"/>
+
+  <rect class="part warn" x="900" y="350" width="250" height="100"/>
+  <text class="txt" x="932" y="384">Logs + NFR docs</text>
+  <text class="small" x="932" y="412">logs/app.log + nfr/*.md</text>
+  <path class="arrow dash" d="M760 396H900"/>
+
+  <rect class="part" x="262" y="500" width="740" height="62"/>
+  <text class="txt" x="294" y="528">Operasyonel okuma</text>
+  <text class="small" x="294" y="550">Hit/miss, eviction, repair, quorum, health ve latency birlikte yorumlanır.</text>
+</svg>

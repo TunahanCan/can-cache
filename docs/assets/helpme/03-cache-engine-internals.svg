@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">CacheEngine internals</title>
+  <desc id="desc">Shows segment routing, lock, map, TTL queue, eviction policy and metrics inside CacheEngine.</desc>
+  <style>
+    .bg{fill:#081113}.title{fill:#f2fbf8;font:700 34px system-ui}.sub{fill:#a8beb9;font:500 17px system-ui}.box{fill:#102126;stroke:#2e5056;stroke-width:2;rx:16}.part{fill:#183238;stroke:#67e8f9;stroke-width:2;rx:12}.warn{stroke:#f59e0b}.ok{stroke:#4ade80}.red{stroke:#fb7185}.txt{fill:#e6f4f1;font:700 16px system-ui}.small{fill:#9bb4b0;font:500 13px system-ui}.arrow{fill:none;stroke:#60a5fa;stroke-width:3;marker-end:url(#arrow)}.dash{stroke-dasharray:9 10}.lock{fill:#f59e0b}
+  </style>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#60a5fa"/></marker></defs>
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="46" y="58">CacheEngine içerisi</text>
+  <text class="sub" x="46" y="90">Tek büyük map yok; key segment seçer, segment lock alır, eviction/TTL/CAS orada uygulanır.</text>
+  <rect class="box" x="46" y="126" width="1188" height="500"/>
+
+  <rect class="part" x="90" y="180" width="210" height="86"/>
+  <text class="txt" x="122" y="214">set/get/delete</text>
+  <text class="small" x="122" y="240">key.hashCode()</text>
+  <path class="arrow" d="M300 224H430"/>
+
+  <rect class="part warn" x="430" y="164" width="250" height="120"/>
+  <text class="txt" x="462" y="198">Segment seçimi</text>
+  <text class="small" x="462" y="226">(hash &amp; positive) % N</text>
+  <text class="small" x="462" y="252">N = app.cache.segments</text>
+  <path class="arrow" d="M680 224H810"/>
+
+  <rect class="part" x="810" y="148" width="310" height="152"/>
+  <text class="txt" x="842" y="182">CacheSegment</text>
+  <text class="small" x="842" y="210">ReentrantLock</text><circle class="lock" cx="1052" cy="204" r="10"/>
+  <text class="small" x="842" y="238">LinkedHashMap accessOrder=true</text>
+  <text class="small" x="842" y="266">EvictionPolicy.admit()</text>
+
+  <rect class="part ok" x="156" y="380" width="238" height="110"/>
+  <text class="txt" x="188" y="414">TTL queue</text>
+  <text class="small" x="188" y="442">DelayQueue&lt;ExpiringKey&gt;</text>
+  <text class="small" x="188" y="468">cleaner removeIfMatches</text>
+
+  <rect class="part red" x="510" y="380" width="238" height="110"/>
+  <text class="txt" x="542" y="414">Eviction</text>
+  <text class="small" x="542" y="442">LRU veya TinyLFU</text>
+  <text class="small" x="542" y="468">kapasite dolunca karar</text>
+
+  <rect class="part" x="864" y="380" width="238" height="110"/>
+  <text class="txt" x="896" y="414">Metrics + events</text>
+  <text class="small" x="896" y="442">hit/miss/eviction/timer</text>
+  <text class="small" x="896" y="468">keyspace:set / del</text>
+
+  <path class="arrow dash" d="M930 300 C860 356 758 386 748 416"/>
+  <path class="arrow dash" d="M810 264 C590 334 394 344 294 380"/>
+  <path class="arrow dash" d="M966 300V380"/>
+</svg>

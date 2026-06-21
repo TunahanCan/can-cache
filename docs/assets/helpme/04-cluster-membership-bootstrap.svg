@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Cluster membership and bootstrap</title>
+  <desc id="desc">Explains heartbeat, join handshake, ring update, stream bootstrap and replica filtering.</desc>
+  <style>
+    .bg{fill:#081113}.title{fill:#f2fbf8;font:700 34px system-ui}.sub{fill:#a8beb9;font:500 17px system-ui}.box{fill:#102126;stroke:#2e5056;stroke-width:2;rx:16}.step{fill:#183238;stroke:#67e8f9;stroke-width:2;rx:12}.warn{stroke:#f59e0b}.ok{stroke:#4ade80}.txt{fill:#e6f4f1;font:700 16px system-ui}.small{fill:#9bb4b0;font:500 13px system-ui}.arrow{fill:none;stroke:#60a5fa;stroke-width:3;marker-end:url(#arrow)}.dash{stroke-dasharray:9 10}.packet{fill:#4ade80}.skip{fill:#fb7185}
+  </style>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#60a5fa"/></marker></defs>
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="46" y="58">Cluster üyeliği ve bootstrap</text>
+  <text class="sub" x="46" y="90">CoordinationService node'ları keşfeder; yeni node ring'e eklenir ve sadece sahip olması gereken key'leri alır.</text>
+  <rect class="box" x="46" y="126" width="1188" height="500"/>
+
+  <rect class="step" x="92" y="180" width="220" height="90"/>
+  <text class="txt" x="124" y="214">1. Heartbeat</text>
+  <text class="small" x="124" y="240">UDP multicast: nodeId, host, port, epoch</text>
+  <path class="arrow" d="M312 225H438"/>
+
+  <rect class="step warn" x="438" y="180" width="220" height="90"/>
+  <text class="txt" x="470" y="214">2. Join handshake</text>
+  <text class="small" x="470" y="240">CMD_JOIN over TCP</text>
+  <path class="arrow" d="M658 225H784"/>
+
+  <rect class="step ok" x="784" y="180" width="220" height="90"/>
+  <text class="txt" x="816" y="214">3. Ring update</text>
+  <text class="small" x="816" y="240">RemoteNode eklenir</text>
+
+  <rect class="step" x="160" y="374" width="260" height="116"/>
+  <text class="txt" x="192" y="408">4. CMD_STREAM</text>
+  <text class="small" x="192" y="436">remote snapshot chunk'ları</text>
+  <circle class="packet" cx="218" cy="466" r="9"/><circle class="packet" cx="252" cy="466" r="9"/><circle class="packet" cx="286" cy="466" r="9"/>
+  <path class="arrow" d="M420 432H548"/>
+
+  <polygon class="step warn" points="668,350 788,432 668,514 548,432"/>
+  <text class="txt" x="610" y="424">Replica set</text>
+  <text class="small" x="608" y="448">local var mı?</text>
+  <path class="arrow ok" d="M788 432H930"/>
+  <rect class="step ok" x="930" y="388" width="210" height="70"/>
+  <text class="txt" x="966" y="418">keep</text>
+  <text class="small" x="966" y="440">localNode.set()</text>
+  <path class="arrow dash" d="M668 514V590H930"/>
+  <rect class="step warn" x="930" y="554" width="210" height="54"/>
+  <text class="txt" x="966" y="586">skip</text>
+  <circle class="skip" cx="1090" cy="580" r="9"/>
+</svg>
