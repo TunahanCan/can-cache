@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-labelledby="title desc">
+  <title id="title">Hinted handoff, read repair and anti-entropy animation</title>
+  <desc id="desc">Three repair mechanisms handle missed writes, read-time drift and background replica drift.</desc>
+  <style>
+    .bg{fill:#071013}.t{fill:#e6f4f1;font:700 25px system-ui}.s{fill:#9bb4b0;font:500 13px system-ui}.p{fill:#102126;stroke:#31535a;stroke-width:2;rx:14}.n{fill:#142b31;stroke:#22d3ee;stroke-width:2;rx:9}.ok{stroke:#4ade80}.warn{stroke:#f59e0b}.line{fill:none;stroke:#60a5fa;stroke-width:3;stroke-dasharray:8 10;animation:dash 1s linear infinite}.move{animation:move 4s ease-in-out infinite}.scan{animation:scan 4s linear infinite}@keyframes dash{to{stroke-dashoffset:-18}}@keyframes move{0%{transform:translateX(0)}50%,75%{transform:translateX(96px)}100%{transform:translateX(0)}}@keyframes scan{0%{transform:translateY(-38px);opacity:.2}50%{opacity:1}100%{transform:translateY(50px);opacity:.2}}
+  </style>
+  <rect class="bg" width="920" height="360"/>
+  <text class="t" x="34" y="48">Repair: Handoff + Read-Repair + Anti-Entropy</text>
+  <text class="s" x="34" y="76">Drift tek mekanizmayla degil, yazma sonrasi, okuma sirasinda ve arka planda azaltilir.</text>
+  <rect class="p" x="44" y="116" width="250" height="176"/><text class="s" x="76" y="148">Hinted handoff</text><rect class="n warn" x="78" y="180" width="66" height="42"/><text class="s" x="96" y="206">hint</text><rect class="n ok" x="198" y="180" width="66" height="42"/><text class="s" x="218" y="206">node</text><path class="line move" d="M144 202 H198"/>
+  <rect class="p" x="334" y="116" width="250" height="176"/><text class="s" x="376" y="148">Read-repair</text><rect class="n ok" x="368" y="178" width="62" height="42"/><text class="s" x="386" y="204">v1</text><rect class="n warn" x="494" y="178" width="62" height="42"/><text class="s" x="508" y="204">miss</text><path class="line" d="M430 200 H494"/>
+  <rect class="p" x="624" y="116" width="250" height="176"/><text class="s" x="674" y="148">Anti-entropy</text><rect class="n" x="676" y="176" width="146" height="72"/><text class="s" x="710" y="215">local scan</text><line class="scan" x1="676" y1="216" x2="822" y2="216" stroke="#4ade80" stroke-width="4"/>
+  <text class="s" x="298" y="326">Bounded executor, per-key dedupe ve rate limit repair yukunu kontrol eder.</text>
+</svg>

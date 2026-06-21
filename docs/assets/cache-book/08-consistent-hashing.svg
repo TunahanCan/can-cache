@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-labelledby="title desc">
+  <title id="title">Consistent hashing animation</title>
+  <desc id="desc">A key lands on a hash ring and walks clockwise to choose unique replicas across virtual nodes.</desc>
+  <style>
+    .bg{fill:#071013}.t{fill:#e6f4f1;font:700 25px system-ui}.s{fill:#9bb4b0;font:500 14px system-ui}.ring{fill:none;stroke:#31535a;stroke-width:10}.walk{fill:none;stroke:#22d3ee;stroke-width:10;stroke-linecap:round;stroke-dasharray:80 520;animation:walk 5s linear infinite}.node{fill:#142b31;stroke:#60a5fa;stroke-width:2}.rep{stroke:#4ade80;animation:pulse 5s ease-in-out infinite;transform-origin:center}.key{fill:#f59e0b;animation:key 5s ease-in-out infinite}.line{fill:none;stroke:#4ade80;stroke-width:3;stroke-dasharray:8 10;animation:dash 1s linear infinite}@keyframes walk{to{stroke-dashoffset:-600}}@keyframes dash{to{stroke-dashoffset:-18}}@keyframes key{0%,100%{opacity:.55}35%,70%{opacity:1}}@keyframes pulse{0%,25%,100%{transform:scale(1)}45%,75%{transform:scale(1.15)}}
+  </style>
+  <rect class="bg" width="920" height="360"/>
+  <text class="t" x="34" y="48">Consistent Hashing + Virtual Nodes</text>
+  <text class="s" x="34" y="76">Key ring'e duser; saat yonunde yuruyerek benzersiz replica node'lari secilir.</text>
+  <circle class="ring" cx="460" cy="204" r="112"/>
+  <circle class="walk" cx="460" cy="204" r="112"/>
+  <circle class="node rep" cx="416" cy="101" r="18"/><text class="s" x="409" y="106">A</text>
+  <circle class="node" cx="560" cy="126" r="18"/><text class="s" x="553" y="131">B</text>
+  <circle class="node rep" cx="574" cy="246" r="18"/><text class="s" x="567" y="251">C</text>
+  <circle class="node rep" cx="374" cy="278" r="18"/><text class="s" x="367" y="283">D</text>
+  <circle class="key" cx="356" cy="176" r="10"/>
+  <path class="line" d="M142 204 H338"/>
+  <rect x="56" y="166" width="88" height="76" rx="12" fill="#102126" stroke="#31535a" stroke-width="2"/><text class="s" x="80" y="199">key</text><text class="s" x="72" y="222">hash</text>
+  <text class="s" x="688" y="178">replica set</text><text class="s" x="688" y="207">A -> C -> D</text>
+</svg>

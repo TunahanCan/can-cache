@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-labelledby="title desc">
+  <title id="title">Cache read and write patterns animation</title>
+  <desc id="desc">Cache-aside, read-through, write-through and write-back patterns compared as animated flows.</desc>
+  <style>
+    .bg{fill:#071013}.t{fill:#e6f4f1;font:700 25px system-ui}.s{fill:#9bb4b0;font:500 13px system-ui}.p{fill:#102126;stroke:#31535a;stroke-width:2;rx:14}.n{fill:#142b31;stroke:#22d3ee;stroke-width:2;rx:9}.db{stroke:#f59e0b}.line{fill:none;stroke:#4ade80;stroke-width:3;stroke-dasharray:8 10;animation:dash 1s linear infinite}.late{stroke:#fb7185;animation-delay:.4s}@keyframes dash{to{stroke-dashoffset:-18}}
+  </style>
+  <rect class="bg" width="920" height="360"/>
+  <text class="t" x="34" y="48">Cache Desenleri</text>
+  <text class="s" x="34" y="76">Uygulama, cache ve database arasindaki sorumluluk paylasimi farkli desenler uretir.</text>
+  <rect class="p" x="48" y="116" width="390" height="88"/><text class="s" x="70" y="146">Cache-aside</text><rect class="n" x="180" y="136" width="62" height="38"/><text class="s" x="197" y="160">app</text><rect class="n" x="280" y="136" width="70" height="38"/><text class="s" x="298" y="160">cache</text><rect class="n db" x="370" y="136" width="44" height="38"/><text class="s" x="380" y="160">db</text><path class="line" d="M242 154 H280"/><path class="line late" d="M350 154 H370"/>
+  <rect class="p" x="482" y="116" width="390" height="88"/><text class="s" x="504" y="146">Read-through</text><rect class="n" x="614" y="136" width="62" height="38"/><text class="s" x="631" y="160">app</text><rect class="n" x="714" y="136" width="70" height="38"/><text class="s" x="732" y="160">cache</text><rect class="n db" x="804" y="136" width="44" height="38"/><text class="s" x="814" y="160">db</text><path class="line" d="M676 154 H714"/><path class="line late" d="M784 154 H804"/>
+  <rect class="p" x="48" y="230" width="390" height="88"/><text class="s" x="70" y="260">Write-through</text><rect class="n" x="180" y="250" width="62" height="38"/><text class="s" x="197" y="274">app</text><rect class="n" x="280" y="250" width="70" height="38"/><text class="s" x="298" y="274">cache</text><rect class="n db" x="370" y="250" width="44" height="38"/><text class="s" x="380" y="274">db</text><path class="line" d="M242 268 H280"/><path class="line" d="M350 268 H370"/>
+  <rect class="p" x="482" y="230" width="390" height="88"/><text class="s" x="504" y="260">Write-back</text><rect class="n" x="614" y="250" width="62" height="38"/><text class="s" x="631" y="274">app</text><rect class="n" x="714" y="250" width="70" height="38"/><text class="s" x="732" y="274">cache</text><rect class="n db" x="804" y="250" width="44" height="38"/><text class="s" x="814" y="274">db</text><path class="line" d="M676 268 H714"/><path class="line late" d="M784 268 H804"/>
+</svg>

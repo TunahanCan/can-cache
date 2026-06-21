@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-labelledby="title desc">
+  <title id="title">LRU eviction animation</title>
+  <desc id="desc">Accessed entries move to the newest side; when full, the oldest entry is evicted.</desc>
+  <style>
+    .bg{fill:#071013}.t{fill:#e6f4f1;font:700 25px system-ui}.s{fill:#9bb4b0;font:500 14px system-ui}.slot{fill:#102126;stroke:#31535a;stroke-width:2;rx:12}.entry{fill:#142b31;stroke:#22d3ee;stroke-width:2;rx:10}.new{stroke:#4ade80}.evict{stroke:#fb7185}.move{animation:move 5s ease-in-out infinite}.out{animation:out 5s ease-in-out infinite}.in{animation:in 5s ease-in-out infinite}.arrow{fill:none;stroke:#60a5fa;stroke-width:3;stroke-dasharray:8 10;animation:dash 1s linear infinite}@keyframes dash{to{stroke-dashoffset:-18}}@keyframes move{0%,30%{transform:translateX(0)}55%,85%{transform:translateX(350px)}100%{transform:translateX(0)}}@keyframes out{0%,55%{opacity:1;transform:translateX(0)}75%,100%{opacity:.15;transform:translateX(-50px)}}@keyframes in{0%,55%{opacity:.15;transform:translateX(40px)}75%,100%{opacity:1;transform:translateX(0)}}
+  </style>
+  <rect class="bg" width="920" height="360"/>
+  <text class="t" x="34" y="48">LRU: Least Recently Used</text>
+  <text class="s" x="34" y="76">Erisilen entry en yeni tarafa tasinir; kapasite dolunca en eski entry gider.</text>
+  <text class="s" x="80" y="130">oldest</text><text class="s" x="750" y="130">newest</text>
+  <rect class="slot" x="70" y="152" width="760" height="94"/>
+  <rect class="entry evict out" x="100" y="174" width="86" height="50"/><text class="s out" x="137" y="205">A</text>
+  <rect class="entry move" x="220" y="174" width="86" height="50"/><text class="s move" x="257" y="205">B</text>
+  <rect class="entry" x="340" y="174" width="86" height="50"/><text class="s" x="377" y="205">C</text>
+  <rect class="entry" x="460" y="174" width="86" height="50"/><text class="s" x="497" y="205">D</text>
+  <rect class="entry new in" x="700" y="174" width="86" height="50"/><text class="s in" x="737" y="205">E</text>
+  <path class="arrow" d="M270 166 C350 100 500 100 650 166"/>
+  <text class="s" x="344" y="292">get(B) -> B en yeni olur; set(E) -> A evict edilir.</text>
+</svg>

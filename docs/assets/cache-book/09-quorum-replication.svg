@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-labelledby="title desc">
+  <title id="title">Quorum replication animation</title>
+  <desc id="desc">A coordinator writes to three replicas and succeeds when two acknowledgements arrive.</desc>
+  <style>
+    .bg{fill:#071013}.t{fill:#e6f4f1;font:700 25px system-ui}.s{fill:#9bb4b0;font:500 14px system-ui}.n{fill:#102126;stroke:#31535a;stroke-width:2;rx:14}.ok{stroke:#4ade80}.bad{stroke:#fb7185}.line{fill:none;stroke:#60a5fa;stroke-width:3;stroke-dasharray:8 10;animation:dash 1s linear infinite}.ack{stroke:#4ade80}.fail{stroke:#fb7185}.pulse{animation:pulse 4s ease-in-out infinite;transform-origin:center}@keyframes dash{to{stroke-dashoffset:-18}}@keyframes pulse{0%,35%,100%{opacity:.45;transform:scale(1)}55%,85%{opacity:1;transform:scale(1.08)}}
+  </style>
+  <rect class="bg" width="920" height="360"/>
+  <text class="t" x="34" y="48">Replication + Quorum</text>
+  <text class="s" x="34" y="76">RF=3 ise majority=2; iki replica OK donerse yazma basarili kabul edilir.</text>
+  <rect class="n pulse" x="84" y="158" width="150" height="76"/><text class="s" x="118" y="202">coordinator</text>
+  <rect class="n ok" x="620" y="82" width="150" height="60"/><text class="s" x="674" y="118">A ok</text>
+  <rect class="n ok" x="620" y="170" width="150" height="60"/><text class="s" x="674" y="206">B ok</text>
+  <rect class="n bad" x="620" y="258" width="150" height="60"/><text class="s" x="666" y="294">C fail</text>
+  <path class="line" d="M234 176 C380 96 482 100 620 112"/>
+  <path class="line" d="M234 196 H620"/>
+  <path class="line fail" d="M234 216 C380 292 482 292 620 288"/>
+  <path class="line ack" d="M620 124 C486 152 378 164 234 188"/>
+  <path class="line ack" d="M620 202 H234"/>
+  <text class="s" x="352" y="312">2 / 3 ACK -> STORED, failed replica icin hint.</text>
+</svg>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-labelledby="title desc">
+  <title id="title">Round robin and least connections animation</title>
+  <desc id="desc">The agent selects upstream nodes using either rotating order or the lowest active connection count.</desc>
+  <style>
+    .bg{fill:#071013}.t{fill:#e6f4f1;font:700 25px system-ui}.s{fill:#9bb4b0;font:500 14px system-ui}.p{fill:#102126;stroke:#31535a;stroke-width:2;rx:14}.n{fill:#142b31;stroke:#22d3ee;stroke-width:2;rx:9}.pick{stroke:#4ade80;animation:pulse 4s ease-in-out infinite}.line{fill:none;stroke:#60a5fa;stroke-width:3;stroke-dasharray:8 10;animation:dash 1s linear infinite}.rotate{animation:rot 4s steps(3,end) infinite;transform-origin:210px 205px}@keyframes dash{to{stroke-dashoffset:-18}}@keyframes pulse{0%,40%,100%{opacity:.45}55%,80%{opacity:1}}@keyframes rot{0%{transform:rotate(0)}33%{transform:rotate(120deg)}66%{transform:rotate(240deg)}100%{transform:rotate(360deg)}}
+  </style>
+  <rect class="bg" width="920" height="360"/>
+  <text class="t" x="34" y="48">Agent Selection: Round Robin vs Least Connections</text>
+  <text class="s" x="34" y="76">Proxy ya siradaki node'u secer ya da aktif baglantisi en az olana gider.</text>
+  <rect class="p" x="48" y="116" width="380" height="190"/><text class="s" x="78" y="150">Round robin</text><circle cx="210" cy="205" r="66" fill="none" stroke="#31535a" stroke-width="4"/><line class="rotate" x1="210" y1="205" x2="210" y2="139" stroke="#4ade80" stroke-width="5" stroke-linecap="round"/><circle class="n" cx="210" cy="139" r="19"/><text class="s" x="204" y="144">A</text><circle class="n" cx="267" cy="238" r="19"/><text class="s" x="261" y="243">B</text><circle class="n" cx="153" cy="238" r="19"/><text class="s" x="147" y="243">C</text>
+  <rect class="p" x="492" y="116" width="380" height="190"/><text class="s" x="522" y="150">Least connections</text><rect class="n" x="548" y="184" width="82" height="50"/><text class="s" x="568" y="214">A: 8</text><rect class="n pick" x="650" y="184" width="82" height="50"/><text class="s" x="670" y="214">B: 2</text><rect class="n" x="752" y="184" width="82" height="50"/><text class="s" x="772" y="214">C: 5</text><path class="line" d="M604 256 C642 286 694 286 706 238"/><text class="s" x="606" y="286">min activeConn wins</text>
+</svg>

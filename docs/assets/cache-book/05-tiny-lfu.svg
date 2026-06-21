@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-labelledby="title desc">
+  <title id="title">TinyLFU admission animation</title>
+  <desc id="desc">A candidate key is compared with a victim using approximate frequency sketch counters.</desc>
+  <style>
+    .bg{fill:#071013}.t{fill:#e6f4f1;font:700 25px system-ui}.s{fill:#9bb4b0;font:500 14px system-ui}.b{fill:#102126;stroke:#31535a;stroke-width:2;rx:14}.c{fill:#142b31;stroke:#22d3ee;stroke-width:2;rx:10}.v{stroke:#fb7185}.ok{stroke:#4ade80}.bar{fill:#60a5fa;animation:bar 4s ease-in-out infinite}.gate{animation:gate 4s ease-in-out infinite;transform-origin:center}.line{fill:none;stroke:#f59e0b;stroke-width:3;stroke-dasharray:8 10;animation:dash 1s linear infinite}@keyframes dash{to{stroke-dashoffset:-18}}@keyframes bar{0%,100%{transform:scaleY(.35)}45%,75%{transform:scaleY(1)}}@keyframes gate{0%,40%{opacity:.45;transform:scale(.96)}60%,90%{opacity:1;transform:scale(1.05)}100%{opacity:.45;transform:scale(.96)}}
+  </style>
+  <rect class="bg" width="920" height="360"/>
+  <text class="t" x="34" y="48">TinyLFU: Frequency ile Admission</text>
+  <text class="s" x="34" y="76">Aday her zaman cache'e girmez; once kurban entry ile tahmini frekansi karsilastirilir.</text>
+  <rect class="c ok" x="72" y="142" width="150" height="74"/><text class="s" x="104" y="184">candidate X</text>
+  <rect class="c v" x="72" y="238" width="150" height="74"/><text class="s" x="112" y="280">victim A</text>
+  <path class="line" d="M222 178 H360"/><path class="line" d="M222 274 H360"/>
+  <rect class="b" x="360" y="120" width="220" height="210"/><text class="s" x="418" y="154">FrequencySketch</text>
+  <rect class="bar" x="410" y="248" width="22" height="58"/><rect class="bar" x="452" y="210" width="22" height="96"/><rect class="bar" x="494" y="174" width="22" height="132"/><rect class="bar" x="536" y="228" width="22" height="78"/>
+  <rect class="b gate" x="662" y="164" width="188" height="106"/><text class="s" x="702" y="204">X freq &gt; A freq</text><text class="s" x="724" y="236">ADMIT</text>
+  <path class="line" d="M580 220 H662"/>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-labelledby="title desc">
+  <title id="title">TTL and expiration animation</title>
+  <desc id="desc">A cache entry receives an expireAt timestamp, enters a delay queue, and is removed by the cleaner.</desc>
+  <style>
+    .bg{fill:#071013}.t{fill:#e6f4f1;font:700 25px system-ui}.s{fill:#9bb4b0;font:500 14px system-ui}.b{fill:#102126;stroke:#31535a;stroke-width:2;rx:14}.q{fill:#142b31;stroke:#22d3ee;stroke-width:2;rx:10}.hot{fill:#4ade80}.old{fill:#f59e0b}.bad{fill:#fb7185}.line{stroke:#60a5fa;stroke-width:3;stroke-dasharray:8 10;fill:none;animation:dash 1s linear infinite}.tick{animation:tick 5s linear infinite}.clean{animation:clean 5s ease-in-out infinite}.fade{animation:fade 5s ease-in-out infinite}@keyframes dash{to{stroke-dashoffset:-18}}@keyframes tick{0%{transform:translateX(0)}100%{transform:translateX(520px)}}@keyframes clean{0%,55%{transform:translateX(0);opacity:.6}70%,88%{transform:translateX(170px);opacity:1}100%{transform:translateX(0);opacity:.6}}@keyframes fade{0%,70%{opacity:1}88%,100%{opacity:.15}}
+  </style>
+  <rect class="bg" width="920" height="360"/>
+  <text class="t" x="34" y="48">TTL + Lazy/Active Expiration</text>
+  <text class="s" x="34" y="76">TTL relative gelir, expireAt absolute zamana cevrilir; get sirasinda veya cleaner ile silinir.</text>
+  <rect class="b" x="36" y="118" width="190" height="90"/><text class="s" x="70" y="154">set key ttl=60s</text><circle class="hot" cx="90" cy="182" r="13"/>
+  <path class="line" d="M226 162 H344"/>
+  <rect class="b" x="344" y="118" width="190" height="90"/><text class="s" x="382" y="154">expireAt=now+ttl</text><text class="s" x="398" y="184">CacheValue</text>
+  <path class="line" d="M534 162 H642"/>
+  <rect class="q" x="642" y="118" width="224" height="90"/><text class="s" x="690" y="154">DelayQueue</text><circle class="old fade" cx="728" cy="184" r="13"/><circle class="hot" cx="774" cy="184" r="13"/>
+  <line x1="120" y1="272" x2="760" y2="272" stroke="#31535a" stroke-width="6" stroke-linecap="round"/>
+  <circle class="tick bad" cx="120" cy="272" r="12"/>
+  <text class="s" x="110" y="306">now</text><text class="s" x="698" y="306">expireAt</text>
+  <rect class="b clean" x="520" y="238" width="120" height="54"/><text class="s" x="548" y="271">cleaner</text>
+</svg>
