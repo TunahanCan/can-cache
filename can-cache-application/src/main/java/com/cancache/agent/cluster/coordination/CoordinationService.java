@@ -1,5 +1,6 @@
 package com.cancache.agent.cluster.coordination;
 
+import com.cancache.agent.cluster.AntiEntropyRepairer;
 import com.cancache.agent.cluster.ClusterState;
 import com.cancache.agent.cluster.ConsistentHashRing;
 import com.cancache.agent.cluster.HintedHandoffService;
@@ -8,6 +9,7 @@ import com.cancache.agent.cluster.coordination.SocketConnectionPool.PooledSocket
 import com.cancache.agent.config.AppProperties;
 import com.cancache.agent.constants.NodeProtocol;
 import com.cancache.agent.core.CacheEngine;
+import com.cancache.agent.metric.MetricsRegistry;
 import io.vertx.core.Vertx;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -55,11 +57,13 @@ public class CoordinationService implements AutoCloseable {
     private final AppProperties.Network networkConfig;
     private final int replicationFactor;
     private final long hintReplayIntervalMillis;
+    private final long antiEntropyIntervalMillis;
     private final Vertx vertx;
     private final ExecutorService taskExecutor;
     private final ConnectionPoolManager connectionPoolManager;
     private final String clientAdvertisedHost;
     private final int clientPort;
+    private final AntiEntropyRepairer antiEntropyRepairer;
 
     private final Map<String, RemoteMember> members = new ConcurrentHashMap<>();
     private final Object membershipLock = new Object();
@@ -69,6 +73,7 @@ public class CoordinationService implements AutoCloseable {
     private InetAddress groupAddress;
     private long heartbeatTimerId = -1L;
     private long reapTimerId = -1L;
+    private long antiEntropyTimerId = -1L;
     private Thread listenerThread;
     private volatile boolean running;
 
@@ -79,7 +84,8 @@ public class CoordinationService implements AutoCloseable {
                                HintedHandoffService hintedHandoffService,
                                CacheEngine<String, String> localEngine,
                                AppProperties properties,
-                               Vertx vertx) {
+                               Vertx vertx,
+                               MetricsRegistry metrics) {
         this.ring = ring;
         this.localNode = localNode;
         this.clusterState = clusterState;
@@ -92,6 +98,7 @@ public class CoordinationService implements AutoCloseable {
         this.replicationFactor = Math.max(1, cluster.replicationFactor());
         var coordination = cluster.coordination();
         this.hintReplayIntervalMillis = Math.max(0L, coordination.hintReplayIntervalMillis());
+        this.antiEntropyIntervalMillis = Math.max(0L, coordination.antiEntropyIntervalMillis());
         this.vertx = vertx;
         ThreadFactory threadFactory = Thread.ofVirtual().name("coordination-task-", 0).factory();
         this.taskExecutor = Executors.newThreadPerTaskExecutor(threadFactory);
@@ -103,6 +110,7 @@ public class CoordinationService implements AutoCloseable {
 
         this.clientPort = Math.max(1, networkConfig.port());
         this.clientAdvertisedHost = resolveClientAdvertisedHost();
+        this.antiEntropyRepairer = new AntiEntropyRepairer(ring, localNode, localEngine, this.replicationFactor, metrics);
     }
 
     @PostConstruct
@@ -125,6 +133,9 @@ public class CoordinationService implements AutoCloseable {
         broadcastHeartbeat();
         heartbeatTimerId = vertx.setPeriodic(heartbeat, _ -> broadcastHeartbeat());
         reapTimerId = vertx.setPeriodic(reapInterval, _ -> pruneDeadMembers());
+        if (antiEntropyIntervalMillis > 0L) {
+            antiEntropyTimerId = vertx.setPeriodic(antiEntropyIntervalMillis, _ -> submitAntiEntropyRepair());
+        }
 
         LOG.infof("Coordination service started for node %s, announcing %s:%d", localNode.id(),
                 advertisedHost(), replicationConfig.port());
@@ -553,6 +564,17 @@ public class CoordinationService implements AutoCloseable {
         return digest[0];
     }
 
+    void submitAntiEntropyRepair()
+    {
+        try {
+            taskExecutor.execute(antiEntropyRepairer::runOnce);
+        } catch (RejectedExecutionException e) {
+            if (running) {
+                LOG.debug("Anti-entropy task rejected", e);
+            }
+        }
+    }
+
     private void broadcastHeartbeat() {
         String payload = String.format(networkConfig.agreementPackMessage() + "|%s|%s|%d|%d|%d",
                 localNode.id(), clientAdvertisedHost,
@@ -612,6 +634,7 @@ public class CoordinationService implements AutoCloseable {
         running = false;
         cancelTimer(heartbeatTimerId);
         cancelTimer(reapTimerId);
+        cancelTimer(antiEntropyTimerId);
         taskExecutor.shutdownNow();
 
         // Connection pool'u kapat

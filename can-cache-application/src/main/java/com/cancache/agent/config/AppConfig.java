@@ -21,11 +21,11 @@ import jakarta.enterprise.inject.Disposes;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
-import java.util.Locale;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * CDI tarafından yönetilen bu yapılandırma sınıfı, önbellek motoru, metrik
@@ -217,9 +217,17 @@ public class AppConfig {
     public ClusterClient clusterClient(
             ConsistentHashRing<Node<String, String>> ring,
             CoordinationService coordinationService,
-            HintedHandoffService hintedHandoffService
+            HintedHandoffService hintedHandoffService,
+            MetricsRegistry metrics
     ) {
+        var readRepair = properties.cluster().readRepair();
         return new ClusterClient(ring, properties.cluster().replicationFactor(), StringCodec.UTF8,
-                hintedHandoffService);
+                hintedHandoffService, metrics, new ClusterClient.ReadRepairSettings(
+                readRepair.enabled(), readRepair.mode(), readRepair.async()));
+    }
+
+    void disposeClusterClient(@Disposes ClusterClient clusterClient)
+    {
+        clusterClient.close();
     }
 }

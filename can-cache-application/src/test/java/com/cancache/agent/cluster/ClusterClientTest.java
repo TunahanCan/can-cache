@@ -1,7 +1,9 @@
 package com.cancache.agent.cluster;
 
 import com.cancache.agent.codec.StringCodec;
+import com.cancache.agent.core.StoredValueCodec;
 import com.cancache.agent.metric.MetricsRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -15,6 +17,7 @@ class ClusterClientTest
 {
     private ConsistentHashRing<Node<String, String>> ring;
     private HintedHandoffService handoff;
+    private MetricsRegistry metrics;
     private ClusterClient client;
     private FakeNode leader;
     private FakeNode replica1;
@@ -23,7 +26,8 @@ class ClusterClientTest
     @BeforeEach
     void setup()
     {
-        handoff = new HintedHandoffService(new MetricsRegistry());
+        metrics = new MetricsRegistry();
+        handoff = new HintedHandoffService(metrics);
         ring = new ConsistentHashRing<>(new ControlledHash(), 1);
         leader = new FakeNode("leader");
         replica1 = new FakeNode("replica1");
@@ -32,6 +36,14 @@ class ClusterClientTest
         ring.addNode(replica1, bytes("replica1"));
         ring.addNode(replica2, bytes("replica2"));
         client = new ClusterClient(ring, 3, StringCodec.UTF8, handoff);
+    }
+
+    @AfterEach
+    void cleanup()
+    {
+        if (client != null) {
+            client.close();
+        }
     }
 
     @Nested
@@ -145,6 +157,115 @@ class ClusterClientTest
             // Then
             assertEquals("fallback-value", result, "Get should fall back to the next replica and retrieve the value if the first one throws");
         }
+
+        @Test
+        void shouldRepairMissingReplicasInFastMode()
+        {
+            replica1.preset("repair-value");
+
+            try (ClusterClient repairClient = clientWith(ReadRepairMode.FAST)) {
+                String result = repairClient.get("clientKey");
+
+                assertAll(
+                        () -> assertEquals("repair-value", result),
+                        () -> assertEquals("repair-value", leader.storedValue()),
+                        () -> assertEquals("repair-value", replica2.storedValue()),
+                        () -> assertEquals(2L, metrics.counter("read_repair_repairs_total").get())
+                );
+            }
+        }
+
+        @Test
+        void shouldNotOverwriteDivergentReplicasDuringFastReadRepair()
+        {
+            leader.preset("value-a");
+            replica1.preset("value-b");
+
+            try (ClusterClient repairClient = clientWith(ReadRepairMode.FAST)) {
+                String result = repairClient.get("clientKey");
+
+                assertAll(
+                        () -> assertEquals("value-a", result),
+                        () -> assertEquals("value-b", replica1.storedValue()),
+                        () -> assertEquals("value-a", replica2.storedValue()),
+                        () -> assertEquals(1L, metrics.counter("read_repair_repairs_total").get()),
+                        () -> assertEquals(1L, metrics.counter("read_repair_conflicts_total").get())
+                );
+            }
+        }
+
+        @Test
+        void shouldPreserveMetadataTtlWhenRepairingMissingReplica()
+        {
+            long expireAt = System.currentTimeMillis() + 5_000L;
+            String encoded = encodedValue("ttl-value", 7, 99L, expireAt);
+            replica1.preset(encoded);
+
+            try (ClusterClient repairClient = clientWith(ReadRepairMode.FAST)) {
+                String result = repairClient.get("clientKey");
+
+                assertAll(
+                        () -> assertEquals(encoded, result),
+                        () -> assertEquals(encoded, leader.storedValue()),
+                        () -> assertNotNull(leader.lastTtl()),
+                        () -> assertTrue(leader.lastTtl().toMillis() > 0),
+                        () -> assertTrue(leader.lastTtl().toMillis() <= 5_000L)
+                );
+            }
+        }
+
+        @Test
+        void shouldReturnQuorumValueAndRepairMissingReplicaInQuorumMode()
+        {
+            leader.preset("quorum-value");
+            replica1.preset("quorum-value");
+
+            try (ClusterClient repairClient = clientWith(ReadRepairMode.QUORUM)) {
+                String result = repairClient.get("clientKey");
+
+                assertAll(
+                        () -> assertEquals("quorum-value", result),
+                        () -> assertEquals("quorum-value", replica2.storedValue()),
+                        () -> assertEquals(1L, metrics.counter("read_repair_repairs_total").get())
+                );
+            }
+        }
+
+        @Test
+        void shouldUseReachableReplicaMajorityInQuorumMode()
+        {
+            leader.throwNextGet();
+            replica1.preset("reachable-value");
+            replica2.throwNextGet();
+
+            try (ClusterClient repairClient = clientWith(ReadRepairMode.QUORUM)) {
+                String result = repairClient.get("clientKey");
+
+                assertAll(
+                        () -> assertEquals("reachable-value", result),
+                        () -> assertNull(leader.storedValue()),
+                        () -> assertNull(replica2.storedValue()),
+                        () -> assertEquals(0L, metrics.counter("read_repair_repairs_total").get())
+                );
+            }
+        }
+
+        @Test
+        void shouldReturnNullWhenQuorumModeCannotFindMajority()
+        {
+            leader.preset("value-a");
+            replica1.preset("value-b");
+
+            try (ClusterClient repairClient = clientWith(ReadRepairMode.QUORUM)) {
+                String result = repairClient.get("clientKey");
+
+                assertAll(
+                        () -> assertNull(result),
+                        () -> assertNull(replica2.storedValue()),
+                        () -> assertEquals(1L, metrics.counter("read_repair_conflicts_total").get())
+                );
+            }
+        }
     }
 
     @Nested
@@ -251,6 +372,18 @@ class ClusterClientTest
         return value.getBytes(StandardCharsets.UTF_8);
     }
 
+    private ClusterClient clientWith(ReadRepairMode mode)
+    {
+        return new ClusterClient(ring, 3, StringCodec.UTF8, handoff, metrics,
+                new ClusterClient.ReadRepairSettings(true, mode, false));
+    }
+
+    private static String encodedValue(String value, int flags, long cas, long expireAt)
+    {
+        return StoredValueCodec.encode(new StoredValueCodec.StoredValue(
+                value.getBytes(StandardCharsets.UTF_8), flags, cas, expireAt));
+    }
+
     private static final class ControlledHash implements HashFn
     {
         @Override
@@ -286,6 +419,7 @@ class ClusterClientTest
         private boolean throwCas;
         private boolean throwGet;
         private String storedValue;
+        private Duration lastTtl;
         private int clearCalls;
 
         FakeNode(String id)
@@ -328,6 +462,16 @@ class ClusterClientTest
             this.storedValue = value;
         }
 
+        String storedValue()
+        {
+            return storedValue;
+        }
+
+        Duration lastTtl()
+        {
+            return lastTtl;
+        }
+
         @Override
         public boolean set(String key, String value, Duration ttl)
         {
@@ -342,6 +486,7 @@ class ClusterClientTest
                 return false;
             }
             storedValue = value;
+            lastTtl = ttl;
             return true;
         }
 

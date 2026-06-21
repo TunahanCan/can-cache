@@ -50,6 +50,12 @@
             <stringProp name="Argument.desc">Payload size in bytes</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
+          <elementProp name="connectionMode" elementType="Argument">
+            <stringProp name="Argument.name">connectionMode</stringProp>
+            <stringProp name="Argument.value">${__P(connectionMode,single)}</stringProp>
+            <stringProp name="Argument.desc">single keeps SET/GET/DELETE on one connection; separate opens a new connection per command</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
           <elementProp name="durationSeconds" elementType="Argument">
             <stringProp name="Argument.name">durationSeconds</stringProp>
             <stringProp name="Argument.value">${__P(durationSeconds,120)}</stringProp>
@@ -127,6 +133,12 @@
                 <stringProp name="Argument.name">payloadSize</stringProp>
                 <stringProp name="Argument.value">${payloadSize}</stringProp>
                 <stringProp name="Argument.desc">Payload size in bytes</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+              <elementProp name="connectionMode" elementType="Argument">
+                <stringProp name="Argument.name">connectionMode</stringProp>
+                <stringProp name="Argument.value">${connectionMode}</stringProp>
+                <stringProp name="Argument.desc">Connection mode for the round trip</stringProp>
                 <stringProp name="Argument.metadata">=</stringProp>
               </elementProp>
             </collectionProp>

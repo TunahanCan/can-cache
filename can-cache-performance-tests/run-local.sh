@@ -17,6 +17,7 @@ Profiles:
 Environment overrides:
   TARGET_HOST            Target hostname/IP (default: 127.0.0.1)
   TARGET_PORT            Target TCP port (default: 11211)
+  CONNECTION_MODE        single or separate sampler connections (default: single)
   TTL_SECONDS            TTL in seconds for generated SET commands
   CONNECT_TIMEOUT_MILLIS Socket connect timeout (ms)
   READ_TIMEOUT_MILLIS    Socket read timeout (ms)
@@ -171,6 +172,7 @@ props=(
 [[ -n ${KEY_PREFIX:-} ]] && props+=("-JkeyPrefix=${KEY_PREFIX}")
 [[ -n ${PAYLOAD_SIZE:-} ]] && props+=("-JpayloadSize=${PAYLOAD_SIZE}")
 [[ -n ${DURATION_SECONDS:-} ]] && props+=("-JdurationSeconds=${DURATION_SECONDS}")
+[[ -n ${CONNECTION_MODE:-} ]] && props+=("-JconnectionMode=${CONNECTION_MODE}")
 
 jmeter_cmd=("${jmeter_bin}" -n -t "${plan}" -l "${result_file}" -j "${jmeter_log}")
 jmeter_cmd+=("${props[@]}")

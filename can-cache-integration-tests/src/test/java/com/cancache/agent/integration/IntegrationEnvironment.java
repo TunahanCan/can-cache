@@ -11,7 +11,8 @@ import java.util.Optional;
 
 final class IntegrationEnvironment
 {
-    private static final Duration STARTUP_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration STARTUP_TIMEOUT =
+            Duration.ofSeconds(parseInt(System.getenv("CAN_CACHE_WAIT_TIMEOUT_SECONDS"), 30));
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
     private static final Duration POLL_INTERVAL = Duration.ofMillis(250);
 

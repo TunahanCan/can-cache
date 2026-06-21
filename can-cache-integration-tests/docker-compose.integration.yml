@@ -32,6 +32,7 @@ services:
       APP_CLUSTER_DISCOVERY_NODE_ID: can-cache-app-1
       APP_CLUSTER_REPLICATION_ADVERTISE_HOST: can-cache-app-1
       APP_CLUSTER_REPLICATION_PORT: "18080"
+      APP_CLUSTER_COORDINATION_ANTI_ENTROPY_INTERVAL_MILLIS: "1000"
     depends_on:
       - can-cache-agent
 
@@ -52,6 +53,7 @@ services:
       APP_CLUSTER_DISCOVERY_NODE_ID: can-cache-app-2
       APP_CLUSTER_REPLICATION_ADVERTISE_HOST: can-cache-app-2
       APP_CLUSTER_REPLICATION_PORT: "18080"
+      APP_CLUSTER_COORDINATION_ANTI_ENTROPY_INTERVAL_MILLIS: "1000"
     depends_on:
       - can-cache-agent
 
@@ -73,4 +75,10 @@ services:
       CAN_CACHE_METRICS_PATH: "/metrics"
       CAN_CACHE_METRICS_CACHE_HOST: can-cache-app-1
       CAN_CACHE_METRICS_CACHE_PORT: "11212"
+      CAN_CACHE_APP1_HOST: can-cache-app-1
+      CAN_CACHE_APP1_PORT: "11212"
+      CAN_CACHE_APP1_REPLICATION_PORT: "18080"
+      CAN_CACHE_APP2_HOST: can-cache-app-2
+      CAN_CACHE_APP2_PORT: "11212"
+      CAN_CACHE_APP2_REPLICATION_PORT: "18080"
     command: ["mvn", "-B", "test"]

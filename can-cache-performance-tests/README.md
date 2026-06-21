@@ -8,10 +8,10 @@ This document is bilingual (English + Türkçe).
 
 `can-cache-performance-tests` contains the JMeter plans and the custom Java sampler used for non-functional testing of `can-cache`.
 
-The Docker flow also runs JMeter. It starts one `can-cache-agent`, two
-`can-cache-application` containers, waits until both applications are registered
-as healthy behind the agent, and then executes the selected `.jmx` profile from
-a JMeter container.
+The Docker flow also runs JMeter. It starts one `can-cache-agent`, a configurable
+number of `can-cache-application` containers, waits until every application is
+registered as healthy behind the agent, validates cross-connection data transfer,
+and then executes the selected `.jmx` profile from a JMeter container.
 
 ### Directory layout
 
@@ -19,7 +19,7 @@ a JMeter container.
 - `nfr/`: profile-specific NFR targets.
 - `src/main/java/.../CancachedRoundTripSampler.java`: custom sampler implementation.
 - `run-local.sh`: run tests with local JMeter.
-- `docker-compose.performance.yml`: performance topology (`agent + 2 apps + JMeter`).
+- `docker-compose.performance.yml`: reference performance topology; `run-docker.sh` generates the active topology from `APP_COUNT`.
 - `run-docker.sh`: run the full Docker/JMeter performance flow.
 - `results/`: output folder for `.jtl` files.
 
@@ -35,15 +35,22 @@ cache applications still use the repository's Java 25 Docker build.
 
 ### Run with Docker + JMeter
 
-Docker is the recommended path because it brings the agent, both cache
-applications, build images, a JMeter image, and the custom Java sampler on
-JMeter's classpath:
+Docker is the recommended path because it brings the agent, cache applications,
+build images, a JMeter image, and the custom Java sampler on JMeter's classpath:
 
 ```bash
 ./can-cache-performance-tests/run-docker.sh small
 ./can-cache-performance-tests/run-docker.sh medium
 ./can-cache-performance-tests/run-docker.sh large
 ./can-cache-performance-tests/run-docker.sh xl
+```
+
+Scale one agent behind multiple cache applications:
+
+```bash
+APP_COUNT=2 ./can-cache-performance-tests/run-docker.sh small
+APP_COUNT=4 ./can-cache-performance-tests/run-docker.sh small
+APP_COUNT=8 ./can-cache-performance-tests/run-docker.sh small
 ```
 
 ### Run with local JMeter
@@ -64,12 +71,15 @@ Use extra JMeter args after `--`:
 
 ```bash
 PAYLOAD_SIZE=512 DURATION_SECONDS=60 ./can-cache-performance-tests/run-docker.sh small
+APP_COUNT=8 CONNECTION_MODE=separate DURATION_SECONDS=30 ./can-cache-performance-tests/run-docker.sh small
 ./can-cache-performance-tests/run-local.sh medium -- -JtargetHost=127.0.0.1 -JtargetPort=11211
 ```
 
 ### Notes
 
 - `run-docker.sh` targets `can-cache-agent:11211` inside the Compose network by default.
+- `APP_COUNT` accepts `2`, `4`, or `8` cache applications behind one agent.
+- Docker runs use `CONNECTION_MODE=separate` by default so SET, GET, and DELETE use separate TCP connections and exercise agent routing plus cluster data transfer.
 - The default Docker JMeter image is `anasoid/jmeter:5.6.3-plugins-21-jre`; override with `JMETER_IMAGE`.
 - JMeter uses a bounded default heap; override with `JMETER_HEAP` or `HEAP`.
 - The scripts fail when a `.jtl` contains failed samples; set `ALLOW_JMETER_ERRORS=1` to only collect results.
@@ -83,10 +93,10 @@ PAYLOAD_SIZE=512 DURATION_SECONDS=60 ./can-cache-performance-tests/run-docker.sh
 
 `can-cache-performance-tests`, `can-cache` için fonksiyonel olmayan testlerde kullanılan JMeter planlarını ve özel Java sampler'ı içerir.
 
-Docker akışı da JMeter çalıştırır. Bir `can-cache-agent`, iki
-`can-cache-application` container'ı ayağa kaldırır, iki uygulama agent arkasında
-healthy görünene kadar bekler ve seçilen `.jmx` profilini JMeter container'ında
-çalıştırır.
+Docker akışı da JMeter çalıştırır. Bir `can-cache-agent` ve yapılandırılabilir
+sayıda `can-cache-application` container'ı ayağa kaldırır, tüm uygulamalar agent
+arkasında healthy görünene kadar bekler, ayrı bağlantılarla data transferini
+doğrular ve seçilen `.jmx` profilini JMeter container'ında çalıştırır.
 
 ### Dizin yapısı
 
@@ -94,7 +104,7 @@ healthy görünene kadar bekler ve seçilen `.jmx` profilini JMeter container'ı
 - `nfr/`: profile özel NFR hedefleri.
 - `src/main/java/.../CancachedRoundTripSampler.java`: özel sampler implementasyonu.
 - `run-local.sh`: testleri yerel JMeter ile çalıştırır.
-- `docker-compose.performance.yml`: performans topolojisi (`agent + 2 app + JMeter`).
+- `docker-compose.performance.yml`: referans performans topolojisi; aktif topoloji `APP_COUNT` ile `run-docker.sh` tarafından üretilir.
 - `run-docker.sh`: tüm Docker/JMeter performans akışını çalıştırır.
 - `results/`: `.jtl` çıktı klasörü.
 
@@ -111,14 +121,22 @@ eder.
 
 ### Docker + JMeter ile çalıştırma
 
-Önerilen yol Docker'dır; agent, iki cache uygulaması, build imajları, JMeter
-imajı ve classpath'e eklenmiş özel Java sampler'ı birlikte getirir:
+Önerilen yol Docker'dır; agent, cache uygulamaları, build imajları, JMeter imajı
+ve classpath'e eklenmiş özel Java sampler'ı birlikte getirir:
 
 ```bash
 ./can-cache-performance-tests/run-docker.sh small
 ./can-cache-performance-tests/run-docker.sh medium
 ./can-cache-performance-tests/run-docker.sh large
 ./can-cache-performance-tests/run-docker.sh xl
+```
+
+Tek agent arkasında birden fazla cache uygulamasıyla ölçek testi:
+
+```bash
+APP_COUNT=2 ./can-cache-performance-tests/run-docker.sh small
+APP_COUNT=4 ./can-cache-performance-tests/run-docker.sh small
+APP_COUNT=8 ./can-cache-performance-tests/run-docker.sh small
 ```
 
 ### Yerel JMeter ile çalıştırma
@@ -139,12 +157,15 @@ kullanın:
 
 ```bash
 PAYLOAD_SIZE=512 DURATION_SECONDS=60 ./can-cache-performance-tests/run-docker.sh small
+APP_COUNT=8 CONNECTION_MODE=separate DURATION_SECONDS=30 ./can-cache-performance-tests/run-docker.sh small
 ./can-cache-performance-tests/run-local.sh medium -- -JtargetHost=127.0.0.1 -JtargetPort=11211
 ```
 
 ### Notlar
 
 - `run-docker.sh` varsayılan olarak Compose ağı içinde `can-cache-agent:11211` hedefine gider.
+- `APP_COUNT`, tek agent arkasında `2`, `4` veya `8` cache uygulaması kabul eder.
+- Docker koşuları varsayılan olarak `CONNECTION_MODE=separate` kullanır; SET, GET ve DELETE ayrı TCP bağlantılarıyla agent routing ve cluster data transferini yoklar.
 - Varsayılan Docker JMeter imajı `anasoid/jmeter:5.6.3-plugins-21-jre`; `JMETER_IMAGE` ile değiştirilebilir.
 - JMeter sınırlı heap ile başlar; `JMETER_HEAP` veya `HEAP` ile değiştirilebilir.
 - Scriptler `.jtl` içinde başarısız sample görürse hata koduyla çıkar; yalnızca sonuç toplamak için `ALLOW_JMETER_ERRORS=1` verilebilir.

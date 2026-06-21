@@ -1,5 +1,6 @@
 package com.cancache.agent.config;
 
+import com.cancache.agent.cluster.ReadRepairMode;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
@@ -66,6 +67,7 @@ public interface AppProperties
         Discovery discovery();
         Replication replication();
         Coordination coordination();
+        ReadRepair readRepair();
     }
 
     interface Discovery {
@@ -127,6 +129,18 @@ public interface AppProperties
 
         @WithDefault("30000")
         long antiEntropyIntervalMillis();
+    }
+
+    interface ReadRepair
+    {
+        @WithDefault("true")
+        boolean enabled();
+
+        @WithDefault("FAST")
+        ReadRepairMode mode();
+
+        @WithDefault("true")
+        boolean async();
     }
 
     interface Cancache

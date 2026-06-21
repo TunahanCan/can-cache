@@ -48,7 +48,9 @@ class MetricsEndpointIntegrationTest
                 () -> assertContains(body, "node_id=\""),
                 () -> assertContains(body, "role=\""),
                 () -> assertContains(body, "hinted_handoff_failures_total{"),
-                () -> assertContains(body, "cluster_epoch_increments_total{")
+                () -> assertContains(body, "cluster_epoch_increments_total{"),
+                () -> assertContains(body, "read_repair_attempts_total{"),
+                () -> assertContains(body, "anti_entropy_runs_total{")
         );
     }
 
@@ -101,7 +103,9 @@ class MetricsEndpointIntegrationTest
                 && body.contains("node_id=\"")
                 && body.contains("role=\"")
                 && body.contains("hinted_handoff_failures_total{")
-                && body.contains("cluster_epoch_increments_total{");
+                && body.contains("cluster_epoch_increments_total{")
+                && body.contains("read_repair_attempts_total{")
+                && body.contains("anti_entropy_runs_total{");
     }
 
     private static void assertContains(String body, String expected)
