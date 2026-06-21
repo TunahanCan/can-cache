@@ -29,9 +29,9 @@ a JMeter container.
 ./mvnw -f can-cache-performance-tests/pom.xml package
 ```
 
-The sampler is compiled with Java 17 bytecode so it can be loaded by common
-JMeter Docker images. The full cache applications still use the repository's
-Java 25 Docker build.
+The sampler is compiled with Java 8 bytecode so it can be loaded by the default
+`alpine/jmeter:5.6.3` Docker image. The full cache applications still use the
+repository's Java 25 Docker build.
 
 ### Run with Docker + JMeter
 
@@ -73,6 +73,7 @@ PAYLOAD_SIZE=512 DURATION_SECONDS=60 ./can-cache-performance-tests/run-docker.sh
 - The default Docker JMeter image is `alpine/jmeter:5.6.3`; override with `JMETER_IMAGE`.
 - Use `JMETER_IMAGE=anasoid/jmeter:5.6.3-plugins-21-jre` if a plugin-manager image is needed.
 - JMeter uses a bounded default heap; override with `JMETER_HEAP` or `HEAP`.
+- The scripts fail when a `.jtl` contains failed samples; set `ALLOW_JMETER_ERRORS=1` to only collect results.
 - `run-local.sh` targets `127.0.0.1:11211` by default.
 - `KEEP_STACK=1` leaves the Docker performance stack running after the JMeter run.
 - Compare `.jtl` results with the corresponding `nfr/*.md` acceptance criteria.
@@ -104,9 +105,10 @@ healthy görünene kadar bekler ve seçilen `.jmx` profilini JMeter container'ı
 ./mvnw -f can-cache-performance-tests/pom.xml package
 ```
 
-Sampler Java 17 bytecode ile derlenir; bu sayede yaygın JMeter Docker imajları
-tarafından yüklenebilir. Cache uygulamalarının tam Docker build'i ise repo'nun
-Java 25 akışını kullanmaya devam eder.
+Sampler Java 8 bytecode ile derlenir; bu sayede varsayılan
+`alpine/jmeter:5.6.3` Docker imajı tarafından yüklenebilir. Cache
+uygulamalarının tam Docker build'i ise repo'nun Java 25 akışını kullanmaya
+devam eder.
 
 ### Docker + JMeter ile çalıştırma
 
@@ -147,6 +149,7 @@ PAYLOAD_SIZE=512 DURATION_SECONDS=60 ./can-cache-performance-tests/run-docker.sh
 - Varsayılan Docker JMeter imajı `alpine/jmeter:5.6.3`; `JMETER_IMAGE` ile değiştirilebilir.
 - Plugin-manager imajı gerekiyorsa `JMETER_IMAGE=anasoid/jmeter:5.6.3-plugins-21-jre` kullanılabilir.
 - JMeter sınırlı heap ile başlar; `JMETER_HEAP` veya `HEAP` ile değiştirilebilir.
+- Scriptler `.jtl` içinde başarısız sample görürse hata koduyla çıkar; yalnızca sonuç toplamak için `ALLOW_JMETER_ERRORS=1` verilebilir.
 - `run-local.sh` varsayılan olarak `127.0.0.1:11211` hedefine gider.
 - `KEEP_STACK=1`, JMeter koşusundan sonra Docker performans stack'ini açık bırakır.
 - `.jtl` sonuçlarını ilgili `nfr/*.md` kabul kriterleriyle karşılaştırın.

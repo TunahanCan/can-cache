@@ -28,6 +28,7 @@ Environment overrides:
   JMETER_IMAGE           JMeter image (default: alpine/jmeter:5.6.3)
   JMETER_HEAP            JMeter JVM heap (default: -Xms64m -Xmx256m -XX:MaxMetaspaceSize=128m)
   MVN_IMAGE              Maven/JDK image for sampler build
+  ALLOW_JMETER_ERRORS    Set to 1 to keep exit code 0 when samples fail
   KEEP_STACK             Set to 1 to leave containers running after the test
 
 Arguments after `--` are passed directly to JMeter.
@@ -81,6 +82,35 @@ timestamp="$(date -u +%Y%m%d-%H%M%S)"
 result_file="${RESULT_FILE:-can-cache-performance-tests/results/can-cache-${profile}-${timestamp}.jtl}"
 sampler_jar="can-cache-performance-tests/target/can-cache-performance-test-0.0.1-SNAPSHOT.jar"
 mvn_image="${MVN_IMAGE:-maven:3.9.11-eclipse-temurin-21}"
+jmeter_log="${result_file%.jtl}.log"
+
+validate_jmeter_results() {
+  if [[ ${ALLOW_JMETER_ERRORS:-0} == "1" ]]; then
+    echo "[jmeter] skipping result validation because ALLOW_JMETER_ERRORS=1" >&2
+    return 0
+  fi
+
+  python3 - "${repo_root}/${result_file}" <<'PY'
+import csv
+import sys
+
+path = sys.argv[1]
+total = 0
+failed = 0
+
+with open(path, newline="") as handle:
+    for row in csv.DictReader(handle):
+        total += 1
+        if row.get("success") != "true":
+            failed += 1
+
+print(f"[jmeter] samples={total} failed={failed}", file=sys.stderr)
+if total == 0:
+    raise SystemExit("JMeter produced no samples")
+if failed:
+    raise SystemExit(f"JMeter reported {failed} failed samples")
+PY
+}
 
 echo "[build] packaging JMeter sampler with ${mvn_image}" >&2
 docker run --rm \
@@ -111,6 +141,7 @@ props=(
   "-JtargetHost=${TARGET_HOST:-can-cache-agent}"
   "-JtargetPort=${TARGET_PORT:-11211}"
   "-JresultFile=${result_file}"
+  "-Jsearch_paths=/workspace/${sampler_jar}"
 )
 
 [[ -n ${TTL_SECONDS:-} ]] && props+=("-JttlSeconds=${TTL_SECONDS}")
@@ -120,11 +151,13 @@ props=(
 [[ -n ${PAYLOAD_SIZE:-} ]] && props+=("-JpayloadSize=${PAYLOAD_SIZE}")
 [[ -n ${DURATION_SECONDS:-} ]] && props+=("-JdurationSeconds=${DURATION_SECONDS}")
 
-jmeter_cmd=(-n -t "${plan}" -l "${result_file}")
+jmeter_cmd=(-n -t "${plan}" -l "${result_file}" -j "${jmeter_log}")
 jmeter_cmd+=("${props[@]}")
 jmeter_cmd+=("$@")
 
 echo "[jmeter] jmeter ${jmeter_cmd[*]}" >&2
 docker compose -f "${compose_file}" run --rm jmeter "${jmeter_cmd[@]}"
+validate_jmeter_results
 
 echo "JMeter result: ${result_file}" >&2
+echo "JMeter log: ${jmeter_log}" >&2

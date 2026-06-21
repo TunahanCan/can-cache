@@ -25,6 +25,7 @@ Environment overrides:
   DURATION_SECONDS       Thread group duration override in seconds
   RESULT_FILE            Path for the JMeter results (.jtl) file
   JMETER_HEAP            JMeter JVM heap if HEAP is unset
+  ALLOW_JMETER_ERRORS    Set to 1 to keep exit code 0 when samples fail
 
 Any arguments after `--` are passed directly to the JMeter command.
 USAGE
@@ -125,8 +126,38 @@ mkdir -p "${results_dir}"
 
 default_result_file="${results_dir}/$(basename "${plan}" .jmx)-$(date +%Y%m%d-%H%M%S).jtl"
 result_file="${RESULT_FILE:-${default_result_file}}"
+jmeter_log="${result_file%.jtl}.log"
+
+validate_jmeter_results() {
+  if [[ ${ALLOW_JMETER_ERRORS:-0} == "1" ]]; then
+    echo "Skipping JMeter result validation because ALLOW_JMETER_ERRORS=1" >&2
+    return 0
+  fi
+
+  python3 - "${result_file}" <<'PY'
+import csv
+import sys
+
+path = sys.argv[1]
+total = 0
+failed = 0
+
+with open(path, newline="") as handle:
+    for row in csv.DictReader(handle):
+        total += 1
+        if row.get("success") != "true":
+            failed += 1
+
+print(f"JMeter samples={total} failed={failed}", file=sys.stderr)
+if total == 0:
+    raise SystemExit("JMeter produced no samples")
+if failed:
+    raise SystemExit(f"JMeter reported {failed} failed samples")
+PY
+}
 
 echo "Results will be written to ${result_file}" >&2
+echo "JMeter log will be written to ${jmeter_log}" >&2
 
 props=(
   "-JtargetHost=${TARGET_HOST:-127.0.0.1}"
@@ -141,12 +172,13 @@ props=(
 [[ -n ${PAYLOAD_SIZE:-} ]] && props+=("-JpayloadSize=${PAYLOAD_SIZE}")
 [[ -n ${DURATION_SECONDS:-} ]] && props+=("-JdurationSeconds=${DURATION_SECONDS}")
 
-jmeter_cmd=("${jmeter_bin}" -n -t "${plan}" -l "${result_file}")
+jmeter_cmd=("${jmeter_bin}" -n -t "${plan}" -l "${result_file}" -j "${jmeter_log}")
 jmeter_cmd+=("${props[@]}")
 jmeter_cmd+=("$@")
 
 echo "Running JMeter locally: ${jmeter_cmd[*]}"
 echo "JMeter HEAP=${HEAP}" >&2
 "${jmeter_cmd[@]}"
+validate_jmeter_results
 
 echo "JMeter execution finished. Results available at ${result_file}" >&2

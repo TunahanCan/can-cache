@@ -96,7 +96,6 @@ services:
     working_dir: /workspace
     environment:
       HEAP: "${JMETER_HEAP:--Xms64m -Xmx256m -XX:MaxMetaspaceSize=128m}"
-      JMETER_ADD_CLASSPATH: /workspace/can-cache-performance-tests/target/can-cache-performance-test-0.0.1-SNAPSHOT.jar
     volumes:
       - ..:/workspace
     depends_on:

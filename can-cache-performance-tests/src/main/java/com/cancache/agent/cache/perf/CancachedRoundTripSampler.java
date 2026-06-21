@@ -10,6 +10,8 @@ import java.io.StringWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
@@ -82,10 +84,7 @@ public class CancachedRoundTripSampler extends AbstractJavaSamplerClient
                  BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
 
                 String random = UUID.randomUUID().toString().replace("-", "");
-                int repeat = random.isEmpty() ? 1 : (int) Math.ceil(payloadSize / (double) random.length());
-                repeat = Math.max(repeat, 1);
-                String payloadSource = random.repeat(repeat);
-                String payload = payloadSource.substring(0, Math.min(payloadSource.length(), payloadSize));
+                String payload = buildPayload(random, payloadSize);
                 byte[] payloadBytes = payload.getBytes(StandardCharsets.UTF_8);
                 String keySuffix = random.isEmpty() ? "" : random.substring(0, Math.min(16, random.length()));
                 String key = keyPrefix + keySuffix;
@@ -163,8 +162,8 @@ public class CancachedRoundTripSampler extends AbstractJavaSamplerClient
     }
 
     private static List<Integer> parsePayloadSizes(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return List.of();
+        if (raw == null || raw.trim().isEmpty()) {
+            return Collections.emptyList();
         }
 
         LinkedHashSet<Integer> sizes = Pattern.compile(",")
@@ -175,7 +174,20 @@ public class CancachedRoundTripSampler extends AbstractJavaSamplerClient
                 .filter(size -> size > 0)
                 .collect(LinkedHashSet::new, LinkedHashSet::add, LinkedHashSet::addAll);
 
-        return List.copyOf(sizes);
+        return new ArrayList<>(sizes);
+    }
+
+    private static String buildPayload(String source, int payloadSize) {
+        if (payloadSize <= 0) {
+            return "";
+        }
+
+        String safeSource = source == null || source.isEmpty() ? "x" : source;
+        StringBuilder builder = new StringBuilder(payloadSize);
+        while (builder.length() < payloadSize) {
+            builder.append(safeSource);
+        }
+        return builder.substring(0, payloadSize);
     }
 
     private static int safeParseInt(String value) {
