@@ -51,8 +51,15 @@ public class TcpProxyServer {
 
     @PostConstruct
     void start() {
-        client = vertx.createNetClient(new NetClientOptions().setConnectTimeout(3000));
-        server = vertx.createNetServer(new NetServerOptions().setHost(config.listen().host()).setPort(config.listen().port()));
+        client = vertx.createNetClient(new NetClientOptions()
+                .setConnectTimeout(3000)
+                .setTcpNoDelay(true)
+                .setReuseAddress(true));
+        server = vertx.createNetServer(new NetServerOptions()
+                .setHost(config.listen().host())
+                .setPort(config.listen().port())
+                .setTcpNoDelay(true)
+                .setReuseAddress(true));
         server.connectHandler(this::handleClient)
                 .listen()
                 .onSuccess(ok -> LOG.infov("proxy listening on {0}:{1}", config.listen().host(), config.listen().port()))
@@ -139,12 +146,21 @@ public class TcpProxyServer {
 
     private void forward(Buffer buffer, NetSocket target, NetSocket source, boolean downstreamToUpstream, ConnectionContext ctx,
                          NodeStats node) {
+        target.write(buffer, ar -> {
+            if (ar.failed()) {
+                node.incError();
+                metrics.addEvent("[ERR ] proxy write failed=" + ar.cause().getMessage());
+                source.close();
+                target.close();
+            }
+        });
         if (target.writeQueueFull()) {
             source.pause();
-            target.drainHandler(v -> source.resume());
+            target.drainHandler(v -> {
+                target.drainHandler(null);
+                source.resume();
+            });
         }
-
-        target.write(buffer);
         long len = buffer.length();
 
         if (downstreamToUpstream) {

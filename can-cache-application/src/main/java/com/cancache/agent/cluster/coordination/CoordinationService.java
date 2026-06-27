@@ -61,6 +61,8 @@ public class CoordinationService implements AutoCloseable {
     private final int replicationFactor;
     private final long hintReplayIntervalMillis;
     private final long antiEntropyIntervalMillis;
+    private final int remoteNodePoolSize;
+    private final int remoteNodeRequestQueueCapacity;
     private final Vertx vertx;
     private final ExecutorService taskExecutor;
     private final ConnectionPoolManager connectionPoolManager;
@@ -103,6 +105,8 @@ public class CoordinationService implements AutoCloseable {
         var coordination = cluster.coordination();
         this.hintReplayIntervalMillis = Math.max(0L, coordination.hintReplayIntervalMillis());
         this.antiEntropyIntervalMillis = Math.max(0L, coordination.antiEntropyIntervalMillis());
+        this.remoteNodePoolSize = coordination.remoteNodePoolSize();
+        this.remoteNodeRequestQueueCapacity = coordination.remoteNodeRequestQueueCapacity();
         this.vertx = vertx;
         ThreadFactory threadFactory = Thread.ofVirtual().name("coordination-task-", 0).factory();
         this.taskExecutor = new ThreadPoolExecutor(
@@ -353,7 +357,7 @@ public class CoordinationService implements AutoCloseable {
                 clusterState.bumpEpoch();
                 clusterState.observeEpoch(join.epoch());
 
-                RemoteNode remoteNode = new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis(), vertx);
+                RemoteNode remoteNode = newRemoteNode(nodeId, host, port);
                 RemoteMember newMember = new RemoteMember(remoteNode, idBytes, host, port, updateTime, join.epoch());
                 members.put(nodeId, newMember);
                 ring.addNode(remoteNode, idBytes);
@@ -369,7 +373,7 @@ public class CoordinationService implements AutoCloseable {
                 clusterState.bumpEpoch();
                 clusterState.observeEpoch(join.epoch());
 
-                RemoteNode remoteNode = new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis(), vertx);
+                RemoteNode remoteNode = newRemoteNode(nodeId, host, port);
                 previousNode = current.node();
                 current.replace(remoteNode, idBytes, host, port, updateTime, join.epoch());
                 ring.addNode(remoteNode, idBytes);
@@ -710,6 +714,11 @@ public class CoordinationService implements AutoCloseable {
         } catch (Exception e) {
             LOG.debugf(e, "Failed to close remote node %s", node.id());
         }
+    }
+
+    private RemoteNode newRemoteNode(String nodeId, String host, int port) {
+        return new RemoteNode(nodeId, host, port, replicationConfig.connectTimeoutMillis(), vertx,
+                remoteNodePoolSize, remoteNodeRequestQueueCapacity);
     }
 
     private void cancelTimer(long timerId) {

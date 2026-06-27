@@ -20,9 +20,13 @@ Environment overrides:
   TARGET_HOST            Target inside Docker network (default: can-cache-agent)
   TARGET_PORT            Target TCP port (default: 11211)
   APP_COUNT              Number of cache apps behind one agent: 2, 4, or 8 (default: 2)
-  CONNECTION_MODE        single or separate sampler connections (default: separate)
+  CONNECTION_MODE        single or separate sampler connections (default: single)
   REPLICATION_FACTOR     Cluster replication factor for apps (default: 3)
   ANTI_ENTROPY_INTERVAL_MILLIS App anti-entropy interval (default: 30000)
+  READ_REPAIR_ENABLED    App read-repair toggle (default: true)
+  READ_REPAIR_MODE       App read-repair mode: FAST or QUORUM (default: FAST)
+  REMOTE_NODE_POOL_SIZE  App remote-node connection pool size, 0 means auto (default: 0)
+  REMOTE_NODE_REQUEST_QUEUE_CAPACITY App remote-node request queue, 0 means auto (default: 0)
   TTL_SECONDS            TTL in seconds for generated SET commands
   CONNECT_TIMEOUT_MILLIS Socket connect timeout (ms)
   READ_TIMEOUT_MILLIS    Socket read timeout (ms)
@@ -97,7 +101,7 @@ result_file="${RESULT_FILE:-can-cache-performance-tests/results/can-cache-${prof
 sampler_jar="can-cache-performance-tests/target/can-cache-performance-test-0.0.1-SNAPSHOT.jar"
 mvn_image="${MVN_IMAGE:-maven:3.9.11-eclipse-temurin-21}"
 jmeter_log="${result_file%.jtl}.log"
-connection_mode="${CONNECTION_MODE:-separate}"
+connection_mode="${CONNECTION_MODE:-single}"
 target_host="${TARGET_HOST:-can-cache-agent}"
 target_port="${TARGET_PORT:-11211}"
 wait_timeout_seconds="${WAIT_TIMEOUT_SECONDS:-120}"
@@ -110,6 +114,10 @@ generate_compose_file() {
   local jmeter_heap="${JMETER_HEAP:--Xms64m -Xmx256m -XX:MaxMetaspaceSize=128m}"
   local replication_factor="${REPLICATION_FACTOR:-3}"
   local anti_entropy_interval="${ANTI_ENTROPY_INTERVAL_MILLIS:-30000}"
+  local read_repair_enabled="${READ_REPAIR_ENABLED:-true}"
+  local read_repair_mode="${READ_REPAIR_MODE:-FAST}"
+  local remote_node_pool_size="${REMOTE_NODE_POOL_SIZE:-0}"
+  local remote_node_request_queue_capacity="${REMOTE_NODE_REQUEST_QUEUE_CAPACITY:-0}"
 
   cat > "${file}" <<YAML
 name: can-cache-performance
@@ -151,6 +159,10 @@ YAML
       APP_CLUSTER_REPLICATION_ADVERTISE_HOST: can-cache-app-${index}
       APP_CLUSTER_REPLICATION_PORT: "18080"
       APP_CLUSTER_COORDINATION_ANTI_ENTROPY_INTERVAL_MILLIS: "${anti_entropy_interval}"
+      APP_CLUSTER_COORDINATION_REMOTE_NODE_POOL_SIZE: "${remote_node_pool_size}"
+      APP_CLUSTER_COORDINATION_REMOTE_NODE_REQUEST_QUEUE_CAPACITY: "${remote_node_request_queue_capacity}"
+      APP_CLUSTER_READ_REPAIR_ENABLED: "${read_repair_enabled}"
+      APP_CLUSTER_READ_REPAIR_MODE: "${read_repair_mode}"
     depends_on:
       - can-cache-agent
 

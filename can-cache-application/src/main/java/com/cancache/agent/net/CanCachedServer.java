@@ -44,6 +44,7 @@ public class CanCachedServer implements AutoCloseable
 {
     private static final Logger LOG = Logger.getLogger(CanCachedServer.class);
     private static final byte[] CRLF = new byte[]{'\r', '\n'};
+    private static final int BUFFER_COMPACT_THRESHOLD = 64 * 1024;
     private static final long THIRTY_DAYS_SECONDS = 60L * 60L * 24L * 30L;
     private final Vertx vertx;
     private final ClusterClient clusterClient;
@@ -788,6 +789,7 @@ public class CanCachedServer implements AutoCloseable
     {
         private final NetSocket socket;
         private Buffer buffer = Buffer.buffer();
+        private int readOffset;
         private PendingStorageCommand pendingStorage;
         private boolean closed;
         private boolean processing;
@@ -809,6 +811,7 @@ public class CanCachedServer implements AutoCloseable
             closed = true;
             pendingStorage = null;
             buffer = Buffer.buffer();
+            readOffset = 0;
         }
 
         private void processBuffer()
@@ -817,21 +820,24 @@ public class CanCachedServer implements AutoCloseable
             {
                 if (pendingStorage != null)
                 {
-                    if (buffer.length() < pendingStorage.totalLength()) return;
-                    Buffer payload = buffer.getBuffer(0, pendingStorage.totalLength());
-                    buffer = buffer.getBuffer(pendingStorage.totalLength(), buffer.length());
+                    if (readableBytes() < pendingStorage.totalLength()) return;
+                    int payloadEnd = readOffset + pendingStorage.totalLength();
+                    Buffer payload = buffer.getBuffer(readOffset, payloadEnd);
+                    readOffset = payloadEnd;
+                    compactBufferIfNeeded();
                     PendingStorageCommand command = pendingStorage;
                     pendingStorage = null;
                     executeCommand(() -> handleStoragePayload(command, payload));
                     return;
                 }
 
-                int lineEnd = indexOfCrlf(buffer);
+                int lineEnd = indexOfCrlf();
                 if (lineEnd < 0) {
                     return;
                 }
-                String line = buffer.getString(0, lineEnd);
-                buffer = buffer.getBuffer(lineEnd + CRLF.length, buffer.length());
+                String line = buffer.getString(readOffset, lineEnd);
+                readOffset = lineEnd + CRLF.length;
+                compactBufferIfNeeded();
                 if (line.isEmpty()) {
                     continue;
                 }
@@ -843,7 +849,7 @@ public class CanCachedServer implements AutoCloseable
                 }
                 if (action instanceof StorageCommand storage) {
                     pendingStorage = storage.pending();
-                    if (buffer.length() >= pendingStorage.totalLength()) {
+                    if (readableBytes() >= pendingStorage.totalLength()) {
                         continue;
                     }
                 }
@@ -879,10 +885,32 @@ public class CanCachedServer implements AutoCloseable
             });
         }
 
-        private int indexOfCrlf(Buffer buffer)
+        private int readableBytes()
+        {
+            return buffer.length() - readOffset;
+        }
+
+        private void compactBufferIfNeeded()
+        {
+            if (readOffset <= 0) {
+                return;
+            }
+            int length = buffer.length();
+            if (readOffset >= length) {
+                buffer = Buffer.buffer();
+                readOffset = 0;
+                return;
+            }
+            if (readOffset >= BUFFER_COMPACT_THRESHOLD || readOffset > length / 2) {
+                buffer = buffer.getBuffer(readOffset, length);
+                readOffset = 0;
+            }
+        }
+
+        private int indexOfCrlf()
         {
             int length = buffer.length();
-            for (int i = 0; i < length - 1; i++) {
+            for (int i = readOffset; i < length - 1; i++) {
                 if (buffer.getByte(i) == '\r' && buffer.getByte(i + 1) == '\n') {
                     return i;
                 }

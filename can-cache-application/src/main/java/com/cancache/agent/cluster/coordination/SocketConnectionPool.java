@@ -11,6 +11,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -33,6 +34,7 @@ public class SocketConnectionPool implements AutoCloseable {
     private final long acquireTimeoutMillis;
 
     private final BlockingDeque<PooledSocket> pool;
+    private final Semaphore connectionPermits;
     private final AtomicInteger totalConnections = new AtomicInteger(0);
     private final AtomicInteger activeConnections = new AtomicInteger(0);
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -46,14 +48,20 @@ public class SocketConnectionPool implements AutoCloseable {
      * @param connectTimeoutMillis Bağlantı timeout süresi (ms)
      */
     public SocketConnectionPool(String host, int port, int maxPoolSize, int connectTimeoutMillis) {
+        this(host, port, maxPoolSize, connectTimeoutMillis, 60_000L, Math.max(1000, connectTimeoutMillis));
+    }
+
+    SocketConnectionPool(String host, int port, int maxPoolSize, int connectTimeoutMillis,
+                         long maxIdleTimeMillis, long acquireTimeoutMillis) {
         this.host = host;
         this.port = port;
         this.maxPoolSize = Math.max(1, maxPoolSize);
         this.connectTimeoutMillis = Math.max(100, connectTimeoutMillis);
         this.socketTimeoutMillis = Math.max(5000, connectTimeoutMillis * 2);
-        this.maxIdleTimeMillis = 60_000L; // 1 dakika idle timeout
-        this.acquireTimeoutMillis = Math.max(1000, connectTimeoutMillis);
+        this.maxIdleTimeMillis = Math.max(1L, maxIdleTimeMillis);
+        this.acquireTimeoutMillis = Math.max(1L, acquireTimeoutMillis);
         this.pool = new LinkedBlockingDeque<>(this.maxPoolSize);
+        this.connectionPermits = new Semaphore(this.maxPoolSize, true);
     }
 
     /**
@@ -67,44 +75,34 @@ public class SocketConnectionPool implements AutoCloseable {
             throw new IOException("Connection pool is closed");
         }
 
-        // Önce havuzdan almayı dene
-        PooledSocket pooled = pool.pollFirst();
-        while (pooled != null) {
-            if (isValid(pooled)) {
-                activeConnections.incrementAndGet();
-                pooled.markBorrowed();
-                return pooled;
-            }
-            // Geçersiz bağlantıyı kapat
-            closeQuietly(pooled);
-            totalConnections.decrementAndGet();
-            pooled = pool.pollFirst();
+        if (!acquirePermit()) {
+            throw new IOException("Timeout acquiring pooled connection");
         }
 
-        // Havuzda uygun bağlantı yok, yeni oluştur
-        if (totalConnections.get() < maxPoolSize) {
-            return createNewConnection();
-        }
-
-        // Maksimum kapasitede, havuzdan bağlantı bekle
+        activeConnections.incrementAndGet();
+        boolean success = false;
         try {
-            pooled = pool.pollFirst(acquireTimeoutMillis, TimeUnit.MILLISECONDS);
-            if (pooled != null && isValid(pooled)) {
-                activeConnections.incrementAndGet();
-                pooled.markBorrowed();
-                return pooled;
+            if (closed.get()) {
+                throw new IOException("Connection pool is closed");
             }
-            if (pooled != null) {
+            PooledSocket pooled = acquireIdleConnection();
+            if (pooled == null) {
+                pooled = createNewConnection();
+            }
+            if (closed.get()) {
                 closeQuietly(pooled);
-                totalConnections.decrementAndGet();
+                decrementTotalConnections();
+                throw new IOException("Connection pool is closed");
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted while waiting for connection", e);
+            pooled.markBorrowed();
+            success = true;
+            return pooled;
+        } finally {
+            if (!success) {
+                decrementActiveConnections();
+                connectionPermits.release();
+            }
         }
-
-        // Son çare: yeni bağlantı oluşturmayı zorla
-        return createNewConnection();
     }
 
     /**
@@ -117,21 +115,25 @@ public class SocketConnectionPool implements AutoCloseable {
             return;
         }
 
-        activeConnections.decrementAndGet();
+        decrementActiveConnections();
 
-        if (closed.get() || !isValid(pooledSocket)) {
-            closeQuietly(pooledSocket);
-            totalConnections.decrementAndGet();
-            return;
-        }
+        try {
+            if (closed.get() || !isValid(pooledSocket)) {
+                closeQuietly(pooledSocket);
+                decrementTotalConnections();
+                return;
+            }
 
-        pooledSocket.markReturned();
+            pooledSocket.markReturned();
 
-        // Havuza geri ekle
-        if (!pool.offerFirst(pooledSocket)) {
-            // Havuz dolu, bağlantıyı kapat
-            closeQuietly(pooledSocket);
-            totalConnections.decrementAndGet();
+            // Havuza geri ekle
+            if (!pool.offerFirst(pooledSocket)) {
+                // Havuz dolu, bağlantıyı kapat
+                closeQuietly(pooledSocket);
+                decrementTotalConnections();
+            }
+        } finally {
+            connectionPermits.release();
         }
     }
 
@@ -144,34 +146,75 @@ public class SocketConnectionPool implements AutoCloseable {
         if (pooledSocket == null) {
             return;
         }
-        activeConnections.decrementAndGet();
-        closeQuietly(pooledSocket);
-        totalConnections.decrementAndGet();
+        decrementActiveConnections();
+        try {
+            closeQuietly(pooledSocket);
+            decrementTotalConnections();
+        } finally {
+            connectionPermits.release();
+        }
     }
 
     private PooledSocket createNewConnection() throws IOException {
-        totalConnections.incrementAndGet();
-        activeConnections.incrementAndGet();
-
+        Socket socket = new Socket();
         try {
-            Socket socket = new Socket();
             socket.setTcpNoDelay(true);
             socket.setKeepAlive(true);
             socket.setSoTimeout(socketTimeoutMillis);
             socket.connect(new InetSocketAddress(host, port), connectTimeoutMillis);
 
             PooledSocket pooled = new PooledSocket(socket);
-            pooled.markBorrowed();
+            socket = null;
+            totalConnections.incrementAndGet();
 
             LOG.debugf("Created new connection to %s:%d (total: %d, active: %d)",
                     host, port, totalConnections.get(), activeConnections.get());
 
             return pooled;
         } catch (IOException e) {
-            totalConnections.decrementAndGet();
-            activeConnections.decrementAndGet();
             throw e;
+        } finally {
+            if (socket != null) {
+                closeRawSocket(socket);
+            }
         }
+    }
+
+    private boolean acquirePermit() throws IOException {
+        long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(acquireTimeoutMillis);
+        while (true) {
+            if (closed.get()) {
+                throw new IOException("Connection pool is closed");
+            }
+
+            long remainingNanos = deadlineNanos - System.nanoTime();
+            if (remainingNanos <= 0L) {
+                return false;
+            }
+
+            long waitNanos = Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(50));
+            try {
+                if (connectionPermits.tryAcquire(waitNanos, TimeUnit.NANOSECONDS)) {
+                    return true;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while waiting for connection", e);
+            }
+        }
+    }
+
+    private PooledSocket acquireIdleConnection() {
+        PooledSocket pooled = pool.pollFirst();
+        while (pooled != null) {
+            if (isValid(pooled)) {
+                return pooled;
+            }
+            closeQuietly(pooled);
+            decrementTotalConnections();
+            pooled = pool.pollFirst();
+        }
+        return null;
     }
 
     private boolean isValid(PooledSocket pooled) {
@@ -202,6 +245,22 @@ public class SocketConnectionPool implements AutoCloseable {
                 LOG.debugf(e, "Error closing pooled connection to %s:%d", host, port);
             }
         }
+    }
+
+    private void closeRawSocket(Socket socket) {
+        try {
+            socket.close();
+        } catch (IOException e) {
+            LOG.debugf(e, "Error closing socket to %s:%d", host, port);
+        }
+    }
+
+    private void decrementActiveConnections() {
+        activeConnections.updateAndGet(current -> current > 0 ? current - 1 : 0);
+    }
+
+    private void decrementTotalConnections() {
+        totalConnections.updateAndGet(current -> current > 0 ? current - 1 : 0);
     }
 
     /**
@@ -235,10 +294,8 @@ public class SocketConnectionPool implements AutoCloseable {
         PooledSocket pooled;
         while ((pooled = pool.pollFirst()) != null) {
             closeQuietly(pooled);
+            decrementTotalConnections();
         }
-
-        totalConnections.set(0);
-        activeConnections.set(0);
     }
 
     /**

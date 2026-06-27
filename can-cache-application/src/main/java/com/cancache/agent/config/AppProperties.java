@@ -142,6 +142,12 @@ public interface AppProperties
 
         @WithDefault("100")
         int antiEntropyRepairRatePerSecond();
+
+        @WithDefault("0")
+        int remoteNodePoolSize();
+
+        @WithDefault("0")
+        int remoteNodeRequestQueueCapacity();
     }
 
     interface ReadRepair

@@ -72,6 +72,8 @@ Use extra JMeter args after `--`:
 ```bash
 PAYLOAD_SIZE=512 DURATION_SECONDS=60 ./can-cache-performance-tests/run-docker.sh small
 APP_COUNT=8 CONNECTION_MODE=separate DURATION_SECONDS=30 ./can-cache-performance-tests/run-docker.sh small
+READ_REPAIR_ENABLED=false ANTI_ENTROPY_INTERVAL_MILLIS=0 ./can-cache-performance-tests/run-docker.sh medium
+REMOTE_NODE_POOL_SIZE=16 REMOTE_NODE_REQUEST_QUEUE_CAPACITY=512 ./can-cache-performance-tests/run-docker.sh medium
 ./can-cache-performance-tests/run-local.sh medium -- -JtargetHost=127.0.0.1 -JtargetPort=11211
 ```
 
@@ -79,7 +81,8 @@ APP_COUNT=8 CONNECTION_MODE=separate DURATION_SECONDS=30 ./can-cache-performance
 
 - `run-docker.sh` targets `can-cache-agent:11211` inside the Compose network by default.
 - `APP_COUNT` accepts `2`, `4`, or `8` cache applications behind one agent.
-- Docker runs use `CONNECTION_MODE=separate` by default so SET, GET, and DELETE use separate TCP connections and exercise agent routing plus cluster data transfer.
+- Docker runs use `CONNECTION_MODE=single` by default so SET, GET, and DELETE reuse one sampler connection per round trip.
+- Use `CONNECTION_MODE=separate` when you intentionally want to stress TCP churn, agent routing, and cross-connection data transfer.
 - The default Docker JMeter image is `anasoid/jmeter:5.6.3-plugins-21-jre`; override with `JMETER_IMAGE`.
 - JMeter uses a bounded default heap; override with `JMETER_HEAP` or `HEAP`.
 - The scripts fail when a `.jtl` contains failed samples; set `ALLOW_JMETER_ERRORS=1` to only collect results.
@@ -158,6 +161,8 @@ kullanın:
 ```bash
 PAYLOAD_SIZE=512 DURATION_SECONDS=60 ./can-cache-performance-tests/run-docker.sh small
 APP_COUNT=8 CONNECTION_MODE=separate DURATION_SECONDS=30 ./can-cache-performance-tests/run-docker.sh small
+READ_REPAIR_ENABLED=false ANTI_ENTROPY_INTERVAL_MILLIS=0 ./can-cache-performance-tests/run-docker.sh medium
+REMOTE_NODE_POOL_SIZE=16 REMOTE_NODE_REQUEST_QUEUE_CAPACITY=512 ./can-cache-performance-tests/run-docker.sh medium
 ./can-cache-performance-tests/run-local.sh medium -- -JtargetHost=127.0.0.1 -JtargetPort=11211
 ```
 
@@ -165,7 +170,8 @@ APP_COUNT=8 CONNECTION_MODE=separate DURATION_SECONDS=30 ./can-cache-performance
 
 - `run-docker.sh` varsayılan olarak Compose ağı içinde `can-cache-agent:11211` hedefine gider.
 - `APP_COUNT`, tek agent arkasında `2`, `4` veya `8` cache uygulaması kabul eder.
-- Docker koşuları varsayılan olarak `CONNECTION_MODE=separate` kullanır; SET, GET ve DELETE ayrı TCP bağlantılarıyla agent routing ve cluster data transferini yoklar.
+- Docker koşuları varsayılan olarak `CONNECTION_MODE=single` kullanır; SET, GET ve DELETE aynı sampler bağlantısını yeniden kullanır.
+- TCP churn, agent routing ve ayrı bağlantılarla data transferini özellikle zorlamak için `CONNECTION_MODE=separate` kullanın.
 - Varsayılan Docker JMeter imajı `anasoid/jmeter:5.6.3-plugins-21-jre`; `JMETER_IMAGE` ile değiştirilebilir.
 - JMeter sınırlı heap ile başlar; `JMETER_HEAP` veya `HEAP` ile değiştirilebilir.
 - Scriptler `.jtl` içinde başarısız sample görürse hata koduyla çıkar; yalnızca sonuç toplamak için `ALLOW_JMETER_ERRORS=1` verilebilir.

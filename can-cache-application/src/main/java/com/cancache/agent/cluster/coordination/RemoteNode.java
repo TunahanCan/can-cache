@@ -67,14 +67,20 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
 
     public RemoteNode(String id, String host, int port, int connectTimeoutMillis, Vertx vertx)
     {
+        this(id, host, port, connectTimeoutMillis, vertx, 0, 0);
+    }
+
+    public RemoteNode(String id, String host, int port, int connectTimeoutMillis, Vertx vertx,
+                      int maxPoolSize, int requestQueueCapacity)
+    {
         this.id = Objects.requireNonNull(id, "id");
         this.host = Objects.requireNonNull(host, "host");
         this.port = port;
         this.connectTimeoutMillis = Math.max(100, connectTimeoutMillis);
         this.requestTimeoutMillis = Math.max(5_000L, this.connectTimeoutMillis * 2L);
         this.requestTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(this.requestTimeoutMillis);
-        this.maxPoolSize = Math.max(2, Runtime.getRuntime().availableProcessors());
-        this.pool = new LinkedBlockingQueue<>(maxPoolSize);
+        this.maxPoolSize = maxPoolSize > 0 ? Math.max(1, maxPoolSize) : Math.max(2, Runtime.getRuntime().availableProcessors());
+        this.pool = new LinkedBlockingQueue<>(this.maxPoolSize);
 
         int connectTimeoutMillisValue = (int) this.connectTimeoutMillis;
         NetClientOptions options = new NetClientOptions()
@@ -82,13 +88,14 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
                 .setTcpNoDelay(true)
                 .setReuseAddress(true);
         this.netClient = vertx.createNetClient(options);
-        int maxRequestThreads = Math.max(2, maxPoolSize);
+        int maxRequestThreads = Math.max(2, this.maxPoolSize);
+        int boundedQueueCapacity = requestQueueCapacity > 0 ? requestQueueCapacity : this.maxPoolSize * 8;
         this.requestExecutor = new ThreadPoolExecutor(
                 maxRequestThreads,
                 maxRequestThreads,
                 0L,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(maxPoolSize * 8),
+                new ArrayBlockingQueue<>(Math.max(1, boundedQueueCapacity)),
                 Thread.ofVirtual().name("remote-node-" + id + "-", 0).factory(),
                 new ThreadPoolExecutor.AbortPolicy());
     }
