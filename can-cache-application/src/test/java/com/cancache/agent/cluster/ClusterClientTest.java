@@ -73,6 +73,27 @@ class ClusterClientTest
             assertEquals(0, handoff.pendingFor(leader.id()), "No messages should be queued for the successful leader");
         }
 
+        @Test
+        void shouldQueueLeaderHintWhenLeaderRejectsButReplicaQuorumSucceeds()
+        {
+            leader.failNextSet();
+
+            assertTrue(client.set("clientKey", "value", Duration.ofSeconds(1)));
+            assertEquals(1, handoff.pendingFor(leader.id()),
+                    "A rejected owner write must be repaired even when replica quorum succeeds");
+        }
+
+        @Test
+        void shouldNotShrinkConfiguredQuorumWhenReplicasAreMissing()
+        {
+            ConsistentHashRing<Node<String, String>> partialRing = new ConsistentHashRing<>(new ControlledHash(), 1);
+            partialRing.addNode(leader, bytes("leader"));
+            ClusterClient partialClient = new ClusterClient(partialRing, 3, StringCodec.UTF8, handoff);
+
+            assertFalse(partialClient.set("clientKey", "value", null),
+                    "RF=3 must not silently become quorum=1 during a partition");
+        }
+
         /**
          * Verifies that an exception is thrown when the leader node fails and a quorum cannot be met.
          */

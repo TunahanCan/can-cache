@@ -6,6 +6,9 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -53,6 +56,21 @@ class HintedHandoffServiceTest
             // Then
             assertEquals(2, service.pendingFor("node"), "Pending hints for node should be 2 after delete and CAS records");
         }
+
+        @Test
+        void shouldBoundHintsPerNodeAndDropOldest()
+        {
+            service = new HintedHandoffService(metrics, 2, () -> 0L);
+            service.recordSet("node", "key-1", "value-1", null);
+            service.recordSet("node", "key-2", "value-2", null);
+            service.recordSet("node", "key-3", "value-3", null);
+
+            assertEquals(2, service.pendingFor("node"));
+            assertEquals(1L, metrics.counter("hinted_handoff_dropped_total").get());
+
+            service.replay("node", node);
+            assertEquals(List.of("value-2", "value-3"), node.setValues());
+        }
     }
 
     @Nested
@@ -98,18 +116,51 @@ class HintedHandoffServiceTest
             assertEquals(1, service.pendingFor("node"), "Hint should remain in the pending queue due to failure");
             assertEquals(1L, metrics.counter("hinted_handoff_failures_total").get(), "Failure counter should be incremented");
         }
+
+        @Test
+        void shouldLeaveHintInQueueWhenSetRequestsRetry()
+        {
+            service.recordSet("node", "key", "value", Duration.ZERO);
+            node.rejectNextSet();
+
+            service.replay("node", node);
+
+            assertEquals(1, service.pendingFor("node"));
+            assertEquals(1L, metrics.counter("hinted_handoff_failures_total").get());
+        }
+
+        @Test
+        void shouldReplayOnlyRemainingTtlInsteadOfExtendingIt()
+        {
+            AtomicLong now = new AtomicLong(1_000L);
+            service = new HintedHandoffService(metrics, 10, now::get);
+            service.recordSet("node", "key", "value", Duration.ofSeconds(5));
+            now.set(3_000L);
+
+            service.replay("node", node);
+
+            assertEquals(Duration.ofSeconds(3), node.lastSetTtl());
+        }
     }
 
     private static final class FakeNode implements Node<String, String>
     {
         private boolean throwSet;
+        private boolean rejectSet;
         private int setCalls;
         private int deleteCalls;
         private int casCalls;
+        private Duration lastSetTtl;
+        private final List<String> setValues = new ArrayList<>();
 
         void throwNextSet()
         {
             this.throwSet = true;
+        }
+
+        void rejectNextSet()
+        {
+            this.rejectSet = true;
         }
 
         int setCallCount()
@@ -127,15 +178,32 @@ class HintedHandoffServiceTest
             return casCalls;
         }
 
+        Duration lastSetTtl()
+        {
+            return lastSetTtl;
+        }
+
+        List<String> setValues()
+        {
+            return setValues;
+        }
+
         @Override
         public boolean set(String key, String value, Duration ttl)
         {
             setCalls++;
+            lastSetTtl = ttl;
             if (throwSet)
             {
                 throwSet = false;
                 throw new RuntimeException("set-fail");
             }
+            if (rejectSet)
+            {
+                rejectSet = false;
+                return false;
+            }
+            setValues.add(value);
             return true;
         }
 

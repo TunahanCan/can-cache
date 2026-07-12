@@ -57,12 +57,14 @@ printf 'set foo 0 60 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
 
 ```bash
 # node A
-./mvnw -f can-cache-application/pom.xml quarkus:dev
+./mvnw -f can-cache-application/pom.xml quarkus:dev \
+  -Dapp.cluster.replication-factor=2
 
 # node B
 ./mvnw -f can-cache-application/pom.xml quarkus:dev \
   -Dquarkus.http.port=0 \
   -Dapp.network.port=11212 \
+  -Dapp.cluster.replication-factor=2 \
   -Dapp.cluster.replication.port=18081 \
   -Dapp.cluster.discovery.node-id=node-b
 ```
@@ -149,12 +151,14 @@ printf 'set foo 0 60 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
 
 ```bash
 # node A
-./mvnw -f can-cache-application/pom.xml quarkus:dev
+./mvnw -f can-cache-application/pom.xml quarkus:dev \
+  -Dapp.cluster.replication-factor=2
 
 # node B
 ./mvnw -f can-cache-application/pom.xml quarkus:dev \
   -Dquarkus.http.port=0 \
   -Dapp.network.port=11212 \
+  -Dapp.cluster.replication-factor=2 \
   -Dapp.cluster.replication.port=18081 \
   -Dapp.cluster.discovery.node-id=node-b
 ```

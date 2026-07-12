@@ -51,7 +51,7 @@ public final class ClusterClient
         if (nodes.isEmpty()) {
             return false;
         }
-        int quorum = majority(nodes.size());
+        int quorum = majority(replicationFactor);
         int successes = 0;
         RuntimeException leaderFailure = null;
 
@@ -71,7 +71,7 @@ public final class ClusterClient
 
             if (ok) {
                 successes++;
-            } else if (i > 0) {
+            } else {
                 hintedHandoffService.recordSet(node.id(), key, value, ttl);
             }
         }
@@ -113,7 +113,7 @@ public final class ClusterClient
         if (nodes.isEmpty()) {
             return false;
         }
-        int quorum = majority(nodes.size());
+        int quorum = majority(replicationFactor);
         int successes = 0;
         for (int i = 0; i < nodes.size(); i++) {
             Node<String, String> node = nodes.get(i);
@@ -137,7 +137,7 @@ public final class ClusterClient
         if (nodes.isEmpty()) {
             return false;
         }
-        int quorum = majority(nodes.size());
+        int quorum = majority(replicationFactor);
         int successes = 0;
         RuntimeException leaderFailure = null;
 

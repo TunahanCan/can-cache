@@ -35,6 +35,7 @@ services:
       APP_AGENT_ADVERTISED_HOST: can-cache-app-1
       APP_CLUSTER_DISCOVERY_NODE_ID: can-cache-app-1
       APP_CLUSTER_REPLICATION_ADVERTISE_HOST: can-cache-app-1
+      APP_CLUSTER_REPLICATION_FACTOR: "2"
     depends_on:
       - can-cache-agent
     networks:
@@ -54,6 +55,7 @@ services:
       APP_AGENT_ADVERTISED_HOST: can-cache-app-2
       APP_CLUSTER_DISCOVERY_NODE_ID: can-cache-app-2
       APP_CLUSTER_REPLICATION_ADVERTISE_HOST: can-cache-app-2
+      APP_CLUSTER_REPLICATION_FACTOR: "2"
     depends_on:
       - can-cache-agent
     networks:

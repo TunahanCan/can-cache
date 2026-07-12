@@ -11,6 +11,7 @@ import com.cancache.agent.metric.MetricsRegistry;
 import com.cancache.agent.metric.Timer;
 import com.cancache.agent.pubsub.Broker;
 import io.vertx.core.Vertx;
+import org.jboss.logging.Logger;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -37,6 +38,7 @@ import java.util.concurrent.DelayQueue;
  * @param <V> Değer tipi
  */
 public final class CacheEngine<K, V> implements AutoCloseable {
+    private static final Logger LOG = Logger.getLogger(CacheEngine.class);
 
     // ========================================
     // Sabitler
@@ -87,7 +89,7 @@ public final class CacheEngine<K, V> implements AutoCloseable {
     @SuppressWarnings("unchecked")
     private CacheEngine(Builder<K, V> builder) {
         // Yapılandırma
-        this.segmentCount = builder.segments;
+        this.segmentCount = Math.min(builder.segments, builder.maxCapacity);
         this.cleanerPollMillis = builder.cleanerPollMillis;
         this.keyCodec = builder.keyCodec;
         this.valueCodec = builder.valueCodec;
@@ -119,11 +121,13 @@ public final class CacheEngine<K, V> implements AutoCloseable {
     @SuppressWarnings("unchecked")
     private CacheSegment<K>[] createSegments(Builder<K, V> builder) {
         CacheSegment<K>[] result = new CacheSegment[segmentCount];
-        int capacityPerSegment = Math.max(1, builder.maxCapacity / segmentCount);
+        int capacityPerSegment = builder.maxCapacity / segmentCount;
+        int remainder = builder.maxCapacity % segmentCount;
 
         for (int i = 0; i < segmentCount; i++) {
-            EvictionPolicy<K> evictionPolicy = builder.evictionPolicy.create(capacityPerSegment);
-            result[i] = new CacheSegment<>(capacityPerSegment, evictionPolicy, this::onKeyRemoved);
+            int segmentCapacity = capacityPerSegment + (i < remainder ? 1 : 0);
+            EvictionPolicy<K> evictionPolicy = builder.evictionPolicy.create(segmentCapacity);
+            result[i] = new CacheSegment<>(segmentCapacity, evictionPolicy, this::onKeyRemoved);
         }
         return result;
     }
@@ -272,6 +276,7 @@ public final class CacheEngine<K, V> implements AutoCloseable {
      */
     public boolean set(K key, V value, Duration ttl) {
         Objects.requireNonNull(key, "Anahtar null olamaz");
+        Objects.requireNonNull(value, "Değer null olamaz");
 
         long startTime = System.nanoTime();
         try {
@@ -312,7 +317,8 @@ public final class CacheEngine<K, V> implements AutoCloseable {
 
         long startTime = System.nanoTime();
         try {
-            CacheValue cacheValue = getSegment(key).get(key);
+            CacheSegment<K> segment = getSegment(key);
+            CacheValue cacheValue = segment.get(key);
 
             if (cacheValue == null) {
                 incrementCounter(missCounter);
@@ -321,7 +327,9 @@ public final class CacheEngine<K, V> implements AutoCloseable {
 
             // Süre dolmuş mu kontrol et
             if (cacheValue.expired(System.currentTimeMillis())) {
-                delete(key);
+                if (segment.removeIfSame(key, cacheValue)) {
+                    incrementCounter(evictionCounter);
+                }
                 incrementCounter(missCounter);
                 return null;
             }
@@ -344,13 +352,7 @@ public final class CacheEngine<K, V> implements AutoCloseable {
 
         long startTime = System.nanoTime();
         try {
-            boolean removed = getSegment(key).remove(key) != null;
-
-            if (removed) {
-                publishEvent("keyspace:del", key);
-            }
-
-            return removed;
+            return getSegment(key).remove(key) != null;
         } finally {
             recordTiming(deleteTimer, startTime);
         }
@@ -365,18 +367,30 @@ public final class CacheEngine<K, V> implements AutoCloseable {
     public boolean exists(K key) {
         Objects.requireNonNull(key, "Anahtar null olamaz");
 
-        CacheValue cacheValue = getSegment(key).get(key);
-        return cacheValue != null && !cacheValue.expired(System.currentTimeMillis());
+        CacheSegment<K> segment = getSegment(key);
+        CacheValue cacheValue = segment.get(key);
+        if (cacheValue == null) {
+            return false;
+        }
+        if (!cacheValue.expired(System.currentTimeMillis())) {
+            return true;
+        }
+        if (segment.removeIfSame(key, cacheValue)) {
+            incrementCounter(evictionCounter);
+        }
+        return false;
     }
 
     /**
      * Tüm önbelleği temizler.
      */
     public void clear() {
+        // Clear scheduled tasks first. A concurrent TTL write that starts after this
+        // point keeps its own task; entries already present are removed below.
+        expirationQueue.clear();
         for (CacheSegment<K> segment : segments) {
             segment.clear();
         }
-        expirationQueue.clear();
     }
 
     /**
@@ -540,12 +554,18 @@ public final class CacheEngine<K, V> implements AutoCloseable {
      * @param expireAt  Süre dolum zamanı (epoch millis)
      */
     public void replay(byte[] operation, byte[] keyBytes, byte[] valueBytes, long expireAt) {
+        Objects.requireNonNull(operation, "operation");
+        if (operation.length != 1) {
+            throw new IllegalArgumentException("Operation must contain exactly one command byte");
+        }
         K key = keyCodec.decode(keyBytes);
 
         if (operation[0] == NodeProtocol.CMD_SET) {
             replaySet(key, valueBytes, expireAt);
         } else if (operation[0] == NodeProtocol.CMD_DELETE) {
             replayDelete(key);
+        } else {
+            throw new IllegalArgumentException("Unsupported replay command: " + operation[0]);
         }
     }
 
@@ -591,7 +611,7 @@ public final class CacheEngine<K, V> implements AutoCloseable {
                 evictExpiredKey(expiredKey);
             }
         } catch (Exception e) {
-            // Temizleyici hatası loglansın ama devam etsin
+            LOG.warn("Expiration cleaner failed; the next run will retry pending entries", e);
         }
     }
 
@@ -639,7 +659,7 @@ public final class CacheEngine<K, V> implements AutoCloseable {
             try {
                 listener.onRemoval(key);
             } catch (RuntimeException e) {
-                // Listener hatası diğerlerini etkilemesin
+                LOG.debug("Cache removal listener failed", e);
             }
         }
     }

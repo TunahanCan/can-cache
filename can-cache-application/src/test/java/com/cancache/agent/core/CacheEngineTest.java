@@ -84,6 +84,12 @@ class CacheEngineTest
             assertTrue(broker.events().contains("keyspace:set:key"), "Broker should emit keyspace:set event");
         }
 
+        @Test
+        void shouldRejectNullValues()
+        {
+            assertThrows(NullPointerException.class, () -> engine.set("key", null));
+        }
+
         /**
          * Demonstrates that the get call removes the entry after its TTL expires.
          */
@@ -236,6 +242,15 @@ class CacheEngineTest
             // Then
             assertNull(engine.get("gone"), "Replayed delete should remove the value");
         }
+
+        @Test
+        void shouldRejectMalformedReplayCommands()
+        {
+            assertThrows(IllegalArgumentException.class,
+                    () -> engine.replay(new byte[0], StringCodec.UTF8.encode("key"), new byte[0], 0L));
+            assertThrows(IllegalArgumentException.class,
+                    () -> engine.replay(new byte[]{99}, StringCodec.UTF8.encode("key"), new byte[0], 0L));
+        }
     }
 
     @Nested
@@ -257,6 +272,10 @@ class CacheEngineTest
 
             // Then
             assertEquals(List.of("target"), removed, "Listener should receive the removed key");
+            long deleteEvents = broker.events().stream()
+                    .filter("keyspace:del:target"::equals)
+                    .count();
+            assertEquals(1L, deleteEvents, "Manual delete should publish exactly one event");
             handle.close();
         }
 
@@ -321,6 +340,28 @@ class CacheEngineTest
             assertTrue(keys.isEmpty(), "forEachEntry should yield no keys after clear");
         }
 
+        @Test
+        void shouldHonorExactCapacityWhenCapacityIsNotDivisibleBySegments()
+        {
+            try (CacheEngine<String, String> bounded = newEngine(3, 5)) {
+                for (int i = 0; i < 20; i++) {
+                    assertTrue(bounded.set("key-" + i, "value-" + i));
+                }
+                assertEquals(5, bounded.size(), "Segment capacities must add up to the configured maximum");
+            }
+        }
+
+        @Test
+        void shouldNotExceedCapacityWhenSegmentsOutnumberEntries()
+        {
+            try (CacheEngine<String, String> bounded = newEngine(8, 2)) {
+                for (int i = 0; i < 20; i++) {
+                    assertTrue(bounded.set("small-" + i, "value-" + i));
+                }
+                assertEquals(2, bounded.size(), "Effective segment count must not exceed maximum capacity");
+            }
+        }
+
         /**
          * Verifies that the fingerprint result remains stable even if the insertion order changes.
          */
@@ -352,6 +393,16 @@ class CacheEngineTest
         {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private CacheEngine<String, String> newEngine(int segments, int maxCapacity)
+    {
+        return CacheEngine.<String, String>builder(StringCodec.UTF8, StringCodec.UTF8)
+                .segments(segments)
+                .maxCapacity(maxCapacity)
+                .cleanerPollMillis(5)
+                .vertx(vertx)
+                .build();
     }
 
     private static final class RecordingBroker extends Broker

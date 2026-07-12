@@ -101,7 +101,7 @@ public interface AppProperties
         @WithDefault("PT1S") // 1 saniyede bir ping
         Duration pingInterval();
 
-        @WithDefault("PT500MS") // 500ms'de bir dedikodu değişimi
+        @WithDefault("PT0.5S") // 500ms'de bir dedikodu değişimi
         Duration gossipInterval();
 
         @WithDefault("PT10S") // 10 saniye yanıt yoksa şüpheli
@@ -160,6 +160,9 @@ public interface AppProperties
 
         @WithDefault("30000")
         long antiEntropyIntervalMillis();
+
+        @WithDefault("10000")
+        int maxHintsPerNode();
     }
 
     interface Cancache

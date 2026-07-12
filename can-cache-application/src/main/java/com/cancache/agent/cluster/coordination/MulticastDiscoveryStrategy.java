@@ -16,6 +16,7 @@ import java.net.MulticastSocket;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.Map;
@@ -102,8 +103,9 @@ public class MulticastDiscoveryStrategy implements DiscoveryStrategy {
 
     private void setupSockets() throws IOException {
         groupAddress = InetAddress.getByName(discoveryConfig.multicastGroup());
-        listenSocket = new MulticastSocket(discoveryConfig.multicastPort());
+        listenSocket = new MulticastSocket(null);
         listenSocket.setReuseAddress(true);
+        listenSocket.bind(new InetSocketAddress(discoveryConfig.multicastPort()));
         NetworkInterface networkInterface = selectInterface();
         tryJoinMulticastGroup(networkInterface);
         sendSocket = new DatagramSocket();
@@ -188,7 +190,8 @@ public class MulticastDiscoveryStrategy implements DiscoveryStrategy {
             try {
                 listenSocket.receive(packet);
                 // Process packet off the listener thread
-                taskExecutor.execute(() -> handlePacket(packet.getData(), packet.getLength()));
+                byte[] packetCopy = Arrays.copyOf(packet.getData(), packet.getLength());
+                taskExecutor.execute(() -> handlePacket(packetCopy, packetCopy.length));
             } catch (IOException e) {
                 if (running) {
                     LOG.warn("Failed to receive multicast discovery packet", e);

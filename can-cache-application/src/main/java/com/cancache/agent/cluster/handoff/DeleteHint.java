@@ -15,9 +15,10 @@ public record DeleteHint(String key) implements Hint
     }
 
     @Override
-    public boolean replay(Node<String, String> node)
+    public ReplayResult replay(Node<String, String> node, long nowMillis)
     {
-        return node.delete(key);
+        node.delete(key);
+        return ReplayResult.SATISFIED;
     }
 
     @Override

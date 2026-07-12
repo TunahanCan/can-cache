@@ -32,11 +32,19 @@ class MetricsEndpointIntegrationTest
 
         String body = fetchMetrics(client, metricsUri);
 
-        assertTrue(body.contains("# TYPE cache_hits_total counter"), "cache_hits_total counter must be exported");
-        assertTrue(body.contains("node_id=\""), "node_id label should be present");
-        assertTrue(body.contains("role=\""), "role label should be present");
-        assertTrue(body.contains("hint_replay_result=\"success\""), "successful hint replay label should be exported");
-        assertTrue(body.contains("hint_replay_result=\"failure\""), "failed hint replay label should be exported");
+        assertTrue(body.contains("# TYPE cache_hits counter"),
+                "Prometheus must describe the cache_hits counter using its base meter name");
+        assertTrue(body.matches("(?s).*cache_hits_total\\{(?=[^}]*node_id=\"[^\"]+\")(?=[^}]*role=\"[^\"]+\")[^}]*}\\s+[^\\s]+.*"),
+                "cache_hits_total samples must include non-empty node_id and role labels");
+
+        assertTrue(body.contains("# TYPE hinted_handoff_replayed counter"),
+                "hinted_handoff_replayed counter must be described");
+        assertTrue(body.contains("hinted_handoff_replayed_total{"),
+                "hinted_handoff_replayed_total samples must be exported");
+        assertTrue(body.contains("# TYPE hinted_handoff_failures counter"),
+                "hinted_handoff_failures counter must be described");
+        assertTrue(body.contains("hinted_handoff_failures_total{"),
+                "hinted_handoff_failures_total samples must be exported");
     }
 
     private static String fetchMetrics(HttpClient client, URI uri) throws IOException, InterruptedException

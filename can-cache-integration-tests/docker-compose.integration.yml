@@ -5,13 +5,25 @@ services:
       context: ..
       dockerfile: Dockerfile
     image: can-cache:integration
+    environment:
+      QUARKUS_HTTP_HOST: 0.0.0.0
+      QUARKUS_HTTP_PORT: "9000"
     ports:
       - "11211:11211"
+    expose:
+      - "9000"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/11211'"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
   integration-tests:
     build:
       context: .
     depends_on:
-      - can-cache
+      can-cache:
+        condition: service_healthy
     environment:
       CAN_CACHE_HOST: can-cache
       CAN_CACHE_PORT: "11211"

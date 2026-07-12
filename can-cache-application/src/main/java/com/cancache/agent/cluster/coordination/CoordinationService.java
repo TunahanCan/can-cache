@@ -35,10 +35,11 @@ import java.util.stream.Collectors;
  * örnekleri ayağa kalktığında diğer JVM'ler tarafından otomatik olarak keşfedilir
  * ve RAM'deki veriler replikasyon protokolü aracılığıyla senkronize edilir.
  */
-@Singleton
-public class CoordinationService implements AutoCloseable {
-    private static final Logger LOG = Logger.getLogger(CoordinationService.class);
 
+@Singleton
+public class CoordinationService implements AutoCloseable
+{
+    private static final Logger LOG = Logger.getLogger(CoordinationService.class);
     private final ConsistentHashRing<Node<String, String>> ring;
     private final Node<String, String> localNode;
     private final ClusterState clusterState;
@@ -170,7 +171,8 @@ public class CoordinationService implements AutoCloseable {
         RemoteMember replayMember = null;
         RemoteNode pendingRemoval = null; // Used if a node moves host/port
 
-        synchronized (membershipLock) {
+        synchronized (membershipLock)
+        {
             RemoteMember existing = members.get(nodeInfo.nodeId());
             if (existing == null) {
                 handshakeRequired = true;
@@ -219,7 +221,8 @@ public class CoordinationService implements AutoCloseable {
         boolean runBootstrap = false;
         long updateTime = System.currentTimeMillis();
 
-        synchronized (membershipLock) {
+        synchronized (membershipLock)
+        {
             RemoteMember current = members.get(nodeInfo.nodeId());
             if (current == null) {
                 // Truly a new member after handshake
@@ -461,8 +464,6 @@ public class CoordinationService implements AutoCloseable {
     @Override
     public void close() {
         running = false;
-        discoveryStrategy.close(); // Close the discovery strategy
-
         taskExecutor.shutdownNow();
 
         // Connection pool'u kapat

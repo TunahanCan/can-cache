@@ -155,6 +155,18 @@ class CacheSegmentTest
             assertTrue(removals.contains("a"), "Removal should notify listener");
         }
 
+        @Test
+        void shouldNotRemoveAReplacementWhenRemovingAnObservedValue()
+        {
+            CacheValue observed = value("old");
+            CacheValue replacement = value("new");
+            assertTrue(segment.put("a", observed));
+            assertTrue(segment.put("a", replacement));
+
+            assertFalse(segment.removeIfSame("a", observed), "Stale observation must not remove a replacement");
+            assertSame(replacement, segment.get("a"), "Replacement should remain stored");
+        }
+
         /**
          * Verifies that the clear call removes all entries.
          */
@@ -171,6 +183,7 @@ class CacheSegmentTest
             // Then
             assertEquals(0, segment.size(), "Size should be 0 after clear");
             assertTrue(policy.removed().containsAll(List.of("a", "b")), "Policy should be notified of all removals");
+            assertTrue(removals.containsAll(List.of("a", "b")), "Removal listeners should observe clear operations");
         }
     }
 
@@ -231,12 +244,12 @@ class CacheSegmentTest
             // When
             segment.forEach((key, value) -> {
                 keys.add(key);
-                segment.put("c", value("3"));
+                segment.remove("a");
             });
             
             // Then
             assertEquals(List.of("a", "b"), keys, "Iteration should only cover original entries");
-            assertEquals(3, segment.size(), "Segment size should grow despite concurrent modification via snapshot iteration");
+            assertEquals(1, segment.size(), "Snapshot iteration should tolerate reentrant cache changes");
         }
     }
 

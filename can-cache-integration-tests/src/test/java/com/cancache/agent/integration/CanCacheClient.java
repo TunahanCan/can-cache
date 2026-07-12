@@ -23,6 +23,9 @@ import java.util.Optional;
 final class CanCacheClient implements Closeable
 {
     private static final byte[] CRLF = new byte[]{'\r', '\n'};
+    private static final Duration READY_TIMEOUT = Duration.ofSeconds(30);
+    private static final int CONNECT_TIMEOUT_MILLIS = 2_000;
+    private static final long RETRY_DELAY_MILLIS = 250L;
     private final Socket socket;
     private final InputStream input;
     private final OutputStream output;
@@ -38,10 +41,37 @@ final class CanCacheClient implements Closeable
     {
         String host = Optional.ofNullable(System.getenv("CAN_CACHE_HOST")).orElse("127.0.0.1");
         int port = Integer.parseInt(Optional.ofNullable(System.getenv("CAN_CACHE_PORT")).orElse("11211"));
-        Socket socket = new Socket();
-        socket.setSoTimeout(5000);
-        socket.connect(new InetSocketAddress(host, port), 5000);
-        return new CanCacheClient(socket);
+        long deadline = System.nanoTime() + READY_TIMEOUT.toNanos();
+        IOException lastFailure = null;
+
+        do {
+            Socket socket = new Socket();
+            try {
+                socket.setSoTimeout(5000);
+                socket.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MILLIS);
+                return new CanCacheClient(socket);
+            }
+            catch (IOException e) {
+                lastFailure = e;
+                try {
+                    socket.close();
+                }
+                catch (IOException closeFailure) {
+                    e.addSuppressed(closeFailure);
+                }
+            }
+
+            try {
+                Thread.sleep(RETRY_DELAY_MILLIS);
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while waiting for can-cache at " + host + ':' + port, e);
+            }
+        }
+        while (System.nanoTime() < deadline);
+
+        throw new IOException("Timed out waiting for can-cache at " + host + ':' + port, lastFailure);
     }
 
     String set(String key, int flags, long exptimeSeconds, String value) throws IOException
@@ -150,6 +180,13 @@ final class CanCacheClient implements Closeable
     String version() throws IOException
     {
         sendLine("version");
+        return readLine();
+    }
+
+    String rawLine(String command) throws IOException
+    {
+        Objects.requireNonNull(command, "command");
+        sendLine(command);
         return readLine();
     }
 

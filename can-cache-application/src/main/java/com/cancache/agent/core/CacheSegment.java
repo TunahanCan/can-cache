@@ -4,8 +4,10 @@ import com.cancache.agent.core.model.CacheValue;
 import com.cancache.agent.core.model.CasDecision;
 import com.cancache.agent.core.model.CasResult;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
@@ -51,24 +53,36 @@ final class CacheSegment<K>
     }
 
     private boolean putInternal(K key, CacheValue v, boolean force) {
+        List<K> removedKeys = new ArrayList<>(1);
+        boolean stored = true;
         lock.lock();
         try {
             CacheValue existing = map.get(key);
             policy.recordAccess(key);
             if (existing != null) {
                 map.put(key, v);
-                return true;
-            }
-
-            if (!force) {
+            } else if (!force) {
                 EvictionPolicy.AdmissionDecision<K> decision = policy.admit(key, map, capacity);
                 if (!decision.shouldAdmit()) {
-                    return false;
-                }
-                K victim = decision.evictKey();
-                if (victim != null && map.remove(victim) != null) {
-                    policy.onRemove(victim);
-                    notifyRemoval(victim);
+                    stored = false;
+                } else {
+                    K victim = decision.evictKey();
+                    if (map.size() >= capacity && victim == null) {
+                        stored = false;
+                    } else {
+                        if (victim != null) {
+                            CacheValue removed = map.remove(victim);
+                            if (removed == null && map.size() >= capacity) {
+                                stored = false;
+                            } else if (removed != null) {
+                                policy.onRemove(victim);
+                                removedKeys.add(victim);
+                            }
+                        }
+                        if (stored) {
+                            map.put(key, v);
+                        }
+                    }
                 }
             } else {
                 while (map.size() >= capacity) {
@@ -79,28 +93,36 @@ final class CacheSegment<K>
                     K victim = it.next().getKey();
                     it.remove();
                     policy.onRemove(victim);
-                    notifyRemoval(victim);
+                    removedKeys.add(victim);
                 }
+                map.put(key, v);
             }
-
-            map.put(key, v);
-            return true;
-        } finally { lock.unlock(); }
+        } finally {
+            lock.unlock();
+        }
+        notifyRemovals(removedKeys);
+        return stored;
     }
+
     CacheValue remove(K key) {
+        CacheValue removed;
         lock.lock();
         try {
-            CacheValue removed = map.remove(key);
+            removed = map.remove(key);
             if (removed != null) {
                 policy.onRemove(key);
-                notifyRemoval(key);
             }
-            return removed;
+        } finally {
+            lock.unlock();
         }
-        finally { lock.unlock(); }
+        if (removed != null) {
+            notifyRemoval(key);
+        }
+        return removed;
     }
 
     boolean removeIfMatches(K key, long expireAtMillis) {
+        boolean removed = false;
         lock.lock();
         try {
             CacheValue existing = map.get(key);
@@ -109,14 +131,38 @@ final class CacheSegment<K>
             }
             map.remove(key);
             policy.onRemove(key);
-            notifyRemoval(key);
-            return true;
+            removed = true;
         } finally {
             lock.unlock();
         }
+        if (removed) {
+            notifyRemoval(key);
+        }
+        return removed;
+    }
+
+    boolean removeIfSame(K key, CacheValue expected) {
+        boolean removed = false;
+        lock.lock();
+        try {
+            if (map.get(key) != expected) {
+                return false;
+            }
+            map.remove(key);
+            policy.onRemove(key);
+            removed = true;
+        } finally {
+            lock.unlock();
+        }
+        if (removed) {
+            notifyRemoval(key);
+        }
+        return removed;
     }
 
     CasResult compareAndSwap(K key, java.util.function.Function<CacheValue, CasDecision> decisionFn) {
+        K removedKey = null;
+        CasResult result;
         lock.lock();
         try {
             CacheValue existing = map.get(key);
@@ -131,18 +177,21 @@ final class CacheSegment<K>
                 if (map.remove(key) != null) {
                     policy.onRemove(key);
                     if (decision.notifyRemoval()) {
-                        notifyRemoval(key);
+                        removedKey = key;
                     }
                 }
-                existing = null;
             }
             if (decision.success() && decision.newValue() != null) {
                 map.put(key, decision.newValue());
             }
-            return new CasResult(decision.success(), decision.newValue());
+            result = new CasResult(decision.success(), decision.newValue());
         } finally {
             lock.unlock();
         }
+        if (removedKey != null) {
+            notifyRemoval(removedKey);
+        }
+        return result;
     }
     int size() {
         lock.lock(); try { return map.size(); } finally { lock.unlock(); }
@@ -165,12 +214,20 @@ final class CacheSegment<K>
         }
     }
 
+    private void notifyRemovals(Iterable<K> keys) {
+        for (K key : keys) {
+            notifyRemoval(key);
+        }
+    }
+
     void clear() {
+        List<K> removedKeys;
         lock.lock();
         try {
             if (map.isEmpty()) {
                 return;
             }
+            removedKeys = new ArrayList<>(map.keySet());
             for (K key : map.keySet()) {
                 policy.onRemove(key);
             }
@@ -178,5 +235,6 @@ final class CacheSegment<K>
         } finally {
             lock.unlock();
         }
+        notifyRemovals(removedKeys);
     }
 }

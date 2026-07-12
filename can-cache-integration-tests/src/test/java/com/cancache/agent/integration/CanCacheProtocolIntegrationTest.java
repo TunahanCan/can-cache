@@ -262,6 +262,39 @@ class CanCacheProtocolIntegrationTest
     }
 
     @Test
+    void shouldKeepCurrentItemCountAccurateAfterDeletingOneKey() throws Exception
+    {
+        assertEquals("STORED", client.set("count:first", 0, 0, "one"));
+        assertEquals("STORED", client.set("count:second", 0, 0, "two"));
+        assertEquals(2L, parseLong(client.stats(), "curr_items"));
+
+        assertEquals("DELETED", client.delete("count:first"));
+
+        assertEquals(1L, parseLong(client.stats(), "curr_items"),
+                "Deleting one of two keys must decrement curr_items exactly once");
+        assertTrue(client.getValue("count:first").isEmpty());
+        assertEquals("two", client.getValue("count:second").orElseThrow().asString());
+    }
+
+    @Test
+    void shouldRejectKeysLongerThanMemcachedLimit() throws Exception
+    {
+        String oversizedKey = "k".repeat(251);
+
+        assertEquals("CLIENT_ERROR bad command line format", client.rawLine("get " + oversizedKey));
+        assertTrue(client.version().startsWith("VERSION "),
+                "A rejected key must not corrupt the connection protocol state");
+    }
+
+    @Test
+    void shouldRejectOversizedCommandLineAndCloseConnection() throws Exception
+    {
+        String oversizedCommand = "x".repeat(8 * 1024 + 1);
+
+        assertEquals("CLIENT_ERROR command line too long", client.rawLine(oversizedCommand));
+    }
+
+    @Test
     void shouldPreserveBinaryPayloads() throws Exception
     {
         // Senaryo: Binary içerikli verinin saklanıp tekrar okunurken hiçbir byte kaybı yaşanmadığını doğruluyoruz.

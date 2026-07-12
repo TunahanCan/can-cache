@@ -213,7 +213,8 @@ public class AppConfig {
     @Singleton
     public HintedHandoffService hintedHandoffService(MetricsRegistry metrics)
     {
-        return new HintedHandoffService(metrics);
+        return new HintedHandoffService(metrics,
+                properties.cluster().coordination().maxHintsPerNode());
     }
 
     @Produces

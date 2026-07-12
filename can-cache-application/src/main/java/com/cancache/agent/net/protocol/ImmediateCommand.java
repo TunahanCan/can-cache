@@ -6,17 +6,10 @@ import java.util.function.Supplier;
 /**
  * Hemen yürütülebilecek komutları kapsüller.
  */
-public final class ImmediateCommand implements CommandAction
+public record ImmediateCommand(Supplier<CommandResult> executor) implements CommandAction
 {
-    private final Supplier<CommandResult> executor;
-
-    public ImmediateCommand(Supplier<CommandResult> executor)
+    public ImmediateCommand
     {
-        this.executor = Objects.requireNonNull(executor, "executor");
-    }
-
-    public Supplier<CommandResult> executor()
-    {
-        return executor;
+        Objects.requireNonNull(executor, "executor");
     }
 }

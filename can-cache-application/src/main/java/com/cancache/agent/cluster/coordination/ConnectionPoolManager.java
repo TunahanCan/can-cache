@@ -24,15 +24,18 @@ public class ConnectionPoolManager implements AutoCloseable {
     private final int defaultConnectTimeoutMillis;
     private volatile boolean closed = false;
 
-    public ConnectionPoolManager() {
+    public ConnectionPoolManager()
+    {
         this(DEFAULT_POOL_SIZE,
                 DEFAULT_CONNECT_TIMEOUT_MS);
     }
 
-    public ConnectionPoolManager(int defaultPoolSize, int defaultConnectTimeoutMillis) {
+    public ConnectionPoolManager(int defaultPoolSize, int defaultConnectTimeoutMillis)
+    {
         this.defaultPoolSize = Math.max(1, defaultPoolSize);
         this.defaultConnectTimeoutMillis = Math.max(100, defaultConnectTimeoutMillis);
-        LOG.infof("ConnectionPoolManager initialized with poolSize=%d, connectTimeout=%dms",
+        LOG.infof(
+                "ConnectionPoolManager initialized with poolSize=%d, connectTimeout=%dms",
                 this.defaultPoolSize, this.defaultConnectTimeoutMillis);
     }
 

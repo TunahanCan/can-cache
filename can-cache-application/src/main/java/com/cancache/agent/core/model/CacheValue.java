@@ -8,6 +8,17 @@ package com.cancache.agent.core.model;
  */
 public record CacheValue(byte[] value, long expireAtMillis)
 {
+    public CacheValue
+    {
+        value = java.util.Objects.requireNonNull(value, "value").clone();
+    }
+
+    @Override
+    public byte[] value()
+    {
+        return value.clone();
+    }
+
     public boolean expired(long now)
     {
         return expireAtMillis > 0 && now >= expireAtMillis;

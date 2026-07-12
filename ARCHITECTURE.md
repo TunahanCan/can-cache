@@ -9,14 +9,14 @@ Bu doküman, `can-cache` sisteminin iç işleyişini, veri yapılarını, dağı
 `can-cache`, düşük gecikmeli (low-latency), dağıtık, bellek-içi (in-memory) bir anahtar-değer (key-value) veri deposudur. İstemcilerle olan iletişiminde Memcached metin (text) protokolünü kullanır.
 
 Sistem iki ayrı uygulamadan (deployable unit) oluşur:
-1. **`can-cache-application` (Data Node):** Veriyi saklayan, replikasyon yapan ve dağıtık konsensüs sağlayan asıl veritabanı düğümü.
+1. **`can-cache-application` (Data Node):** Veriyi saklayan ve quorum tabanlı replikasyon yapan asıl önbellek düğümü. Sistem bir konsensüs protokolü uygulamaz; eventual consistency modelindedir.
 2. **`can-cache-agent` (Edge Proxy):** İstemciler ile Data Node'lar arasında duran, akıllı yönlendirme ve yük dengeleme (load balancing) yapan, state tutmayan (stateless) proxy katmanı.
 
 **Tasarım Felsefesi:**
 *   **Tamamen Bellek-İçi (In-Memory):** Diske yazma maliyeti yoktur. Yeniden başlatmalarda veri kaybolur (ephemeral data). Bu durum, önbellek kullanım senaryoları için kabul edilebilir bir ödündür (trade-off).
 *   **Paylaşılmayan (Shared-Nothing) Mimari:** Düğümler asimetrik değildir; her düğüm aynı yeteneklere sahiptir.
 *   **Non-Blocking I/O:** Ağ işlemleri Eclipse Vert.x üzerinde asenkron olarak gerçekleştirilir.
-*   **Optimistik Kilitlenme (Optimistic Locking):** Segmentli veri yapıları kullanılarak aynı anda farklı anahtarlara gelen isteklerin birbirini bloklaması (lock contention) önlenir.
+*   **Lock Striping:** Her segment kendi `ReentrantLock` kilidine sahiptir. Farklı segmentlerdeki işlemler paralel ilerlerken aynı segmentteki bileşik işlemler atomik kalır.
 
 ---
 
@@ -37,9 +37,9 @@ Verinin bellekte saklanmasından, süresinin dolmasından (TTL) ve kapasite yön
 ### 3.1. `CacheEngine` ve `CacheSegment` (Lock Striping)
 Java'daki standart `ConcurrentHashMap` tek başına bazı gelişmiş TTL ve tahliye (eviction) kuralları için yetersiz veya yavaştır. `can-cache`, Java'nın eski `ConcurrentHashMap` uygulamalarına benzer şekilde **Segmentli (Lock Striping)** bir mimari kullanır.
 
-*   **Segment Dizisi:** Önbellek, varsayılan olarak işlemci çekirdek sayısı kadar `CacheSegment` nesnesinden oluşan bir diziye bölünür.
+*   **Segment Dizisi:** Önbellek varsayılan olarak 8, `app.cache.segments` ile ayarlanabilen `CacheSegment` nesnesine bölünür. Segment sayısı kapasiteyi aşarsa etkin sayı kapasiteyle sınırlandırılır; toplam segment kapasitesi tam olarak `app.cache.max-capacity` eder.
 *   **Yönlendirme:** Gelen bir anahtarın (key) hash kodu alınarak hangi segmente ait olduğu bulunur `(hash % segmentCount)`.
-*   **İzolasyon:** Her `CacheSegment` kendi içinde bir `HashMap` ve bir `ReentrantLock` barındırır. Bu sayede Thread-A 1. segmente yazarken, Thread-B 2. segmente hiçbir bloklamaya maruz kalmadan yazabilir. CPU ölçeğinde doğrusal (linear) bir performans artışı sağlar.
+*   **İzolasyon:** Her `CacheSegment` kendi içinde bir `LinkedHashMap` ve bir `ReentrantLock` barındırır. Bu sayede farklı segmentlere erişen thread'ler birbirini bloke etmez; gerçek ölçeklenme anahtar dağılımına ve iş yüküne bağlıdır.
 
 ### 3.2. Değer Kodlaması (`StoredValueCodec`)
 Veriler bellekte ham metin olarak tutulmaz. Bir değer belleğe yazılırken `StoredValueCodec` aracılığıyla metadata ile paketlenir:
@@ -50,7 +50,7 @@ Veriler bellekte ham metin olarak tutulmaz. Bir değer belleğe yazılırken `St
 ### 3.3. Tahliye Politikaları (Eviction Policies)
 Bellek dolduğunda hangi verinin feda edileceği `EvictionPolicy` arayüzü ile belirlenir.
 *   **`LruEvictionPolicy`:** Çift yönlü bağlı liste (Doubly Linked List) ve HashMap kombinasyonu ile O(1) zaman karmaşıklığında En Az Yakın Zamanda Kullanılan (Least Recently Used) veriyi siler.
-*   **`TinyLfuEvictionPolicy`:** Daha modern ve isabet oranı yüksek bir algoritmadır. Verinin sadece en son ne zaman kullanıldığına değil, **ne sıklıkla** kullanıldığına bakar. Bellek kullanımını düşük tutmak için erişim sıklıklarını Count-Min Sketch benzeri olasılıksal bir veri yapısında (`FrequencySketch`) tutar.
+*   **`TinyLfuEvictionPolicy`:** Aday ile LRU kurbanını yaklaşık erişim frekanslarına göre karşılaştıran basitleştirilmiş bir TinyLFU admission politikasıdır. Tam W-TinyLFU pencere/probation/protected katmanlarını uygulamaz.
 
 ---
 
@@ -83,12 +83,12 @@ Veriler (anahtarlar) düğümlere `ConsistentHashRing` ile dağıtılır.
 `ClusterClient`, işlemleri koordine eder. Bir yazma isteği (örn. `set`) geldiğinde:
 1.  `ConsistentHashRing` üzerinden anahtarın sahibi olan Ana Düğüm (Owner) ve Replika Düğümler (Replicas) bulunur (örn: Replication Factor = 3).
 2.  İstek asenkron olarak bu 3 düğüme (kendisi dahil olabilir) paralel olarak gönderilir.
-3.  **Quorum (W = 2):** Başarılı sayılması için `(Replication Factor / 2) + 1` kadar düğümden başarılı yanıt gelmesi beklenir. Çoğunluk sağlanırsa istemciye `STORED` dönülür. Sağlanamazsa işlem başarısız sayılır (Exception fırlatılır).
+3.  **Quorum:** Başarılı sayılması için yapılandırılmış replication factor üzerinden `(RF / 2) + 1` onay gerekir. Aktif node sayısı azaldığında quorum sessizce küçülmez. Tek-node hızlı başlangıç bu nedenle `RF=1`, iki-node Docker örneği `RF=2` kullanır.
 
 ### 5.3. `HintedHandoffService` (Gecikmeli Tutarlılık)
 Bir yazma sırasında Quorum sağlandı ancak replikalardan biri (Düğüm C) ağ sorunu nedeniyle yanıt vermedi diyelim.
 *   Yazmayı koordine eden düğüm, Düğüm C için hedeflediği veriyi `HintedHandoffService`'e teslim eder.
-*   Bu veri "Hint" (ipucu) olarak kuyruklanır (`SetHint`, `DeleteHint` nesneleri).
+*   Bu veri "Hint" (ipucu) olarak node başına sınırlandırılmış kuyrukta tutulur (`SetHint`, `DeleteHint` nesneleri). TTL mutlak son kullanma zamanı olarak saklanır; kesinti süresi TTL'yi uzatmaz.
 *   Düğüm C daha sonra kümeye tekrar bağlandığında, koordinatör düğüm arka planda bu kuyruktaki Hint'leri (replay) Düğüm C'ye göndererek düğümleri senkronize eder (Eventual Consistency).
 
 ---
@@ -98,7 +98,7 @@ Bir yazma sırasında Quorum sağlandı ancak replikalardan biri (Düğüm C) a�
 Düğümlerin birbirini otomatik keşfetmesi ve replikasyon iletişimini içerir.
 
 ### 6.1. Multicast Tabanlı Keşif (`CoordinationService`)
-*   **Discovery:** Her düğüm düzenli aralıklarla (heartbeat) yerel ağdaki bir Multicast adresine (örn. `224.0.0.x`) kendi ID'si, IP adresi, portu ve Epoch (zaman damgası/versiyon) bilgisini UDP paketi olarak anons eder.
+*   **Discovery:** Seçilen stratejiye göre multicast heartbeat veya gossip kullanılır. Gossip paketleri Java nesne deserialization yerine sürümlü ve 1500 baytla sınırlandırılmış açık bir binary codec ile doğrulanır.
 *   **Membership:** Bir düğüm, diğerlerinin anonslarını dinler. Yeni bir anons duyarsa, o düğümle bir "Join Handshake" (TCP üzerinden el sıkışma) yapar ve başarılı olursa `ConsistentHashRing`'e ekler. Belirli bir süre heartbeat gelmezse, ölü kabul eder ve ringden çıkarır.
 
 ### 6.2. İkili Replikasyon Protokolü (`ReplicationServer` ve `RemoteNode`)

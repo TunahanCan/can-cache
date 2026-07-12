@@ -12,7 +12,7 @@ import io.vertx.core.net.SocketAddress;
 import jakarta.inject.Singleton;
 import org.jboss.logging.Logger;
 
-import java.io.*;
+import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
@@ -30,10 +30,10 @@ import java.util.stream.Collectors;
  * more optimized gossip exchange (e.g., sending deltas or random subsets of members), and handling of network partitions.
  */
 @Singleton
-public class GossipDiscoveryStrategy implements DiscoveryStrategy {
-    private static final Logger LOG = Logger.getLogger(GossipDiscoveryStrategy.class);
-    private static final int MAX_PACKET_SIZE = 1500; // Standard MTU for UDP packets
+public class GossipDiscoveryStrategy implements DiscoveryStrategy
+{
 
+    private static final Logger LOG = Logger.getLogger(GossipDiscoveryStrategy.class);
     private final Vertx vertx;
     private final AppProperties.Gossip gossipConfig;
     private final ClusterState clusterState;
@@ -52,7 +52,8 @@ public class GossipDiscoveryStrategy implements DiscoveryStrategy {
     private long gossipTimerId = -1;
     private long cleanupTimerId = -1;
 
-    public GossipDiscoveryStrategy(Vertx vertx, AppProperties properties, ClusterState clusterState) {
+    public GossipDiscoveryStrategy(Vertx vertx, AppProperties properties, ClusterState clusterState)
+    {
         this.vertx = vertx;
         this.gossipConfig = properties.cluster().gossip();
         this.clusterState = clusterState;
@@ -64,16 +65,15 @@ public class GossipDiscoveryStrategy implements DiscoveryStrategy {
     }
 
     @Override
-    public void start(Consumer<Set<NodeInfo>> membershipListener) {
+    public void start(Consumer<Set<NodeInfo>> membershipListener)
+     {
         this.membershipListener = membershipListener;
-
         // Add local node to membership list with ALIVE status
         members.put(localNodeInfo.nodeId(), new GossipMember(localNodeInfo, clusterState.currentEpoch(), System.currentTimeMillis(), MemberStatus.ALIVE));
-
         // Setup UDP socket for gossip communication
         DatagramSocketOptions options = new DatagramSocketOptions()
-                .setSendBufferSize(MAX_PACKET_SIZE)
-                .setReceiveBufferSize(MAX_PACKET_SIZE)
+                .setSendBufferSize(GossipMessageCodec.MAX_PACKET_BYTES)
+                .setReceiveBufferSize(GossipMessageCodec.MAX_PACKET_BYTES)
                 .setReuseAddress(true);
 
         socket = vertx.createDatagramSocket(options);
@@ -137,9 +137,12 @@ public class GossipDiscoveryStrategy implements DiscoveryStrategy {
      * Deserializes the message and dispatches it to the appropriate processing method.
      */
     private void handleGossipPacket(Buffer buffer, SocketAddress sender) {
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(buffer.getBytes());
-             ObjectInputStream ois = new ObjectInputStream(bis)) {
-            GossipMessage message = (GossipMessage) ois.readObject();
+        if (buffer.length() > GossipMessageCodec.MAX_PACKET_BYTES) {
+            LOG.warnf("Ignoring oversized gossip message from %s (%d bytes)", sender, buffer.length());
+            return;
+        }
+        try {
+            GossipMessage message = GossipMessageCodec.decode(buffer.getBytes());
             LOG.debugf("Received gossip message %s from %s (sender: %s)", message.getType(), sender, message.getSenderId());
 
             // Process message based on type
@@ -157,9 +160,10 @@ public class GossipDiscoveryStrategy implements DiscoveryStrategy {
                     processPingReq(message, sender);
                     break;
             }
+            refreshKnownSender(message.getSenderId());
             // notifyMembershipChange() is called within processGossip/Ack/cleanupDeadMembers if actual changes occur
-        } catch (IOException | ClassNotFoundException e) {
-            LOG.warnf(e, "Failed to deserialize gossip message from %s", sender);
+        } catch (IOException e) {
+            LOG.warnf(e, "Failed to decode gossip message from %s", sender);
         }
     }
 
@@ -224,16 +228,21 @@ public class GossipDiscoveryStrategy implements DiscoveryStrategy {
      * Processes an ACK message. Marks the sender as ALIVE if it was SUSPECT or DEAD.
      */
     private void processAck(GossipMessage message) {
-        // Mark the member that sent the ACK as ALIVE
-        GossipMember member = members.get(message.getSenderId());
-        if (member != null && (member.isSuspect() || member.isDead())) {
-            member.setStatus(MemberStatus.ALIVE);
-            member.setLastSeen(System.currentTimeMillis());
-            LOG.infof("Member %s responded to ping, status set to ALIVE", member.getNodeId());
+        processGossip(message);
+    }
+
+    private void refreshKnownSender(String senderId) {
+        GossipMember member = members.get(senderId);
+        if (member == null) {
+            return;
+        }
+        boolean statusChanged = !member.isAlive();
+        member.setStatus(MemberStatus.ALIVE);
+        member.setLastSeen(System.currentTimeMillis());
+        if (statusChanged) {
+            LOG.infof("Member %s sent a direct gossip message, status set to ALIVE", member.getNodeId());
             notifyMembershipChange();
         }
-        // Also process the membership list included in the ACK message
-        processGossip(message);
     }
 
     /**
@@ -387,17 +396,14 @@ public class GossipDiscoveryStrategy implements DiscoveryStrategy {
      * Serializes a GossipMessage and sends it via UDP to the target host and port.
      */
     private void sendGossipMessage(GossipMessageType type, String senderId, Map<String, GossipMember> membersToSend, String targetHost, int targetPort) {
-        try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
-             ObjectOutputStream oos = new ObjectOutputStream(bos)) {
+        try {
             GossipMessage message = new GossipMessage(type, senderId, membersToSend);
-            oos.writeObject(message);
-            oos.flush();
-            Buffer buffer = Buffer.buffer(bos.toByteArray());
+            Buffer buffer = Buffer.buffer(GossipMessageCodec.encode(message));
 
             socket.send(buffer, targetPort, targetHost)
                     .onFailure(e -> LOG.warnf(e, "Failed to send gossip message %s from %s to %s:%d", type, senderId, targetHost, targetPort));
         } catch (IOException e) {
-            LOG.warnf(e, "Failed to serialize gossip message %s from %s", type, senderId);
+            LOG.warnf(e, "Failed to encode gossip message %s from %s", type, senderId);
         }
     }
 

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -51,6 +52,17 @@ class StoredValueCodecTest
             assertFalse(decoded.hasMetadata(), "Legacy values should not have metadata");
             assertEquals(0L, decoded.cas(), "Legacy CAS should be 0");
             assertEquals(0L, decoded.expireAt(), "Legacy expiration should be 0");
+        }
+
+        @Test
+        void shouldNotMistakeValidBase64LegacyTextForMetadata()
+        {
+            String input = Base64.getEncoder().encodeToString(new byte[32]);
+
+            StoredValueCodec.StoredValue decoded = StoredValueCodec.decode(input);
+
+            assertFalse(decoded.hasMetadata(), "Only framed values with magic and version are metadata");
+            assertArrayEquals(input.getBytes(StandardCharsets.UTF_8), decoded.value());
         }
 
         /**
@@ -134,6 +146,18 @@ class StoredValueCodecTest
             assertEquals(66L, mutated.cas(), "CAS should be updated");
             assertArrayEquals(stored.value(), mutated.value(), "Value should remain unchanged");
             assertEquals(stored.flags(), mutated.flags(), "Flags should remain unchanged");
+        }
+
+        @Test
+        void shouldDefensivelyCopyPayloadArrays()
+        {
+            byte[] source = "value".getBytes(StandardCharsets.UTF_8);
+            StoredValueCodec.StoredValue stored = new StoredValueCodec.StoredValue(source, 0, 1L, 0L);
+            source[0] = 'X';
+            byte[] exposed = stored.value();
+            exposed[1] = 'X';
+
+            assertArrayEquals("value".getBytes(StandardCharsets.UTF_8), stored.value());
         }
     }
 }

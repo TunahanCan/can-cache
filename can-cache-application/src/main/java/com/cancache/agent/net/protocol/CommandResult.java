@@ -11,7 +11,6 @@ public record CommandResult(Buffer response, boolean keepAlive)
     {
         return new CommandResult(response, true);
     }
-
     public static CommandResult continueWithoutResponse()
     {
         return new CommandResult(null, true);

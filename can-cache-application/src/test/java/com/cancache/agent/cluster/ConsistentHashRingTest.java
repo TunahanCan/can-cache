@@ -53,6 +53,23 @@ class ConsistentHashRingTest
             assertEquals(List.of("A"), ring.nodes(), "Removed node should no longer be present");
             assertEquals(List.of("A"), ring.getReplicas(bytes("key"), 2), "Removed node should not be returned as a replica");
         }
+
+        @Test
+        void shouldPreserveCollidingVirtualNodesAndIgnoreStaleRemoval()
+        {
+            ConsistentHashRing<TestNode> collidingRing = new ConsistentHashRing<>(ignored -> 7, 2);
+            TestNode oldA = new TestNode("A", 1);
+            TestNode replacementA = new TestNode("A", 2);
+            TestNode nodeB = new TestNode("B", 1);
+
+            collidingRing.addNode(oldA, bytes("A"));
+            collidingRing.addNode(nodeB, bytes("B"));
+            collidingRing.addNode(replacementA, bytes("A"));
+            collidingRing.removeNode(oldA, bytes("A"));
+
+            assertEquals(List.of(replacementA, nodeB), collidingRing.getReplicas(bytes("key"), 2),
+                    "Hash collisions and stale removals must not erase the current owner");
+        }
     }
 
     @Nested
@@ -136,5 +153,9 @@ class ConsistentHashRingTest
                 default -> text.hashCode();
             };
         }
+    }
+
+    private record TestNode(String id, int generation)
+    {
     }
 }

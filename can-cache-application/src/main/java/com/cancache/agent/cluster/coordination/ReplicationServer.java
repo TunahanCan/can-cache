@@ -43,6 +43,7 @@ public class ReplicationServer implements AutoCloseable
     private final ClusterState clusterState;
     private final WorkerExecutor workerExecutor;
     private final Vertx vertx;
+    private final int maxFieldSize;
 
     private volatile boolean running;
     private NetServer netServer;
@@ -58,6 +59,8 @@ public class ReplicationServer implements AutoCloseable
         this.engine = engine;
         this.clusterState = clusterState;
         this.config = properties.cluster().replication();
+        long configuredItemSize = Math.max(1, properties.cancache().maxItemSizeBytes());
+        this.maxFieldSize = (int) Math.min(Integer.MAX_VALUE, configuredItemSize * 2L + 1024L);
         this.workerExecutor = workerExecutor;
         this.vertx = vertx;
     }
@@ -250,12 +253,15 @@ public class ReplicationServer implements AutoCloseable
             reader.reset();
         }
 
-        private abstract static class BaseCommandDecoder implements CommandDecoder
+        private abstract class BaseCommandDecoder implements CommandDecoder
         {
             protected void ensureLength(int length) throws IOException
             {
                 if (length < 0) {
                     throw new IOException("negative length in replication command");
+                }
+                if (length > maxFieldSize) {
+                    throw new IOException("replication field exceeds configured limit: " + length);
                 }
             }
         }

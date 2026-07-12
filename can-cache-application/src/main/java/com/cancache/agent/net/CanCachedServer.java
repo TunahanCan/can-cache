@@ -45,6 +45,8 @@ public class CanCachedServer implements AutoCloseable
     private static final Logger LOG = Logger.getLogger(CanCachedServer.class);
     private static final byte[] CRLF = new byte[]{'\r', '\n'};
     private static final long THIRTY_DAYS_SECONDS = 60L * 60L * 24L * 30L;
+    private static final int MAX_COMMAND_LINE_BYTES = 8 * 1024;
+    private static final int MAX_KEY_BYTES = 250;
     private final Vertx vertx;
     private final ClusterClient clusterClient;
     private final AppProperties.Network networkConfig;
@@ -60,7 +62,6 @@ public class CanCachedServer implements AutoCloseable
     private final AtomicLong getHits = new AtomicLong();
     private final AtomicLong getMisses = new AtomicLong();
     private final AtomicLong totalItems = new AtomicLong();
-    private final AtomicLong currItems = new AtomicLong();
     private final AtomicLong currConnections = new AtomicLong();
     private final AtomicLong totalConnections = new AtomicLong();
     private final AtomicLong flushDeadlineMillis = new AtomicLong(0L);
@@ -68,7 +69,6 @@ public class CanCachedServer implements AutoCloseable
 
     private volatile boolean running;
     private NetServer netServer;
-    private AutoCloseable removalSubscription;
 
     @Inject
     public CanCachedServer(Vertx vertx,
@@ -105,7 +105,6 @@ public class CanCachedServer implements AutoCloseable
 
         running = true;
         LOG.infof("cancached-compatible server listening on %s:%d", networkConfig.host(), netServer.actualPort());
-        removalSubscription = localEngine.onRemoval(key -> decrementCurrItems());
     }
 
     private void onClientConnected(NetSocket socket)
@@ -141,13 +140,15 @@ public class CanCachedServer implements AutoCloseable
             });
         }
         String command = parts[0].toLowerCase(Locale.ROOT);
-        return switch (command) {
+        return switch (command)
+        {
             case CanCachedProtocol.SET,
                     CanCachedProtocol.ADD,
                     CanCachedProtocol.REPLACE,
                     CanCachedProtocol.APPEND,
                     CanCachedProtocol.PREPEND,
                     CanCachedProtocol.CAS -> prepareStorageCommand(command, parts);
+
             case CanCachedProtocol.GET -> new ImmediateCommand(() -> handleGet(parts, false));
             case CanCachedProtocol.GETS -> new ImmediateCommand(() -> handleGet(parts, true));
             case CanCachedProtocol.DELETE -> new ImmediateCommand(() -> handleDelete(parts));
@@ -176,6 +177,9 @@ public class CanCachedServer implements AutoCloseable
                 maybeApplyDelayedFlush();
                 return handleSimpleLine("CLIENT_ERROR bad command line format");
             });
+        }
+        if (!isValidKey(parts[1])) {
+            return new ImmediateCommand(() -> handleSimpleLine("CLIENT_ERROR bad command line format"));
         }
 
         int flags;
@@ -242,8 +246,8 @@ public class CanCachedServer implements AutoCloseable
         }
 
         if (Duration.ZERO.equals(ttl)) {
-            if (existing != null && clusterClient.delete(key)) {
-                decrementCurrItems();
+            if (existing != null) {
+                clusterClient.delete(key);
             }
             return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("STORED");
         }
@@ -394,6 +398,11 @@ public class CanCachedServer implements AutoCloseable
         if (parts.length < 2) {
             return handleSimpleLine("CLIENT_ERROR bad command line format");
         }
+        for (int i = 1; i < parts.length; i++) {
+            if (!isValidKey(parts[i])) {
+                return handleSimpleLine("CLIENT_ERROR bad command line format");
+            }
+        }
         cmdGet.incrementAndGet();
         long now = System.currentTimeMillis();
         Buffer response = Buffer.buffer();
@@ -422,14 +431,14 @@ public class CanCachedServer implements AutoCloseable
         if (parts.length < 2) {
             return handleSimpleLine("CLIENT_ERROR bad command line format");
         }
+        if (!isValidKey(parts[1])) {
+            return handleSimpleLine("CLIENT_ERROR bad command line format");
+        }
         boolean noreply = parts.length == 3 && "noreply".equalsIgnoreCase(parts[2]);
         if (parts.length > 3 || (parts.length == 3 && !noreply)) {
             return handleSimpleLine("CLIENT_ERROR invalid arguments");
         }
         boolean removed = clusterClient.delete(parts[1]);
-        if (removed) {
-            decrementCurrItems();
-        }
         if (noreply) {
             return CommandResult.continueWithoutResponse();
         }
@@ -440,6 +449,9 @@ public class CanCachedServer implements AutoCloseable
     {
         maybeApplyDelayedFlush();
         if (parts.length < 3) {
+            return handleSimpleLine("CLIENT_ERROR bad command line format");
+        }
+        if (!isValidKey(parts[1])) {
             return handleSimpleLine("CLIENT_ERROR bad command line format");
         }
         boolean noreply = parts.length == 4 && "noreply".equalsIgnoreCase(parts[3]);
@@ -492,6 +504,9 @@ public class CanCachedServer implements AutoCloseable
         if (parts.length < 3) {
             return handleSimpleLine("CLIENT_ERROR bad command line format");
         }
+        if (!isValidKey(parts[1])) {
+            return handleSimpleLine("CLIENT_ERROR bad command line format");
+        }
         boolean noreply = parts.length == 4 && "noreply".equalsIgnoreCase(parts[3]);
         if (parts.length > 4 || (parts.length == 4 && !noreply)) {
             return handleSimpleLine("CLIENT_ERROR invalid arguments");
@@ -505,7 +520,6 @@ public class CanCachedServer implements AutoCloseable
         Duration ttl = parseExpiration(exptime);
         if (Duration.ZERO.equals(ttl)) {
             if (clusterClient.delete(parts[1])) {
-                decrementCurrItems();
                 return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("TOUCHED");
             }
             return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
@@ -562,7 +576,6 @@ public class CanCachedServer implements AutoCloseable
         cmdFlush.incrementAndGet();
         if (delaySeconds <= 0L) {
             clusterClient.clear();
-            currItems.set(0L);
             flushDeadlineMillis.set(0L);
         } else {
             long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(delaySeconds);
@@ -585,6 +598,20 @@ public class CanCachedServer implements AutoCloseable
         }
     }
 
+    private boolean isValidKey(String key)
+    {
+        if (key == null || key.isEmpty() || key.getBytes(StandardCharsets.UTF_8).length > MAX_KEY_BYTES) {
+            return false;
+        }
+        for (int i = 0; i < key.length(); i++) {
+            char character = key.charAt(i);
+            if (character <= 0x20 || character == 0x7F) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private CommandResult handleStats()
     {
         maybeApplyDelayedFlush();
@@ -602,7 +629,7 @@ public class CanCachedServer implements AutoCloseable
         writeStat(out, "cmd_flush", cmdFlush.get());
         writeStat(out, "get_hits", getHits.get());
         writeStat(out, "get_misses", getMisses.get());
-        writeStat(out, "curr_items", currItems.get());
+        writeStat(out, "curr_items", localEngine.size());
         writeStat(out, "total_items", totalItems.get());
         writeLine(out, "END");
         return CommandResult.continueWith(out);
@@ -627,7 +654,6 @@ public class CanCachedServer implements AutoCloseable
         }
         if (System.currentTimeMillis() >= deadline && flushDeadlineMillis.compareAndSet(deadline, 0L)) {
             clusterClient.clear();
-            currItems.set(0L);
         }
     }
 
@@ -640,9 +666,7 @@ public class CanCachedServer implements AutoCloseable
         StoredValueCodec.StoredValue entry = StoredValueCodec.decode(encoded);
         long now = System.currentTimeMillis();
         if (entry.expired(now)) {
-            if (clusterClient.delete(key)) {
-                decrementCurrItems();
-            }
+            clusterClient.delete(key);
             return null;
         }
         return entry;
@@ -655,9 +679,7 @@ public class CanCachedServer implements AutoCloseable
             effectiveTtl = ttlFromExpireAt(entry.expireAt());
         }
         if (effectiveTtl != null && effectiveTtl.isZero()) {
-            if (clusterClient.delete(key)) {
-                decrementCurrItems();
-            }
+            clusterClient.delete(key);
             return true;
         }
         return clusterClient.set(key, StoredValueCodec.encode(entry), effectiveTtl);
@@ -704,13 +726,7 @@ public class CanCachedServer implements AutoCloseable
 
     private void incrementItems()
     {
-        currItems.incrementAndGet();
         totalItems.incrementAndGet();
-    }
-
-    private void decrementCurrItems()
-    {
-        currItems.updateAndGet(prev -> Math.max(0L, prev - 1L));
     }
 
     private Duration parseExpiration(long exptime)
@@ -769,12 +785,6 @@ public class CanCachedServer implements AutoCloseable
     public void close()
     {
         running = false;
-        if (removalSubscription != null) {
-            try {
-                removalSubscription.close();
-            } catch (Exception ignored) {
-            }
-        }
         if (netServer != null) {
             try {
                 netServer.close().toCompletionStage().toCompletableFuture().join();
@@ -800,6 +810,12 @@ public class CanCachedServer implements AutoCloseable
         private void handleData(Buffer data)
         {
             if (closed) return;
+            long bufferedBytes = (long) buffer.length() + data.length();
+            long maxBufferedBytes = (long) maxItemSize + MAX_COMMAND_LINE_BYTES + CRLF.length;
+            if (bufferedBytes > maxBufferedBytes) {
+                rejectOversizedInput();
+                return;
+            }
             buffer.appendBuffer(data);
             processBuffer();
         }
@@ -828,6 +844,13 @@ public class CanCachedServer implements AutoCloseable
 
                 int lineEnd = indexOfCrlf(buffer);
                 if (lineEnd < 0) {
+                    if (buffer.length() > MAX_COMMAND_LINE_BYTES) {
+                        rejectOversizedInput();
+                    }
+                    return;
+                }
+                if (lineEnd > MAX_COMMAND_LINE_BYTES) {
+                    rejectOversizedInput();
                     return;
                 }
                 String line = buffer.getString(0, lineEnd);
@@ -888,6 +911,17 @@ public class CanCachedServer implements AutoCloseable
                 }
             }
             return -1;
+        }
+
+        private void rejectOversizedInput()
+        {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            pendingStorage = null;
+            buffer = Buffer.buffer();
+            socket.end(lineBuffer("CLIENT_ERROR command line too long"));
         }
 
         private void close()

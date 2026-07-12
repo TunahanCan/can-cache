@@ -67,7 +67,8 @@ public class CanCacheAgentConnector {
 
         Duration probeInterval = sanitizeDuration(agentConfig.probeInterval(), Duration.ofSeconds(5));
         long periodMillis = Math.max(250L, probeInterval.toMillis());
-        timerId = vertx.setPeriodic(periodMillis, id -> {
+        timerId = vertx.setPeriodic(periodMillis, id ->
+        {
             probeAgent();
             registerToAgent();
         });

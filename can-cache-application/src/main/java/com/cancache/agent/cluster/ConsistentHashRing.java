@@ -2,10 +2,12 @@ package com.cancache.agent.cluster;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.NavigableMap;
+import java.util.Objects;
 import java.util.Set;
-import java.util.SortedMap;
 import java.util.TreeMap;
 
 /**
@@ -16,7 +18,7 @@ import java.util.TreeMap;
  */
 public final class ConsistentHashRing<N>
 {
-    private final SortedMap<Integer,N> ring = new TreeMap<>();
+    private final NavigableMap<Integer, List<VirtualNode<N>>> ring = new TreeMap<>();
     private final HashFn hash;
     private final int vnodes;
 
@@ -26,32 +28,47 @@ public final class ConsistentHashRing<N>
     }
 
     public synchronized void addNode(N node, byte[] idBytes) {
-        for (int i = 0; i < vnodes; i++)
-            ring.put(hash.hash(join(idBytes, i)), node);
+        Objects.requireNonNull(node, "node");
+        Objects.requireNonNull(idBytes, "idBytes");
+        for (int i = 0; i < vnodes; i++) {
+            int vnodeIndex = i;
+            int position = hash.hash(join(idBytes, vnodeIndex));
+            List<VirtualNode<N>> bucket = ring.computeIfAbsent(position, ignored -> new ArrayList<>());
+            bucket.removeIf(existing -> existing.vnodeIndex() == vnodeIndex
+                    && Arrays.equals(existing.idBytes(), idBytes));
+            bucket.add(new VirtualNode<>(node, idBytes.clone(), vnodeIndex));
+            bucket.sort(ConsistentHashRing::compareVirtualNodes);
+        }
     }
     public synchronized void removeNode(N node, byte[] idBytes) {
-        for (int i = 0; i < vnodes; i++)
-            ring.remove(hash.hash(join(idBytes, i)));
+        Objects.requireNonNull(node, "node");
+        Objects.requireNonNull(idBytes, "idBytes");
+        for (int i = 0; i < vnodes; i++) {
+            int vnodeIndex = i;
+            int position = hash.hash(join(idBytes, vnodeIndex));
+            List<VirtualNode<N>> bucket = ring.get(position);
+            if (bucket == null) {
+                continue;
+            }
+            bucket.removeIf(existing -> existing.vnodeIndex() == vnodeIndex
+                    && Objects.equals(existing.node(), node)
+                    && Arrays.equals(existing.idBytes(), idBytes));
+            if (bucket.isEmpty()) {
+                ring.remove(position);
+            }
+        }
     }
     public synchronized List<N> getReplicas(byte[] key, int rf)
     {
-        var out = new ArrayList<N>(Math.max(0, Math.min(rf, ring.size())));
+        var out = new ArrayList<N>(Math.max(0, rf));
         if (rf <= 0 || ring.isEmpty()) return out;
 
         int h = hash.hash(key);
         Set<N> unique = new LinkedHashSet<>();
 
-        SortedMap<Integer, N> tail = ring.tailMap(h);
-        for (N node : tail.values()) {
-            unique.add(node);
-            if (unique.size() >= rf) break;
-        }
-
+        collectReplicas(ring.tailMap(h, true), unique, rf);
         if (unique.size() < rf) {
-            for (N node : ring.headMap(h).values()) {
-                unique.add(node);
-                if (unique.size() >= rf) break;
-            }
+            collectReplicas(ring.headMap(h, false), unique, rf);
         }
 
         out.addAll(unique);
@@ -59,7 +76,31 @@ public final class ConsistentHashRing<N>
     }
 
     public synchronized List<N> nodes() {
-        return new ArrayList<>(new LinkedHashSet<>(ring.values()));
+        Set<N> unique = new LinkedHashSet<>();
+        collectReplicas(ring, unique, Integer.MAX_VALUE);
+        return new ArrayList<>(unique);
+    }
+
+    private void collectReplicas(NavigableMap<Integer, List<VirtualNode<N>>> section,
+                                 Set<N> destination,
+                                 int requested)
+    {
+        for (List<VirtualNode<N>> bucket : section.values()) {
+            for (VirtualNode<N> virtualNode : bucket) {
+                destination.add(virtualNode.node());
+                if (destination.size() >= requested) {
+                    return;
+                }
+            }
+        }
+    }
+
+    private static int compareVirtualNodes(VirtualNode<?> left, VirtualNode<?> right)
+    {
+        int identityOrder = Arrays.compareUnsigned(left.idBytes(), right.idBytes());
+        return identityOrder != 0
+                ? identityOrder
+                : Integer.compare(left.vnodeIndex(), right.vnodeIndex());
     }
 
     private static byte[] join(byte[] id, int i){
@@ -68,5 +109,9 @@ public final class ConsistentHashRing<N>
         System.arraycopy(id, 0, combined, 0, id.length);
         System.arraycopy(suffix, 0, combined, id.length, suffix.length);
         return combined;
+    }
+
+    private record VirtualNode<N>(N node, byte[] idBytes, int vnodeIndex)
+    {
     }
 }

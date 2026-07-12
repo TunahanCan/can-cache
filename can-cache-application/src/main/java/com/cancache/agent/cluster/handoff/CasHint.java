@@ -8,17 +8,29 @@ import java.util.Objects;
 /**
  * CAS işlemlerinin yeniden oynatılmasını sağlayan ipucu temsilidir.
  */
-public record CasHint(String key, String value, long expectedCas, Duration ttl) implements Hint
+public record CasHint(String key, String value, long expectedCas, long expireAtMillis) implements Hint
 {
     public CasHint
     {
         Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(value, "value");
+        if (expireAtMillis < 0L) {
+            throw new IllegalArgumentException("expireAtMillis must not be negative");
+        }
     }
 
     @Override
-    public boolean replay(Node<String, String> node)
+    public ReplayResult replay(Node<String, String> node, long nowMillis)
     {
-        return node.compareAndSwap(key, value, expectedCas, ttl);
+        if (expireAtMillis > 0L && expireAtMillis <= nowMillis) {
+            return ReplayResult.SATISFIED;
+        }
+        Duration remainingTtl = expireAtMillis == 0L
+                ? null
+                : Duration.ofMillis(expireAtMillis - nowMillis);
+        return node.compareAndSwap(key, value, expectedCas, remainingTtl)
+                ? ReplayResult.APPLIED
+                : ReplayResult.SATISFIED;
     }
 
     @Override

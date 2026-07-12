@@ -13,6 +13,10 @@ import java.util.Objects;
  * düzenleyebilir.
  */
 public final class StoredValueCodec {
+    private static final int MAGIC = 0x43435631; // CCV1
+    private static final byte VERSION = 1;
+    private static final int HEADER_SIZE = Integer.BYTES + Byte.BYTES + Integer.BYTES
+            + Long.BYTES + Integer.BYTES + Long.BYTES;
 
     private StoredValueCodec() {
     }
@@ -21,14 +25,21 @@ public final class StoredValueCodec {
         Objects.requireNonNull(encoded, "encoded");
         try {
             byte[] data = Base64.getDecoder().decode(encoded);
-            if (data.length < 20) {
+            if (data.length < HEADER_SIZE) {
                 return legacy(encoded);
             }
             ByteBuffer buffer = ByteBuffer.wrap(data).order(ByteOrder.BIG_ENDIAN);
+            if (buffer.getInt() != MAGIC || buffer.get() != VERSION) {
+                return legacy(encoded);
+            }
+            int valueLength = buffer.getInt();
+            if (valueLength < 0 || valueLength != data.length - HEADER_SIZE) {
+                return legacy(encoded);
+            }
             long cas = buffer.getLong();
             int flags = buffer.getInt();
             long expireAt = buffer.getLong();
-            byte[] value = new byte[data.length - 20];
+            byte[] value = new byte[valueLength];
             buffer.get(value);
             return new StoredValue(value, flags, cas, expireAt, true);
         } catch (IllegalArgumentException e) {
@@ -38,7 +49,10 @@ public final class StoredValueCodec {
 
     public static String encode(StoredValue value) {
         Objects.requireNonNull(value, "value");
-        ByteBuffer buffer = ByteBuffer.allocate(20 + value.value.length).order(ByteOrder.BIG_ENDIAN);
+        ByteBuffer buffer = ByteBuffer.allocate(HEADER_SIZE + value.value.length).order(ByteOrder.BIG_ENDIAN);
+        buffer.putInt(MAGIC);
+        buffer.put(VERSION);
+        buffer.putInt(value.value.length);
         buffer.putLong(value.cas);
         buffer.putInt(value.flags);
         buffer.putLong(value.expireAt);
@@ -63,7 +77,7 @@ public final class StoredValueCodec {
         }
 
         private StoredValue(byte[] value, int flags, long cas, long expireAt, boolean hasMetadata) {
-            this.value = Objects.requireNonNull(value, "value");
+            this.value = Objects.requireNonNull(value, "value").clone();
             this.flags = flags;
             this.cas = cas;
             this.expireAt = expireAt;
@@ -71,7 +85,7 @@ public final class StoredValueCodec {
         }
 
         public byte[] value() {
-            return value;
+            return value.clone();
         }
 
         public int flags() {
