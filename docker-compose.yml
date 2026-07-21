@@ -16,6 +16,7 @@ services:
       AGENT_DASHBOARD_MODE: logs
       QUARKUS_LOG_LEVEL: INFO
     ports:
+      - "127.0.0.1:8080:8080"
       - "11211:11211"
       - "11311:11311"
     networks:

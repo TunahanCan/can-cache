@@ -1,5 +1,6 @@
 package com.cancache.agent.service;
 
+import com.cancache.agent.config.AgentConfig;
 import com.cancache.agent.model.ConnectionRecord;
 import com.cancache.agent.model.NodeStats;
 import jakarta.inject.Inject;
@@ -25,6 +26,9 @@ public class AgentStatusResource {
     @Inject
     ConnectionTracker tracker;
 
+    @Inject
+    AgentConfig config;
+
     @GET
     @Path("/instances")
     public AgentStatusResponse status() {
@@ -48,7 +52,14 @@ public class AgentStatusResource {
                 metrics.dnsChanges(),
                 metrics.latestEvents(),
                 instances,
-                recentConnections
+                recentConnections,
+                new AgentInfo(
+                        config.listen().host() + ':' + config.listen().port(),
+                        config.selection().policy().name(),
+                        config.discovery().dns(),
+                        config.health().interval().toMillis(),
+                        config.registration().enabled(),
+                        config.registration().host() + ':' + config.registration().port())
         );
     }
 
@@ -63,7 +74,12 @@ public class AgentStatusResource {
                 node.errorCount(),
                 node.lastCheck(),
                 node.lastCheckAge().toSeconds(),
-                node.lastError()
+                node.lastError(),
+                registry.sourceOf(node.address()),
+                node.lastLatencyMillis(),
+                node.successfulChecks(),
+                node.failedChecks(),
+                node.lastStateChange()
         );
     }
 
@@ -91,7 +107,8 @@ public class AgentStatusResource {
             long dnsChanges,
             List<String> latestEvents,
             List<InstanceStatus> instances,
-            List<ConnectionSummary> recentConnections
+            List<ConnectionSummary> recentConnections,
+            AgentInfo agent
     ) {
     }
 
@@ -105,7 +122,12 @@ public class AgentStatusResource {
             long errorCount,
             Instant lastCheck,
             long lastCheckAgeSeconds,
-            String lastError
+            String lastError,
+            String source,
+            long latencyMillis,
+            long successfulChecks,
+            long failedChecks,
+            Instant lastStateChange
     ) {
     }
 
@@ -117,6 +139,16 @@ public class AgentStatusResource {
             long durationMs,
             long bytesIn,
             long bytesOut
+    ) {
+    }
+
+    public record AgentInfo(
+            String listenAddress,
+            String selectionPolicy,
+            String discoveryTarget,
+            long healthIntervalMillis,
+            boolean registrationEnabled,
+            String registrationAddress
     ) {
     }
 }

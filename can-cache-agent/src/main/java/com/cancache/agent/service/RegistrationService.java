@@ -1,6 +1,7 @@
 package com.cancache.agent.service;
 
 import com.cancache.agent.config.AgentConfig;
+import io.quarkus.runtime.Startup;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.net.NetServer;
@@ -15,6 +16,7 @@ import org.jboss.logging.Logger;
 import java.time.Duration;
 import java.util.regex.Pattern;
 
+@Startup
 @ApplicationScoped
 public class RegistrationService {
 

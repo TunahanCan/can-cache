@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#07111f">
+  <title>Can Cache · Live Cluster</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Can Cache dashboard ana sayfa">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>
+        <strong>CAN·CACHE</strong>
+        <small>CLUSTER AGENT</small>
+      </span>
+    </a>
+    <div class="topbar-meta">
+      <a class="api-link" href="/agent/instances" target="_blank" rel="noreferrer">JSON API</a>
+      <div id="live-pill" class="live-pill connecting" role="status" aria-live="polite">
+        <span class="live-dot"></span>
+        <span id="live-label">Bağlanıyor</span>
+      </div>
+      <div class="sync-time">
+        <span>Son senkronizasyon</span>
+        <strong id="last-sync">—</strong>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero" aria-labelledby="dashboard-title">
+      <div class="hero-copy">
+        <p class="eyebrow">DAĞITIK CACHE GÖZLEMLENEBİLİRLİĞİ</p>
+        <h1 id="dashboard-title">Cluster'ın tek bir<br><em>nabzı var.</em></h1>
+        <p id="hero-summary" class="hero-summary">Agent ve cache podları keşfediliyor.</p>
+        <div class="hero-tags" aria-label="Agent yapılandırması">
+          <span id="listen-address">Proxy —</span>
+          <span id="selection-policy">Policy —</span>
+          <span id="uptime">Uptime —</span>
+        </div>
+      </div>
+      <div class="health-orbit" aria-label="Cluster sağlık özeti">
+        <svg viewBox="0 0 220 220" role="img" aria-labelledby="health-orbit-title">
+          <title id="health-orbit-title">Cluster sağlık oranı</title>
+          <circle class="orbit-track" cx="110" cy="110" r="82"></circle>
+          <circle id="health-ring" class="orbit-value" cx="110" cy="110" r="82"></circle>
+          <circle class="orbit-inner" cx="110" cy="110" r="61"></circle>
+        </svg>
+        <div class="orbit-copy">
+          <strong id="health-percent">—</strong>
+          <span>cluster health</span>
+          <small id="health-ratio">0 / 0 pod</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="metric-grid" aria-label="Anlık cluster metrikleri">
+      <article class="metric-card mint">
+        <div class="metric-head"><span>Sağlıklı podlar</span><i class="metric-icon pulse-icon"></i></div>
+        <strong id="metric-healthy">—</strong>
+        <p id="metric-healthy-note">Discovery bekleniyor</p>
+      </article>
+      <article class="metric-card sky">
+        <div class="metric-head"><span>Aktif bağlantılar</span><i class="metric-icon link-icon"></i></div>
+        <strong id="metric-connections">—</strong>
+        <p id="metric-connection-note">Proxy üzerinden açık bağlantı</p>
+      </article>
+      <article class="metric-card violet">
+        <div class="metric-head"><span>Anlık trafik hızı</span><i class="metric-icon flow-icon"></i></div>
+        <strong id="metric-throughput">—</strong>
+        <p id="metric-throughput-note">In + out, saniyelik</p>
+      </article>
+      <article class="metric-card amber">
+        <div class="metric-head"><span>Toplam trafik</span><i class="metric-icon data-icon"></i></div>
+        <strong id="metric-traffic">—</strong>
+        <p id="metric-traffic-note">Toplam çift yönlü trafik</p>
+      </article>
+    </section>
+
+    <section class="dashboard-grid">
+      <article class="panel topology-panel">
+        <header class="panel-header">
+          <div>
+            <p class="section-kicker">LIVE MAP</p>
+            <h2>Dağıtık topoloji</h2>
+          </div>
+          <div class="legend" aria-label="Node durumları">
+            <span><i class="up"></i>Healthy</span>
+            <span><i class="unknown"></i>Unknown</span>
+            <span><i class="down"></i>Down</span>
+          </div>
+        </header>
+        <div class="topology-stage">
+          <svg id="topology" viewBox="0 0 900 430" role="img" aria-label="Agent ve cache pod bağlantı topolojisi"></svg>
+          <div id="topology-empty" class="empty-state hidden">
+            <span class="empty-glyph">⌁</span>
+            <strong>Henüz pod keşfedilmedi</strong>
+            <p>DNS veya registration akışı başladığında topoloji burada oluşacak.</p>
+          </div>
+        </div>
+      </article>
+
+      <aside class="panel pulse-panel">
+        <header class="panel-header compact">
+          <div>
+            <p class="section-kicker">SON 72 SANİYE</p>
+            <h2>Cluster nabzı</h2>
+          </div>
+        </header>
+        <div class="chart-block">
+          <div class="chart-label"><span>Connections</span><strong id="chart-connection-value">0</strong></div>
+          <svg class="sparkline" id="connections-chart" viewBox="0 0 420 92" preserveAspectRatio="none" aria-label="Aktif bağlantı zaman grafiği"></svg>
+        </div>
+        <div class="chart-block">
+          <div class="chart-label"><span>Throughput</span><strong id="chart-throughput-value">0 B/s</strong></div>
+          <svg class="sparkline" id="throughput-chart" viewBox="0 0 420 92" preserveAspectRatio="none" aria-label="Throughput zaman grafiği"></svg>
+        </div>
+        <dl class="mini-stats">
+          <div><dt>DNS changes</dt><dd id="dns-changes">0</dd></div>
+          <div><dt>Health interval</dt><dd id="health-interval">—</dd></div>
+          <div><dt>Registration</dt><dd id="registration-status">—</dd></div>
+        </dl>
+      </aside>
+    </section>
+
+    <section class="content-grid">
+      <article class="panel pods-panel">
+        <header class="panel-header">
+          <div>
+            <p class="section-kicker">UPSTREAM FLEET</p>
+            <h2>Cache podları</h2>
+          </div>
+          <span id="pod-count" class="count-badge">0 pod</span>
+        </header>
+        <div id="pod-cards" class="pod-cards"></div>
+      </article>
+
+      <aside class="panel event-panel">
+        <header class="panel-header compact">
+          <div>
+            <p class="section-kicker">AGENT FEED</p>
+            <h2>Canlı olaylar</h2>
+          </div>
+          <span class="feed-indicator" aria-hidden="true"></span>
+        </header>
+        <ol id="event-feed" class="event-feed" aria-live="polite"></ol>
+      </aside>
+    </section>
+
+    <section class="panel connections-panel">
+      <header class="panel-header">
+        <div>
+          <p class="section-kicker">REQUEST ROUTING</p>
+          <h2>Son bağlantılar</h2>
+        </div>
+        <span class="subtle-label">En yeni önce</span>
+      </header>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Client</th><th>Upstream pod</th><th>Başlangıç</th><th>Süre</th><th>Input</th><th>Output</th></tr></thead>
+          <tbody id="connections-body"></tbody>
+        </table>
+        <div id="connections-empty" class="table-empty">Henüz tamamlanmış bağlantı yok.</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Can Cache Agent · live control plane</span>
+    <span id="discovery-target">Discovery —</span>
+  </footer>
+
+  <div id="connection-banner" class="connection-banner hidden" role="alert">
+    <strong>Agent API bağlantısı kesildi.</strong>
+    <span id="connection-error">Yeniden bağlanılıyor…</span>
+  </div>
+
+  <noscript>Bu canlı dashboard için JavaScript etkin olmalıdır.</noscript>
+  <script src="/assets/dashboard.js" defer></script>
+</body>
+</html>

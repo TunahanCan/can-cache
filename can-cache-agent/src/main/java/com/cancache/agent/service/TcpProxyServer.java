@@ -4,6 +4,7 @@ import com.cancache.agent.config.AgentConfig;
 import com.cancache.agent.model.ConnectionContext;
 import com.cancache.agent.model.ConnectionRecord;
 import com.cancache.agent.model.NodeStats;
+import io.quarkus.runtime.Startup;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.net.*;
@@ -19,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+@Startup
 @ApplicationScoped
 public class TcpProxyServer {
 
@@ -58,6 +60,7 @@ public class TcpProxyServer {
 
     private void handleClient(NetSocket downstream) {
         active.add(downstream);
+        downstream.pause();
         selector.select(registry.ready()).ifPresentOrElse(node -> connectUpstream(downstream, node),
                 () -> {
                     metrics.addEvent("[ERR ] no ready upstream for client=" + downstream.remoteAddress());
@@ -67,9 +70,9 @@ public class TcpProxyServer {
     }
 
     private void connectUpstream(NetSocket downstream, NodeStats node) {
-        String[] hp = node.address().split(":");
+        HostPort upstreamAddress = parseAddress(node.address());
         String clientAddr = downstream.remoteAddress().toString();
-        client.connect(Integer.parseInt(hp[1]), hp[0])
+        client.connect(upstreamAddress.port(), upstreamAddress.host())
                 .onSuccess(upstream -> {
                     ConnectionContext ctx = new ConnectionContext(clientAddr, node.address());
                     node.incActiveConn();
@@ -129,6 +132,8 @@ public class TcpProxyServer {
             metrics.addEvent("[ERR ] upstream io=" + err.getMessage());
             upstream.close();
         });
+
+        downstream.resume();
     }
 
     private void forward(Buffer buffer, NetSocket target, NetSocket source, boolean downstreamToUpstream, ConnectionContext ctx,
@@ -174,6 +179,18 @@ public class TcpProxyServer {
                 ctx.bytesOut()));
     }
 
+    private HostPort parseAddress(String address) {
+        int separator = address.lastIndexOf(':');
+        if (separator <= 0 || separator == address.length() - 1) {
+            throw new IllegalArgumentException("Invalid upstream address: " + address);
+        }
+        String host = address.substring(0, separator);
+        if (host.startsWith("[") && host.endsWith("]")) {
+            host = host.substring(1, host.length() - 1);
+        }
+        return new HostPort(host, Integer.parseInt(address.substring(separator + 1)));
+    }
+
     @PreDestroy
     void stop() {
         if (server != null) {
@@ -183,5 +200,8 @@ public class TcpProxyServer {
         if (client != null) {
             client.close();
         }
+    }
+
+    private record HostPort(String host, int port) {
     }
 }

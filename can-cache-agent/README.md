@@ -20,7 +20,7 @@
 - Registration protocol support on `agent.registration.port` (default `11311`).
 - Health checks and upstream status tracking.
 - Selection policies: `RR` and `LEAST_CONN`.
-- Terminal dashboard (`tui`) and configurable dashboard modes.
+- Terminal dashboard (`tui`) plus a responsive live web dashboard.
 - REST status endpoint for connected instances and recent connection state (`GET /agent/instances`).
 
 ### Registration protocol
@@ -46,6 +46,8 @@ curl http://localhost:8080/agent/instances
 ```
 
 This endpoint returns current instance list, health state, active/total connections, traffic counters, latest events, and recent connection summaries.
+
+When using Docker Compose, open the web dashboard at [http://localhost:8080/](http://localhost:8080/). The HTTP port is bound to `127.0.0.1` by default because the dashboard/status API does not provide authentication or TLS. Put it behind an authenticated reverse proxy before exposing it to another network.
 
 ### Quick run
 
@@ -87,7 +89,7 @@ See `src/main/resources/application.yaml`.
 - `agent.registration.port` (varsayılan `11311`) üzerinden kayıt protokolü desteği.
 - Sağlık kontrolleri ve upstream durum takibi.
 - Seçim politikaları: `RR` ve `LEAST_CONN`.
-- Terminal dashboard (`tui`) ve yapılandırılabilir dashboard modları.
+- Terminal dashboard (`tui`) ve responsive canlı web dashboard.
 
 ### Kayıt protokolü
 
@@ -112,6 +114,8 @@ curl http://localhost:8080/agent/instances
 ```
 
 Bu endpoint; anlık instance listesi, sağlık durumu, aktif/toplam bağlantı sayıları, trafik sayaçları, son eventler ve son bağlantı özetlerini JSON olarak döner.
+
+Docker Compose kullanırken web dashboard'u [http://localhost:8080/](http://localhost:8080/) adresinden açabilirsiniz. Dashboard/durum API'sinde kimlik doğrulama ve TLS bulunmadığı için HTTP portu varsayılan olarak yalnızca `127.0.0.1` adresine bağlanır. Başka bir ağa açmadan önce kimlik doğrulamalı bir reverse proxy arkasına alın.
 
 ### Hızlı çalıştırma
 

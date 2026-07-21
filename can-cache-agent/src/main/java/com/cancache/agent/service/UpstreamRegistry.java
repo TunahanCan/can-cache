@@ -75,4 +75,19 @@ public class UpstreamRegistry {
         }
         return up;
     }
+
+    public String sourceOf(String address) {
+        boolean discovered = discoveredAddresses.contains(address);
+        boolean registered = registeredUntilEpochMillis.containsKey(address);
+        if (discovered && registered) {
+            return "DNS + REGISTRATION";
+        }
+        if (discovered) {
+            return "DNS";
+        }
+        if (registered) {
+            return "REGISTRATION";
+        }
+        return "UNKNOWN";
+    }
 }
