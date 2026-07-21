@@ -69,13 +69,14 @@ build_sampler_jar() {
 
 build_sampler_jar
 
-readarray -t sampler_jars < <(find "${sampler_module}/target" -maxdepth 1 -type f -name 'can-cache-performance-test-*.jar' | sort)
-if [[ ${#sampler_jars[@]} -eq 0 ]]; then
+sampler_jar="$(find "${sampler_module}/target" -maxdepth 1 -type f \
+  -name 'can-cache-performance-test-*.jar' \
+  ! -name '*-sources.jar' ! -name '*-javadoc.jar' | LC_ALL=C sort | tail -n 1)"
+if [[ -z ${sampler_jar} ]]; then
   echo "Java sampler JAR was not produced under ${sampler_module}/target." >&2
   exit 1
 fi
 
-sampler_jar="${sampler_jars[-1]}"
 echo "Sampler JAR available at ${sampler_jar}" >&2
 
 if [[ -n ${JMETER_HOME:-} ]]; then
@@ -120,6 +121,7 @@ mkdir -p "${results_dir}"
 
 default_result_file="${results_dir}/$(basename "${plan}" .jmx)-$(date +%Y%m%d-%H%M%S).jtl"
 result_file="${RESULT_FILE:-${default_result_file}}"
+mkdir -p "$(dirname "${result_file}")"
 
 echo "Results will be written to ${result_file}" >&2
 
@@ -136,7 +138,9 @@ props=(
 [[ -n ${PAYLOAD_SIZE:-} ]] && props+=("-JpayloadSize=${PAYLOAD_SIZE}")
 [[ -n ${DURATION_SECONDS:-} ]] && props+=("-JdurationSeconds=${DURATION_SECONDS}")
 
-jmeter_cmd=("${jmeter_bin}" -n -t "${plan}" -l "${result_file}")
+# Each plan already contains the single result writer configured by resultFile.
+# Passing -l as well would attach a second writer to the same JTL file.
+jmeter_cmd=("${jmeter_bin}" -n -t "${plan}")
 jmeter_cmd+=("${props[@]}")
 jmeter_cmd+=("$@")
 

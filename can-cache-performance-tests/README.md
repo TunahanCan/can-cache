@@ -38,6 +38,11 @@ Docker alternative:
 ./can-cache-performance-tests/run-docker.sh medium
 ```
 
+The Docker runner targets `host.docker.internal` by default (including a Linux
+host-gateway mapping). Set `TARGET_HOST` when the cache is reachable elsewhere.
+The sampler JAR targets Java 17. The default multi-architecture container runs
+JMeter 5.6.3 on a Java 21 runtime, so it can load that bytecode on Intel and ARM.
+
 ### Typical overrides
 
 Use extra JMeter args after `--`:
@@ -49,6 +54,9 @@ Use extra JMeter args after `--`:
 ### Notes
 
 - Start `can-cache-application` before running load tests.
+- Each JMeter worker keeps one TCP connection open, reconnecting once after a
+  transport failure, so latency reflects cache traffic rather than a handshake
+  on every iteration.
 - Compare `.jtl` results with the corresponding `nfr/*.md` acceptance criteria.
 
 ---
@@ -87,6 +95,12 @@ Docker alternatifi:
 ./can-cache-performance-tests/run-docker.sh medium
 ```
 
+Docker çalıştırıcısı varsayılan olarak `host.docker.internal` adresini kullanır
+(Linux için host-gateway eşlemesi de eklenir). Cache başka bir adresten
+erişiliyorsa `TARGET_HOST` ayarlayın. Sampler JAR'ı Java 17 hedefiyle derlenir;
+varsayılan çok mimarili container JMeter 5.6.3'ü Java 21 runtime üzerinde
+çalıştırdığı için Intel ve ARM sistemlerde bu bytecode'u yükleyebilir.
+
 ### Sık kullanılan override'lar
 
 `--` sonrasında ekstra JMeter argümanları verilebilir:
@@ -98,4 +112,6 @@ Docker alternatifi:
 ### Notlar
 
 - Yük testinden önce `can-cache-application` çalışıyor olmalıdır.
+- Her JMeter worker'ı bir TCP bağlantısını açık tutar; taşıma hatasında bir kez
+  yeniden bağlanır. Böylece her iterasyonda TCP el sıkışması ölçülmez.
 - `.jtl` sonuçlarını ilgili `nfr/*.md` kabul kriterleriyle karşılaştırın.
