@@ -26,6 +26,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
@@ -55,9 +57,14 @@ public class CoordinationService implements AutoCloseable
     private final DiscoveryStrategy discoveryStrategy; // Injected discovery strategy
 
     private final Map<String, RemoteMember> members = new ConcurrentHashMap<>();
+    private final Set<String> memberTasksInProgress = ConcurrentHashMap.newKeySet();
     private final Object membershipLock = new Object();
+    private final AtomicReference<Set<NodeInfo>> pendingMembership = new AtomicReference<>();
+    private final AtomicReference<Set<NodeInfo>> latestMembership = new AtomicReference<>(Set.of());
+    private final AtomicBoolean reconciliationScheduled = new AtomicBoolean();
 
     private volatile boolean running;
+    private volatile long reconciliationTimerId = -1L;
 
     @Inject
     public CoordinationService(ConsistentHashRing<Node<String, String>> ring,
@@ -95,19 +102,86 @@ public class CoordinationService implements AutoCloseable
         ring.addNode(localNode, localNode.id().getBytes(StandardCharsets.UTF_8));
         running = true;
 
-        // Start the discovery strategy and provide a callback for membership changes
-        discoveryStrategy.start(this::handleMembershipChange);
+        // Discovery callbacks may run on a Vert.x event-loop. Keep all reconciliation,
+        // handshakes and hinted-handoff replay on virtual worker threads.
+        discoveryStrategy.start(this::scheduleMembershipChange);
 
         // Announce local node presence (if strategy supports it)
         discoveryStrategy.announce();
+
+        long reconciliationInterval = hintReplayIntervalMillis > 0L
+                ? hintReplayIntervalMillis
+                : 1_000L;
+        reconciliationTimerId = vertx.setPeriodic(reconciliationInterval,
+                ignored -> scheduleDiscoverySnapshot());
 
         LOG.infof("Coordination service started for node %s. Discovery strategy: %s",
                 localNode.id(), discoveryStrategy.getClass().getSimpleName());
     }
 
     /**
-     * Callback from DiscoveryStrategy when the set of discovered nodes changes.
-     * This method will reconcile the discovered nodes with the internal members map.
+     * Captures the latest membership snapshot and coalesces callbacks. Discovery
+     * implementations are allowed to invoke their listener from an event-loop, so
+     * no reconciliation work is performed by the caller.
+     */
+    private void scheduleMembershipChange(Set<NodeInfo> discoveredNodes) {
+        if (!running) {
+            return;
+        }
+        Set<NodeInfo> snapshot = Set.copyOf(discoveredNodes);
+        latestMembership.set(snapshot);
+        pendingMembership.set(snapshot);
+        scheduleReconciliationWorker();
+    }
+
+    private void scheduleDiscoverySnapshot() {
+        if (!running) {
+            return;
+        }
+        executeTask(() -> {
+            try {
+                scheduleMembershipChange(discoveryStrategy.getDiscoveredNodes());
+            } catch (RuntimeException e) {
+                if (running) {
+                    LOG.warn("Failed to obtain the current discovery snapshot", e);
+                }
+            }
+        }, "discovery snapshot");
+    }
+
+    private void scheduleReconciliationWorker() {
+        if (!running || !reconciliationScheduled.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            taskExecutor.execute(this::drainMembershipChanges);
+        } catch (RejectedExecutionException e) {
+            reconciliationScheduled.set(false);
+            if (running) {
+                LOG.debug("Coordination reconciliation rejected (executor shutting down?)", e);
+            }
+        }
+    }
+
+    private void drainMembershipChanges() {
+        try {
+            while (running) {
+                Set<NodeInfo> discoveredNodes = pendingMembership.getAndSet(null);
+                if (discoveredNodes == null) {
+                    return;
+                }
+                handleMembershipChange(discoveredNodes);
+            }
+        } finally {
+            reconciliationScheduled.set(false);
+            if (running && pendingMembership.get() != null) {
+                scheduleReconciliationWorker();
+            }
+        }
+    }
+
+    /**
+     * Reconciles a discovery snapshot from a coordination worker thread.
      */
     private void handleMembershipChange(Set<NodeInfo> newDiscoveredNodes) {
         if (!running) {
@@ -118,6 +192,7 @@ public class CoordinationService implements AutoCloseable
                 .map(NodeInfo::nodeId)
                 .collect(Collectors.toSet());
 
+        List<RemoteMember> removedMembers = new ArrayList<>();
         synchronized (membershipLock) {
             // 1. Remove nodes that are no longer discovered
             Set<String> membersToRemove = new HashSet<>();
@@ -130,26 +205,63 @@ public class CoordinationService implements AutoCloseable
                 RemoteMember member = members.remove(nodeId);
                 if (member != null) {
                     ring.removeNode(member.node(), member.idBytes());
-                    closeRemoteNode(member.node());
-                    LOG.warnf("Cluster member %s (%s:%d) removed from membership (no longer discovered)",
-                            nodeId, member.host(), member.port());
+                    removedMembers.add(member);
                     clusterState.bumpEpoch(); // Membership change, bump epoch
                 }
             }
+        }
 
-            // 2. Add or update newly discovered nodes
-            for (NodeInfo nodeInfo : newDiscoveredNodes) {
-                if (nodeInfo.nodeId().equals(localNode.id())) {
-                    continue; // Skip local node
-                }
+        // RemoteNode.close waits for the NetClient to close, so it must never run
+        // while membershipLock is held.
+        for (RemoteMember member : removedMembers) {
+            closeRemoteNode(member.node());
+            LOG.warnf("Cluster member %s (%s:%d) removed from membership (no longer discovered)",
+                    member.node().id(), member.host(), member.port());
+        }
+
+        // 2. Add or update newly discovered nodes
+        for (NodeInfo nodeInfo : newDiscoveredNodes) {
+            if (nodeInfo.nodeId().equals(localNode.id())) {
+                continue; // Skip local node
+            }
+            scheduleDiscoveredNode(nodeInfo);
+        }
+    }
+
+    private void scheduleDiscoveredNode(NodeInfo nodeInfo) {
+        if (!running || !memberTasksInProgress.add(nodeInfo.nodeId())) {
+            return;
+        }
+        try {
+            taskExecutor.execute(() -> {
                 try {
-                    // Process each discovered node in a worker thread to avoid blocking the discovery callback
-                    taskExecutor.execute(() -> processDiscoveredNode(nodeInfo));
-                } catch (RejectedExecutionException e) {
+                    processDiscoveredNode(nodeInfo);
+                } finally {
+                    memberTasksInProgress.remove(nodeInfo.nodeId());
                     if (running) {
-                        LOG.debugf("Coordination task rejected for %s (executor shutting down?)", nodeInfo.nodeId());
+                        latestMembership.get().stream()
+                                .filter(latest -> latest.nodeId().equals(nodeInfo.nodeId()))
+                                .filter(latest -> !latest.equals(nodeInfo))
+                                .findFirst()
+                                .ifPresent(this::scheduleDiscoveredNode);
                     }
                 }
+            });
+        } catch (RejectedExecutionException e) {
+            memberTasksInProgress.remove(nodeInfo.nodeId());
+            if (running) {
+                LOG.debugf(e, "Coordination task rejected for member %s (executor shutting down?)",
+                        nodeInfo.nodeId());
+            }
+        }
+    }
+
+    private void executeTask(Runnable task, String description) {
+        try {
+            taskExecutor.execute(task);
+        } catch (RejectedExecutionException e) {
+            if (running) {
+                LOG.debugf(e, "Coordination task rejected for %s (executor shutting down?)", description);
             }
         }
     }
@@ -159,7 +271,7 @@ public class CoordinationService implements AutoCloseable
      * This method is executed in a worker thread.
      */
     private void processDiscoveredNode(NodeInfo nodeInfo) {
-        if (!running) {
+        if (!running || !latestMembership.get().contains(nodeInfo)) {
             return;
         }
 
@@ -169,7 +281,6 @@ public class CoordinationService implements AutoCloseable
         boolean shouldReplayHints = false;
         RemoteNode replayTarget = null;
         RemoteMember replayMember = null;
-        RemoteNode pendingRemoval = null; // Used if a node moves host/port
 
         synchronized (membershipLock)
         {
@@ -178,11 +289,6 @@ public class CoordinationService implements AutoCloseable
                 handshakeRequired = true;
             } else if (!existing.matches(nodeInfo)) { // Node moved (host/port changed)
                 handshakeRequired = true;
-                pendingRemoval = existing.node(); // Old node instance to be closed
-                if (pendingRemoval != null) {
-                    ring.removeNode(pendingRemoval, existing.idBytes());
-                }
-                existing.resetBootstrap(); // Reset bootstrap state for the new instance
             } else {
                 // Node exists and matches, just update last seen and check for hints
                 handshakeRequired = false;
@@ -216,13 +322,22 @@ public class CoordinationService implements AutoCloseable
             return;
         }
 
+        if (!running || !latestMembership.get().contains(nodeInfo)) {
+            LOG.debugf("Discarding stale join result for %s at %s:%d",
+                    nodeInfo.nodeId(), nodeInfo.host(), nodeInfo.port());
+            return;
+        }
+
         RemoteMember memberForBootstrap = null;
-        RemoteNode previousNode = pendingRemoval; // Node instance that was replaced
+        RemoteNode previousNode = null;
         boolean runBootstrap = false;
         long updateTime = System.currentTimeMillis();
 
         synchronized (membershipLock)
         {
+            if (!running) {
+                return;
+            }
             RemoteMember current = members.get(nodeInfo.nodeId());
             if (current == null) {
                 // Truly a new member after handshake
@@ -254,7 +369,9 @@ public class CoordinationService implements AutoCloseable
                 RemoteNode remoteNode = new RemoteNode(nodeInfo.nodeId(), nodeInfo.host(), nodeInfo.port(), replicationConfig.connectTimeoutMillis(), vertx);
                 previousNode = current.node(); // Store old node for closing
                 current.replace(remoteNode, idBytes, nodeInfo, updateTime, join.epoch());
-                ring.addNode(remoteNode, idBytes); // Add new instance to ring
+                // addNode replaces virtual nodes with the same id atomically under
+                // the ring lock. The old member remains routable until this point.
+                ring.addNode(remoteNode, idBytes);
                 LOG.infof("Cluster member %s moved to %s:%d (epoch: %d)", nodeInfo.nodeId(), nodeInfo.host(), nodeInfo.port(), join.epoch());
 
                 memberForBootstrap = current;
@@ -464,6 +581,14 @@ public class CoordinationService implements AutoCloseable
     @Override
     public void close() {
         running = false;
+        pendingMembership.set(null);
+        latestMembership.set(Set.of());
+        memberTasksInProgress.clear();
+        long timerId = reconciliationTimerId;
+        reconciliationTimerId = -1L;
+        if (timerId >= 0L) {
+            vertx.cancelTimer(timerId);
+        }
         taskExecutor.shutdownNow();
 
         // Connection pool'u kapat
@@ -471,14 +596,23 @@ public class CoordinationService implements AutoCloseable
             connectionPoolManager.close();
         }
 
+        List<RemoteMember> membersToClose;
         synchronized (membershipLock) {
-            members.values().forEach(member -> {
-                ring.removeNode(member.node(), member.idBytes());
-                closeRemoteNode(member.node());
-            });
+            membersToClose = new ArrayList<>(members.values());
+            membersToClose.forEach(member ->
+                    ring.removeNode(member.node(), member.idBytes()));
             members.clear();
         }
-        LOG.info("CoordinationService closed.");
+        Runnable closeMembers = () -> {
+            membersToClose.forEach(member -> closeRemoteNode(member.node()));
+            LOG.info("CoordinationService closed.");
+        };
+        var context = Vertx.currentContext();
+        if (context != null && context.isEventLoopContext()) {
+            Thread.startVirtualThread(closeMembers);
+        } else {
+            closeMembers.run();
+        }
     }
 
     private void closeRemoteNode(RemoteNode node) {
@@ -568,13 +702,6 @@ public class CoordinationService implements AutoCloseable
                 if (success) {
                     bootstrapped = true;
                 }
-            }
-        }
-
-        private void resetBootstrap() {
-            synchronized (this) {
-                bootstrapped = false;
-                bootstrapInProgress = false;
             }
         }
 

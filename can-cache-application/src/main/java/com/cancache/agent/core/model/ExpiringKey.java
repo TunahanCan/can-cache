@@ -17,7 +17,12 @@ public record ExpiringKey(Object key, int segmentIndex, long expireAtMillis) imp
 
     @Override
     public int compareTo(Delayed o) {
-        long d = getDelay(TimeUnit.MILLISECONDS) - o.getDelay(TimeUnit.MILLISECONDS);
-        return d == 0 ? 0 : (d < 0 ? -1 : 1);
+        if (o == this) {
+            return 0;
+        }
+        if (o instanceof ExpiringKey other) {
+            return Long.compare(expireAtMillis, other.expireAtMillis);
+        }
+        return Long.compare(getDelay(TimeUnit.MILLISECONDS), o.getDelay(TimeUnit.MILLISECONDS));
     }
 }

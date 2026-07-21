@@ -22,4 +22,16 @@ public record CasDecision(boolean success,
         return
                 new CasDecision(false, null, true, true, false);
     }
+
+    public static CasDecision removeSuccess() {
+        return new CasDecision(true, null, true, true, true);
+    }
+
+    public static CasDecision replaceExpired(CacheValue newValue) {
+        return new CasDecision(true, newValue, true, true, false);
+    }
+
+    public static CasDecision noValueSuccess() {
+        return new CasDecision(true, null, false, false, false);
+    }
 }

@@ -18,7 +18,7 @@ import java.util.List;
 /**
  * Micrometer tabanlı metrik yapılandırma servisidir.
  * <p>
- * Quarkus Micrometer extension'ı otomatik olarak {@code /q/metrics} veya
+ * Quarkus Micrometer extension'ı otomatik olarak yapılandırılmış path'te
  * yapılandırılmış path'te Prometheus uyumlu endpoint sağlar.
  * Bu sınıf özel etiketler (node_id, role vb.) eklemek için kullanılır.
  * </p>
@@ -37,6 +37,7 @@ public class MetricsReporter implements AutoCloseable
     private final MeterRegistry meterRegistry;
     private final String nodeId;
     private final String replicationRole;
+    private final String endpointPath;
 
     @Inject
     public MetricsReporter(MeterRegistry meterRegistry,
@@ -46,6 +47,7 @@ public class MetricsReporter implements AutoCloseable
         this.meterRegistry = meterRegistry;
         this.nodeId = clusterState != null ? clusterState.localNodeId() : "unknown";
         this.replicationRole = properties.metrics().replicationRole();
+        this.endpointPath = properties.metrics().endpointPath();
     }
 
     /**
@@ -56,6 +58,7 @@ public class MetricsReporter implements AutoCloseable
         this.meterRegistry = null;
         this.nodeId = "test";
         this.replicationRole = "standalone";
+        this.endpointPath = "/metrics";
     }
 
     @Produces
@@ -77,7 +80,7 @@ public class MetricsReporter implements AutoCloseable
         }
 
         LOG.infof("Micrometer metrics configured with node_id=%s, role=%s", nodeId, replicationRole);
-        LOG.info("Prometheus endpoint available at /q/metrics (or configured path)");
+        LOG.infof("Prometheus endpoint available at %s", endpointPath);
     }
 
     private static String sanitize(String value)

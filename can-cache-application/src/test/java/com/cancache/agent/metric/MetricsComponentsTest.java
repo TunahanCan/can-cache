@@ -94,7 +94,7 @@ class MetricsComponentsTest
     {
         /**
          * MetricsReporter now operates based on Micrometer.
-         * The Quarkus Micrometer extension automatically provides the /q/metrics endpoint.
+         * The Quarkus Micrometer extension automatically provides the configured metrics endpoint.
          * HTTP endpoint tests should be conducted as Quarkus integration tests (@QuarkusTest).
          * This test verifies behavior without a MeterRegistry.
          */

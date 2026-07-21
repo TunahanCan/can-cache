@@ -225,6 +225,38 @@ class CacheSegmentTest
             assertNull(segment.get("a"), "Value should be removed after expiration CAS");
             assertTrue(removals.contains("a"), "Listener should be notified of removal");
         }
+
+        @Test
+        void shouldEvictEnoughVictimsForAGrowingCasReplacement()
+        {
+            segment = new CacheSegment<>(10, 6, policy, removals::add);
+            assertTrue(segment.put("a", value("aa")));
+            assertTrue(segment.put("b", value("bb")));
+            assertTrue(segment.put("c", value("cc")));
+
+            var result = segment.compareAndSwap("a", existing -> CasDecision.success(value("12345")));
+
+            assertTrue(result.success());
+            assertEquals(5L, segment.weight());
+            assertEquals("12345", text(segment.get("a")));
+            assertNull(segment.get("b"));
+            assertNull(segment.get("c"));
+            assertEquals(List.of("b", "c"), removals);
+        }
+
+        @Test
+        void shouldRejectAnOversizedCasWithoutLosingTheOldValue()
+        {
+            segment = new CacheSegment<>(10, 6, policy, removals::add);
+            assertTrue(segment.put("a", value("old")));
+
+            var result = segment.compareAndSwap("a", existing -> CasDecision.success(value("too-big")));
+
+            assertFalse(result.success());
+            assertEquals("old", text(segment.get("a")));
+            assertEquals(3L, segment.weight());
+            assertTrue(removals.isEmpty());
+        }
     }
 
     @Nested
@@ -251,6 +283,19 @@ class CacheSegmentTest
             assertEquals(List.of("a", "b"), keys, "Iteration should only cover original entries");
             assertEquals(1, segment.size(), "Snapshot iteration should tolerate reentrant cache changes");
         }
+
+        @Test
+        void shouldResetWeightAfterClear()
+        {
+            segment = new CacheSegment<>(10, 10, policy, removals::add);
+            assertTrue(segment.put("a", value("123")));
+            assertTrue(segment.put("b", value("4567")));
+
+            segment.clear();
+
+            assertEquals(0L, segment.weight());
+            assertEquals(0, segment.size());
+        }
     }
 
     private static CacheValue value(String text)
@@ -276,7 +321,7 @@ class CacheSegmentTest
         }
 
         @Override
-        public AdmissionDecision<K> admit(K key, LinkedHashMap<K, CacheValue> map, int capacity)
+        public AdmissionDecision<K> admit(K key, LinkedHashMap<K, CacheValue> map, boolean evictionRequired)
         {
             AdmissionDecision<K> decision = nextDecision;
             nextDecision = EvictionPolicy.AdmissionDecision.admit();

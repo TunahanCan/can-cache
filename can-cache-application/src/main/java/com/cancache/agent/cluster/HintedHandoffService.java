@@ -23,9 +23,11 @@ public final class HintedHandoffService
 {
     private static final Logger LOG = Logger.getLogger(HintedHandoffService.class);
     private static final int DEFAULT_MAX_HINTS_PER_NODE = 10_000;
+    private static final long DEFAULT_MAX_HINT_BYTES_PER_NODE = 32L * 1024L * 1024L;
 
     private final Map<String, HintQueue> hints = new ConcurrentHashMap<>();
     private final int maxHintsPerNode;
+    private final long maxHintBytesPerNode;
     private final LongSupplier currentTimeMillis;
     private final Counter enqueued;
     private final Counter replayed;
@@ -34,20 +36,41 @@ public final class HintedHandoffService
 
     public HintedHandoffService(MetricsRegistry metrics)
     {
-        this(metrics, DEFAULT_MAX_HINTS_PER_NODE, System::currentTimeMillis);
+        this(metrics, DEFAULT_MAX_HINTS_PER_NODE, DEFAULT_MAX_HINT_BYTES_PER_NODE,
+                System::currentTimeMillis);
     }
 
     public HintedHandoffService(MetricsRegistry metrics, int maxHintsPerNode)
     {
-        this(metrics, maxHintsPerNode, System::currentTimeMillis);
+        this(metrics, maxHintsPerNode, DEFAULT_MAX_HINT_BYTES_PER_NODE,
+                System::currentTimeMillis);
     }
 
     HintedHandoffService(MetricsRegistry metrics, int maxHintsPerNode, LongSupplier currentTimeMillis)
     {
+        this(metrics, maxHintsPerNode, DEFAULT_MAX_HINT_BYTES_PER_NODE, currentTimeMillis);
+    }
+
+    public HintedHandoffService(MetricsRegistry metrics,
+                                int maxHintsPerNode,
+                                long maxHintBytesPerNode)
+    {
+        this(metrics, maxHintsPerNode, maxHintBytesPerNode, System::currentTimeMillis);
+    }
+
+    HintedHandoffService(MetricsRegistry metrics,
+                         int maxHintsPerNode,
+                         long maxHintBytesPerNode,
+                         LongSupplier currentTimeMillis)
+    {
         if (maxHintsPerNode < 1) {
             throw new IllegalArgumentException("maxHintsPerNode must be at least 1");
         }
+        if (maxHintBytesPerNode < 1L) {
+            throw new IllegalArgumentException("maxHintBytesPerNode must be at least 1");
+        }
         this.maxHintsPerNode = maxHintsPerNode;
+        this.maxHintBytesPerNode = maxHintBytesPerNode;
         this.currentTimeMillis = Objects.requireNonNull(currentTimeMillis, "currentTimeMillis");
         if (metrics != null)
         {
@@ -75,24 +98,29 @@ public final class HintedHandoffService
 
     public void recordCas(String nodeId, String key, String value, long expectedCas, Duration ttl)
     {
-        enqueue(nodeId, new CasHint(key, value, expectedCas, calculateExpireAt(ttl)));
+        long expireAt = ttl != null && (ttl.isZero() || ttl.isNegative())
+                ? -1L
+                : calculateExpireAt(ttl);
+        enqueue(nodeId, new CasHint(key, value, expectedCas, expireAt));
     }
 
     private void enqueue(String nodeId, Hint hint)
     {
         Objects.requireNonNull(nodeId, "nodeId");
         Objects.requireNonNull(hint, "hint");
-        boolean[] droppedOldest = new boolean[1];
+        int[] droppedCount = new int[1];
         hints.compute(nodeId, (ignored, queue) -> {
-            HintQueue target = queue == null ? new HintQueue(maxHintsPerNode) : queue;
-            droppedOldest[0] = target.addLast(hint);
-            return target;
+            HintQueue target = queue == null
+                    ? new HintQueue(maxHintsPerNode, maxHintBytesPerNode)
+                    : queue;
+            droppedCount[0] = target.addLast(hint);
+            return target.isEmpty() ? null : target;
         });
         if (enqueued != null) {
             enqueued.inc();
         }
-        if (droppedOldest[0] && dropped != null) {
-            dropped.inc();
+        if (droppedCount[0] > 0 && dropped != null) {
+            dropped.add(droppedCount[0]);
         }
     }
 
@@ -170,10 +198,10 @@ public final class HintedHandoffService
         }
     }
 
-    private void recordDropped(boolean didDrop)
+    private void recordDropped(int droppedCount)
     {
-        if (didDrop && dropped != null) {
-            dropped.inc();
+        if (droppedCount > 0 && dropped != null) {
+            dropped.add(droppedCount);
         }
     }
 
@@ -183,34 +211,58 @@ public final class HintedHandoffService
         private final int capacity;
         private boolean replaying;
 
-        private HintQueue(int capacity)
+        private long bytes;
+        private final long maxBytes;
+
+        private HintQueue(int capacity, long maxBytes)
         {
             this.capacity = capacity;
+            this.maxBytes = maxBytes;
         }
 
-        synchronized boolean addLast(Hint hint)
+        synchronized int addLast(Hint hint)
         {
-            boolean dropped = queue.size() == capacity;
-            if (dropped) {
-                queue.removeFirst();
-            }
             queue.addLast(hint);
+            bytes += hint.estimatedBytes();
+            return trimOldest();
+        }
+
+        synchronized int addFirst(Hint hint)
+        {
+            queue.addFirst(hint);
+            bytes += hint.estimatedBytes();
+            return trimNewest();
+        }
+
+        private int trimOldest()
+        {
+            int dropped = 0;
+            while (queue.size() > capacity || bytes > maxBytes) {
+                Hint removed = queue.removeFirst();
+                bytes -= removed.estimatedBytes();
+                dropped++;
+            }
             return dropped;
         }
 
-        synchronized boolean addFirst(Hint hint)
+        private int trimNewest()
         {
-            boolean dropped = queue.size() == capacity;
-            if (dropped) {
-                queue.removeLast();
+            int dropped = 0;
+            while (queue.size() > capacity || bytes > maxBytes) {
+                Hint removed = queue.removeLast();
+                bytes -= removed.estimatedBytes();
+                dropped++;
             }
-            queue.addFirst(hint);
             return dropped;
         }
 
         synchronized Hint pollFirst()
         {
-            return queue.pollFirst();
+            Hint hint = queue.pollFirst();
+            if (hint != null) {
+                bytes -= hint.estimatedBytes();
+            }
+            return hint;
         }
 
         synchronized int size()

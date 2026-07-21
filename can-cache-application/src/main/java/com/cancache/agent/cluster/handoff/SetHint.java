@@ -32,6 +32,12 @@ public record SetHint(String key, String value, long expireAtMillis) implements 
     }
 
     @Override
+    public long estimatedBytes()
+    {
+        return 64L + 2L * (key.length() + value.length());
+    }
+
+    @Override
     public String toString()
     {
         return "SetHint{" + key + '}';

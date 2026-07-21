@@ -22,6 +22,12 @@ public record DeleteHint(String key) implements Hint
     }
 
     @Override
+    public long estimatedBytes()
+    {
+        return 32L + 2L * key.length();
+    }
+
+    @Override
     public String toString()
     {
         return "DeleteHint{" + key + '}';

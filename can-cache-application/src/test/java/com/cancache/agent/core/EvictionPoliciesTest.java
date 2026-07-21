@@ -60,7 +60,7 @@ class EvictionPoliciesTest
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
             
             // When
-            var decision = policy.admit("candidate", map, 2);
+            var decision = policy.admit("candidate", map, false);
             
             // Then
             assertTrue(decision.shouldAdmit(), "Candidate should be admitted");
@@ -80,7 +80,7 @@ class EvictionPoliciesTest
             map.put("young", new CacheValue(new byte[]{2}, 0L));
             
             // When
-            var decision = policy.admit("candidate", map, 2);
+            var decision = policy.admit("candidate", map, true);
             
             // Then
             assertTrue(decision.shouldAdmit(), "Candidate should be admitted");
@@ -102,7 +102,7 @@ class EvictionPoliciesTest
             LinkedHashMap<String, CacheValue> map = new LinkedHashMap<>();
             
             // When
-            var decision = policy.admit("candidate", map, 2);
+            var decision = policy.admit("candidate", map, false);
             
             // Then
             assertTrue(decision.shouldAdmit(), "Candidate should be admitted");
@@ -125,7 +125,7 @@ class EvictionPoliciesTest
             policy.recordAccess("candidate"); // Candidate has higher frequency
             
             // When
-            var decision = policy.admit("candidate", map, 1);
+            var decision = policy.admit("candidate", map, true);
             
             // Then
             assertTrue(decision.shouldAdmit(), "Candidate with higher frequency should be admitted");
@@ -147,7 +147,7 @@ class EvictionPoliciesTest
             policy.recordAccess("candidate");
             
             // When
-            var decision = policy.admit("candidate", map, 1);
+            var decision = policy.admit("candidate", map, true);
             
             // Then
             assertFalse(decision.shouldAdmit(), "Candidate with lower frequency should be rejected");

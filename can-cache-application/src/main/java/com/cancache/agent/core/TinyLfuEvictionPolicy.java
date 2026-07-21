@@ -58,9 +58,9 @@ final class TinyLfuEvictionPolicy<K> implements EvictionPolicy<K>
     }
 
     @Override
-    public AdmissionDecision<K> admit(K key, LinkedHashMap<K, CacheValue> map, int capacity)
+    public AdmissionDecision<K> admit(K key, LinkedHashMap<K, CacheValue> map, boolean evictionRequired)
     {
-        if (map.size() < capacity) return AdmissionDecision.admit();
+        if (!evictionRequired) return AdmissionDecision.admit();
         if (map.isEmpty()) return AdmissionDecision.admit();
         K victimKey = map.entrySet().iterator().next().getKey();
         int candidateFreq = sketch.estimate(spread(key.hashCode()));
@@ -128,4 +128,3 @@ final class TinyLfuEvictionPolicy<K> implements EvictionPolicy<K>
         }
     }
 }
-

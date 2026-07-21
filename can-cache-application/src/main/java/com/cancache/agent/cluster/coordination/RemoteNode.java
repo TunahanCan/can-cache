@@ -314,7 +314,7 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
         CompletableFuture<NetSocket> future = new CompletableFuture<>();
         netClient.connect(port, host, ar -> {
             if (ar.succeeded()) {
-                future.complete(ar.result());
+                completeConnection(future, ar.result());
             } else {
                 future.completeExceptionally(ar.cause());
             }
@@ -353,6 +353,18 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
             openConnections.decrementAndGet();
         });
         return connection;
+    }
+
+    /**
+     * Completes a pending connect attempt, closing sockets that arrive after the
+     * caller timed out or was interrupted. Such sockets were previously left
+     * outside the pool and leaked until the NetClient itself was closed.
+     */
+    static void completeConnection(CompletableFuture<NetSocket> future, NetSocket socket)
+    {
+        if (!future.complete(socket)) {
+            socket.close();
+        }
     }
 
     private void release(PooledConnection connection)
@@ -427,10 +439,20 @@ public final class RemoteNode implements Node<String, String>, AutoCloseable
 
     private long expiryMillis(Duration ttl)
     {
-        if (ttl == null || ttl.isZero() || ttl.isNegative()) {
+        if (ttl == null) {
             return 0L;
         }
-        return System.currentTimeMillis() + ttl.toMillis();
+        if (ttl.isZero() || ttl.isNegative()) {
+            return -1L;
+        }
+        long now = System.currentTimeMillis();
+        long ttlMillis;
+        try {
+            ttlMillis = ttl.toMillis();
+        } catch (ArithmeticException overflow) {
+            return Long.MAX_VALUE;
+        }
+        return ttlMillis > Long.MAX_VALUE - now ? Long.MAX_VALUE : now + ttlMillis;
     }
 
     // ==================== Metrics API ====================

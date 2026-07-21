@@ -22,13 +22,16 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jboss.logging.Logger;
 
-import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
@@ -48,13 +51,18 @@ public class CanCachedServer implements AutoCloseable
     private static final int MAX_COMMAND_LINE_BYTES = 8 * 1024;
     private static final int MAX_KEY_BYTES = 250;
     private final Vertx vertx;
+    private final ExecutorService commandExecutor;
     private final ClusterClient clusterClient;
     private final AppProperties.Network networkConfig;
     private final int maxItemSize;
     private final int maxCasRetries;
+    private final int maxGetKeys;
+    private final int maxResponseSize;
+    private final int maxConnections;
     private final CacheEngine<String, String> localEngine;
 
-    private final AtomicLong casCounter = new AtomicLong(1L);
+    private final AtomicLong casCounter = new AtomicLong(
+            ThreadLocalRandom.current().nextLong(1L, Long.MAX_VALUE));
     private final AtomicLong cmdGet = new AtomicLong();
     private final AtomicLong cmdSet = new AtomicLong();
     private final AtomicLong cmdTouch = new AtomicLong();
@@ -77,12 +85,34 @@ public class CanCachedServer implements AutoCloseable
                            CacheEngine<String, String> localEngine)
     {
         this.vertx = Objects.requireNonNull(vertx, "vertx");
+        this.commandExecutor = Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual().name("client-command-", 0).factory());
         this.clusterClient = Objects.requireNonNull(clusterClient, "clusterClient");
         this.networkConfig = Objects.requireNonNull(properties.network(), "networkConfig");
         var cancacheConfig = Objects.requireNonNull(properties.cancache(), "cancacheConfig");
         this.maxItemSize = Math.max(1, cancacheConfig.maxItemSizeBytes());
         this.maxCasRetries = Math.max(1, cancacheConfig.maxCasRetries());
+        this.maxGetKeys = Math.max(1, cancacheConfig.maxGetKeys());
+        this.maxResponseSize = Math.max(1024, cancacheConfig.maxResponseSizeBytes());
+        this.maxConnections = Math.max(1, networkConfig.maxConnections());
         this.localEngine = Objects.requireNonNull(localEngine, "localEngine");
+        validateItemFitsCache(properties.cache());
+    }
+
+    private void validateItemFitsCache(AppProperties.Cache cacheConfig)
+    {
+        long effectiveSegments = Math.min(cacheConfig.segments(),
+                Math.min((long) cacheConfig.maxCapacity(), cacheConfig.maxWeightBytes()));
+        if (effectiveSegments < 1L) {
+            throw new IllegalArgumentException("Cache segments, capacity and byte budget must be positive");
+        }
+        long minimumSegmentBudget = cacheConfig.maxWeightBytes() / effectiveSegments;
+        long largestEncodedItem = StoredValueCodec.encodedLength(maxItemSize);
+        if (minimumSegmentBudget < largestEncodedItem) {
+            throw new IllegalArgumentException("app.cache.max-weight-bytes is too small for "
+                    + "app.cancache.max-item-size-bytes across the configured segments; each segment needs at least "
+                    + largestEncodedItem + " bytes");
+        }
     }
 
     @PostConstruct
@@ -93,7 +123,9 @@ public class CanCachedServer implements AutoCloseable
                 .setPort(networkConfig.port())
                 .setTcpNoDelay(true)
                 .setReuseAddress(true)
-                .setAcceptBacklog(Math.max(1, networkConfig.backlog()));
+                .setAcceptBacklog(Math.max(1, networkConfig.backlog()))
+                .setIdleTimeout(Math.max(1, networkConfig.idleTimeoutSeconds()))
+                .setIdleTimeoutUnit(TimeUnit.SECONDS);
 
         netServer = vertx.createNetServer(options);
         netServer.connectHandler(this::onClientConnected);
@@ -113,8 +145,13 @@ public class CanCachedServer implements AutoCloseable
             socket.close();
             return;
         }
-        currConnections.incrementAndGet();
         totalConnections.incrementAndGet();
+        long activeConnections = currConnections.incrementAndGet();
+        if (activeConnections > maxConnections) {
+            currConnections.decrementAndGet();
+            socket.close();
+            return;
+        }
 
         ConnectionContext context = new ConnectionContext(socket);
         socket.closeHandler(v -> {
@@ -173,13 +210,10 @@ public class CanCachedServer implements AutoCloseable
         boolean isCas = CanCachedProtocol.CAS.equals(command);
         int minParts = isCas ? 6 : 5;
         if (parts.length < minParts) {
-            return new ImmediateCommand(() -> {
-                maybeApplyDelayedFlush();
-                return handleSimpleLine("CLIENT_ERROR bad command line format");
-            });
+            return fatalStorageError("CLIENT_ERROR bad command line format");
         }
         if (!isValidKey(parts[1])) {
-            return new ImmediateCommand(() -> handleSimpleLine("CLIENT_ERROR bad command line format"));
+            return fatalStorageError("CLIENT_ERROR bad command line format");
         }
 
         int flags;
@@ -194,10 +228,7 @@ public class CanCachedServer implements AutoCloseable
                 casUnique = Long.parseUnsignedLong(parts[5]);
             }
         } catch (NumberFormatException e) {
-            return new ImmediateCommand(() -> {
-                maybeApplyDelayedFlush();
-                return handleSimpleLine("CLIENT_ERROR numeric value expected");
-            });
+            return fatalStorageError("CLIENT_ERROR numeric value expected");
         }
 
         int noreplyIndex = isCas ? 6 : 5;
@@ -206,22 +237,27 @@ public class CanCachedServer implements AutoCloseable
             if (parts.length == noreplyIndex + 1 && "noreply".equalsIgnoreCase(parts[noreplyIndex])) {
                 noreply = true;
             } else {
-                return new ImmediateCommand(() -> {
-                    maybeApplyDelayedFlush();
-                    return handleSimpleLine("CLIENT_ERROR invalid arguments");
-                });
+                return fatalStorageError("CLIENT_ERROR invalid arguments");
             }
         }
 
         if (bytes < 0 || bytes > maxItemSize) {
-            return new ImmediateCommand(() -> {
-                maybeApplyDelayedFlush();
-                return handleSimpleLine("CLIENT_ERROR bad data chunk");
-            });
+            return fatalStorageError("CLIENT_ERROR bad data chunk");
         }
 
         Duration ttl = parseExpiration(exptime);
         return new StorageCommand(new PendingStorageCommand(command, parts[1], flags, ttl, (int) bytes, noreply, isCas, casUnique));
+    }
+
+    private CommandAction fatalStorageError(String message)
+    {
+        return new ImmediateCommand(() -> {
+            maybeApplyDelayedFlush();
+            // The declared body length cannot be trusted after a malformed
+            // storage header. Closing after the response prevents payload bytes
+            // from being parsed as a new command on the same connection.
+            return CommandResult.terminateWith(lineBuffer(message));
+        });
     }
 
     private CommandResult handleStoragePayload(PendingStorageCommand pending, Buffer payload)
@@ -229,10 +265,10 @@ public class CanCachedServer implements AutoCloseable
         maybeApplyDelayedFlush();
 
         if (payload.length() < pending.totalLength()) {
-            return handleSimpleLine("CLIENT_ERROR bad data chunk");
+            return CommandResult.terminateWith(lineBuffer("CLIENT_ERROR bad data chunk"));
         }
         if (payload.getByte(pending.bytes()) != '\r' || payload.getByte(pending.bytes() + 1) != '\n') {
-            return handleSimpleLine("CLIENT_ERROR bad data chunk");
+            return CommandResult.terminateWith(lineBuffer("CLIENT_ERROR bad data chunk"));
         }
 
         byte[] valueBytes = payload.getBytes(0, pending.bytes());
@@ -240,47 +276,63 @@ public class CanCachedServer implements AutoCloseable
         Duration ttl = pending.ttl();
         cmdSet.incrementAndGet();
 
-        StoredValueCodec.StoredValue existing = getEntry(key);
-        if (existing != null && existing.expired(System.currentTimeMillis())) {
-            existing = null;
+        if (CanCachedProtocol.SET.equals(pending.command())) {
+            if (Duration.ZERO.equals(ttl)) {
+                clusterClient.delete(key);
+                return pending.noreply()
+                        ? CommandResult.continueWithoutResponse()
+                        : handleSimpleLine("STORED");
+            }
+            StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(
+                    valueBytes, pending.flags(), nextCas(), computeExpireAt(ttl));
+            if (!storeEntry(key, entry, ttl)) {
+                return pending.noreply()
+                        ? CommandResult.continueWithoutResponse()
+                        : handleSimpleLine("NOT_STORED");
+            }
+            incrementItems();
+            return pending.noreply()
+                    ? CommandResult.continueWithoutResponse()
+                    : handleSimpleLine("STORED");
         }
 
-        if (Duration.ZERO.equals(ttl)) {
-            if (existing != null) {
-                clusterClient.delete(key);
+        if (CanCachedProtocol.ADD.equals(pending.command())) {
+            StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(
+                    valueBytes, pending.flags(), nextCas(), computeExpireAt(ttl));
+            boolean added = clusterClient.add(key, StoredValueCodec.encode(entry), ttl);
+            if (added) {
+                incrementItems();
             }
-            return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("STORED");
+            return pending.noreply()
+                    ? CommandResult.continueWithoutResponse()
+                    : handleSimpleLine(added ? "STORED" : "NOT_STORED");
         }
 
         if (pending.isCas()) {
-            return handleCasCommand(key, valueBytes, pending.flags(), ttl, pending.casUnique(), pending.noreply(), existing);
+            return handleCasCommand(key, valueBytes, pending.flags(), ttl,
+                    pending.casUnique(), pending.noreply());
         }
 
+        StoredValueCodec.StoredValue existing = getEntry(key);
+
         switch (pending.command()) {
-            case CanCachedProtocol.ADD -> {
-                if (existing != null) {
-                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
-                }
-                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(valueBytes, pending.flags(), nextCas(), computeExpireAt(ttl));
-                if (!storeEntry(key, entry, ttl)) {
-                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
-                }
-                incrementItems();
-            }
             case CanCachedProtocol.REPLACE -> {
                 if (existing == null) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
-                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(valueBytes, pending.flags(), nextCas(), computeExpireAt(ttl));
-                if (!storeEntry(key, entry, ttl)) {
+                CasUpdateStatus status = replaceEntry(key, existing, valueBytes, pending.flags(), ttl);
+                if (status == CasUpdateStatus.NOT_FOUND) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
+                }
+                if (status == CasUpdateStatus.CONFLICT) {
+                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR cas conflict");
                 }
             }
             case CanCachedProtocol.APPEND -> {
                 if (existing == null) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
-                if ((long) existing.value().length + valueBytes.length > maxItemSize) {
+                if ((long) existing.valueLength() + valueBytes.length > maxItemSize) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR object too large");
                 }
                 CasUpdateStatus status = appendOrPrepend(key, existing, valueBytes, false);
@@ -298,7 +350,7 @@ public class CanCachedServer implements AutoCloseable
                 if (existing == null) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
                 }
-                if ((long) existing.value().length + valueBytes.length > maxItemSize) {
+                if ((long) existing.valueLength() + valueBytes.length > maxItemSize) {
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR object too large");
                 }
                 CasUpdateStatus status = appendOrPrepend(key, existing, valueBytes, true);
@@ -312,19 +364,33 @@ public class CanCachedServer implements AutoCloseable
                     return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("SERVER_ERROR cas conflict");
                 }
             }
-            default -> {
-                StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(valueBytes, pending.flags(), nextCas(), computeExpireAt(ttl));
-                if (!storeEntry(key, entry, ttl)) {
-                    return pending.noreply() ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_STORED");
-                }
-                if (existing == null) {
-                    incrementItems();
-                }
-            }
+            default -> throw new IllegalStateException("Unsupported storage command: " + pending.command());
         }
 
         return pending.noreply() ?
                 CommandResult.continueWithoutResponse() : handleSimpleLine("STORED");
+    }
+
+    private CasUpdateStatus replaceEntry(String key,
+                                         StoredValueCodec.StoredValue snapshot,
+                                         byte[] value,
+                                         int flags,
+                                         Duration ttl)
+    {
+        StoredValueCodec.StoredValue current = snapshot;
+        for (int attempt = 0; attempt < maxCasRetries; attempt++) {
+            if (current == null) {
+                return CasUpdateStatus.NOT_FOUND;
+            }
+            StoredValueCodec.StoredValue candidate = new StoredValueCodec.StoredValue(
+                    value, flags, nextCas(), computeExpireAt(ttl));
+            if (clusterClient.compareAndSwap(
+                    key, StoredValueCodec.encode(candidate), current.cas(), ttl)) {
+                return CasUpdateStatus.SUCCESS;
+            }
+            current = getEntry(key);
+        }
+        return CasUpdateStatus.CONFLICT;
     }
 
     private CommandResult handleCasCommand(String key,
@@ -332,33 +398,16 @@ public class CanCachedServer implements AutoCloseable
                                            int flags,
                                            Duration ttl,
                                            long casUnique,
-                                           boolean noreply,
-                                           StoredValueCodec.StoredValue existing)
+                                           boolean noreply)
     {
-        if (existing == null) {
-            return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
-        }
-        if (existing.cas() != casUnique) {
-            return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("EXISTS");
-        }
         long expireAt = computeExpireAt(ttl);
         StoredValueCodec.StoredValue entry = new StoredValueCodec.StoredValue(value, flags, nextCas(), expireAt);
-        Duration effectiveTtl = ttl;
-        if (effectiveTtl == null) {
-            effectiveTtl = ttlFromExpireAt(expireAt);
+        boolean stored = clusterClient.compareAndSwap(key, StoredValueCodec.encode(entry), casUnique, ttl);
+        if (stored || noreply) {
+            return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("STORED");
         }
-        boolean stored = clusterClient.compareAndSwap(key, StoredValueCodec.encode(entry), casUnique, effectiveTtl);
-        if (!stored) {
-            StoredValueCodec.StoredValue latest = getEntry(key);
-            if (noreply) {
-                return CommandResult.continueWithoutResponse();
-            }
-            if (latest == null) {
-                return handleSimpleLine("NOT_FOUND");
-            }
-            return handleSimpleLine("EXISTS");
-        }
-        return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("STORED");
+        StoredValueCodec.StoredValue latest = getEntry(key);
+        return handleSimpleLine(latest == null ? "NOT_FOUND" : "EXISTS");
     }
 
     private CasUpdateStatus appendOrPrepend(String key,
@@ -371,16 +420,17 @@ public class CanCachedServer implements AutoCloseable
             if (current == null) {
                 return CasUpdateStatus.NOT_FOUND;
             }
-            if ((long) current.value().length + addition.length > maxItemSize) {
+            byte[] currentValue = current.value();
+            if ((long) currentValue.length + addition.length > maxItemSize) {
                 return CasUpdateStatus.TOO_LARGE;
             }
-            byte[] combined = new byte[current.value().length + addition.length];
+            byte[] combined = new byte[currentValue.length + addition.length];
             if (prepend) {
                 System.arraycopy(addition, 0, combined, 0, addition.length);
-                System.arraycopy(current.value(), 0, combined, addition.length, current.value().length);
+                System.arraycopy(currentValue, 0, combined, addition.length, currentValue.length);
             } else {
-                System.arraycopy(current.value(), 0, combined, 0, current.value().length);
-                System.arraycopy(addition, 0, combined, current.value().length, addition.length);
+                System.arraycopy(currentValue, 0, combined, 0, currentValue.length);
+                System.arraycopy(addition, 0, combined, currentValue.length, addition.length);
             }
             StoredValueCodec.StoredValue candidate = new StoredValueCodec.StoredValue(combined, current.flags(), nextCas(), current.expireAt());
             Duration ttl = ttlFromExpireAt(current.expireAt());
@@ -398,6 +448,9 @@ public class CanCachedServer implements AutoCloseable
         if (parts.length < 2) {
             return handleSimpleLine("CLIENT_ERROR bad command line format");
         }
+        if (parts.length - 1 > maxGetKeys) {
+            return handleSimpleLine("CLIENT_ERROR too many keys");
+        }
         for (int i = 1; i < parts.length; i++) {
             if (!isValidKey(parts[i])) {
                 return handleSimpleLine("CLIENT_ERROR bad command line format");
@@ -414,11 +467,17 @@ public class CanCachedServer implements AutoCloseable
                 continue;
             }
             getHits.incrementAndGet();
+            byte[] value = entry.value();
             String header = includeCas
-                    ? String.format(Locale.ROOT, "VALUE %s %d %d %d", key, entry.flags(), entry.value().length, entry.cas())
-                    : String.format(Locale.ROOT, "VALUE %s %d %d", key, entry.flags(), entry.value().length);
+                    ? "VALUE " + key + ' ' + entry.flags() + ' ' + value.length + ' ' + entry.cas()
+                    : "VALUE " + key + ' ' + entry.flags() + ' ' + value.length;
+            long projectedSize = (long) response.length() + header.length() + CRLF.length
+                    + value.length + CRLF.length + "END".length() + CRLF.length;
+            if (projectedSize > maxResponseSize) {
+                return handleSimpleLine("SERVER_ERROR response too large");
+            }
             writeLine(response, header);
-            response.appendBytes(entry.value());
+            response.appendBytes(value);
             response.appendBytes(CRLF);
         }
         writeLine(response, "END");
@@ -458,13 +517,8 @@ public class CanCachedServer implements AutoCloseable
         if (parts.length > 4 || (parts.length == 4 && !noreply)) {
             return handleSimpleLine("CLIENT_ERROR invalid arguments");
         }
-        BigInteger delta;
-        try {
-            delta = new BigInteger(parts[2]);
-            if (delta.signum() < 0) {
-                throw new NumberFormatException();
-            }
-        } catch (NumberFormatException e) {
+        Long delta = parseUnsigned64(parts[2]);
+        if (delta == null) {
             return handleSimpleLine("CLIENT_ERROR invalid numeric delta");
         }
 
@@ -475,23 +529,24 @@ public class CanCachedServer implements AutoCloseable
             if (current == null) {
                 return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
             }
-            String currentValue = new String(current.value(), StandardCharsets.US_ASCII);
-            if (!currentValue.chars().allMatch(Character::isDigit)) {
+            byte[] currentBytes = current.value();
+            String currentValue = new String(currentBytes, StandardCharsets.US_ASCII);
+            Long numeric = parseUnsigned64(currentValue);
+            if (numeric == null) {
                 return handleSimpleLine("CLIENT_ERROR cannot increment or decrement non-numeric value");
             }
-            BigInteger numeric = new BigInteger(currentValue);
-            BigInteger updated = CanCachedProtocol.INCR.equals(command) ? numeric.add(delta) : numeric.subtract(delta);
-            if (updated.signum() < 0) {
-                updated = BigInteger.ZERO;
-            }
-            byte[] newValue = updated.toString().getBytes(StandardCharsets.US_ASCII);
+            long updated = CanCachedProtocol.INCR.equals(command)
+                    ? numeric + delta
+                    : Long.compareUnsigned(numeric, delta) < 0 ? 0L : numeric - delta;
+            String updatedText = Long.toUnsignedString(updated);
+            byte[] newValue = updatedText.getBytes(StandardCharsets.US_ASCII);
             if (newValue.length > maxItemSize) {
                 return handleSimpleLine("SERVER_ERROR object too large");
             }
             StoredValueCodec.StoredValue candidate = new StoredValueCodec.StoredValue(newValue, current.flags(), nextCas(), current.expireAt());
             Duration ttl = ttlFromExpireAt(current.expireAt());
             if (clusterClient.compareAndSwap(key, StoredValueCodec.encode(candidate), current.cas(), ttl)) {
-                return noreply ? CommandResult.continueWithoutResponse() : CommandResult.continueWith(lineBuffer(updated.toString()));
+                return noreply ? CommandResult.continueWithoutResponse() : CommandResult.continueWith(lineBuffer(updatedText));
             }
             current = getEntry(key);
         }
@@ -518,12 +573,6 @@ public class CanCachedServer implements AutoCloseable
             return handleSimpleLine("CLIENT_ERROR numeric value expected");
         }
         Duration ttl = parseExpiration(exptime);
-        if (Duration.ZERO.equals(ttl)) {
-            if (clusterClient.delete(parts[1])) {
-                return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("TOUCHED");
-            }
-            return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("NOT_FOUND");
-        }
         StoredValueCodec.StoredValue current = getEntry(parts[1]);
         for (int attempt = 0; attempt < maxCasRetries; attempt++) {
             if (current == null) {
@@ -531,11 +580,7 @@ public class CanCachedServer implements AutoCloseable
             }
             long expireAt = computeExpireAt(ttl);
             StoredValueCodec.StoredValue candidate = new StoredValueCodec.StoredValue(current.value(), current.flags(), current.cas(), expireAt);
-            Duration effectiveTtl = ttl;
-            if (effectiveTtl == null) {
-                effectiveTtl = ttlFromExpireAt(expireAt);
-            }
-            if (clusterClient.compareAndSwap(parts[1], StoredValueCodec.encode(candidate), current.cas(), effectiveTtl)) {
+            if (clusterClient.compareAndSwap(parts[1], StoredValueCodec.encode(candidate), current.cas(), ttl)) {
                 cmdTouch.incrementAndGet();
                 return noreply ? CommandResult.continueWithoutResponse() : handleSimpleLine("TOUCHED");
             }
@@ -593,6 +638,24 @@ public class CanCachedServer implements AutoCloseable
                 throw new NumberFormatException();
             }
             return parsed;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private Long parseUnsigned64(String value)
+    {
+        if (value == null || value.isEmpty() || value.length() > 20) {
+            return null;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char character = value.charAt(i);
+            if (character < '0' || character > '9') {
+                return null;
+            }
+        }
+        try {
+            return Long.parseUnsignedLong(value);
         } catch (NumberFormatException e) {
             return null;
         }
@@ -696,12 +759,13 @@ public class CanCachedServer implements AutoCloseable
             return 0L;
         }
         long now = System.currentTimeMillis();
-        long millis = ttl.toMillis();
-        long expireAt = now + millis;
-        if (expireAt <= 0L) {
+        long millis;
+        try {
+            millis = ttl.toMillis();
+        } catch (ArithmeticException overflow) {
             return Long.MAX_VALUE;
         }
-        return expireAt;
+        return millis > Long.MAX_VALUE - now ? Long.MAX_VALUE : now + millis;
     }
 
     private Duration ttlFromExpireAt(long expireAt)
@@ -792,6 +856,7 @@ public class CanCachedServer implements AutoCloseable
                 LOG.debug("Failed to close net server", e);
             }
         }
+        commandExecutor.shutdownNow();
     }
 
     private final class ConnectionContext
@@ -877,29 +942,70 @@ public class CanCachedServer implements AutoCloseable
         private void executeCommand(Supplier<CommandResult> executor)
         {
             processing = true;
-            vertx.executeBlocking(executor::get, false).onComplete(ar -> {
-                processing = false;
-                if (closed) {
+            socket.pause();
+            CompletableFuture.supplyAsync(executor, commandExecutor).whenComplete((result, failure) ->
+                    vertx.runOnContext(ignored -> completeCommand(result, failure)));
+        }
+
+        private void completeCommand(CommandResult result, Throwable failure)
+        {
+            if (closed) {
+                return;
+            }
+            if (failure == null) {
+                if (result != null && !result.keepAlive()) {
+                    if (result.response() != null && result.response().length() > 0) {
+                        closed = true;
+                        socket.end(result.response());
+                    } else {
+                        close();
+                    }
                     return;
                 }
-                if (ar.succeeded()) {
-                    CommandResult result = ar.result();
-                    if (result != null && result.response() != null && result.response().length() > 0) {
-                        socket.write(result.response());
-                    }
-                    if (result != null && !result.keepAlive()) {
-                        close();
+                if (result != null && result.response() != null && result.response().length() > 0) {
+                    socket.write(result.response()).onComplete(writeResult -> {
+                        if (writeResult.failed()) {
+                            close();
+                            return;
+                        }
+                        finishCommand();
+                    });
+                    return;
+                }
+            } else {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debugf(failure, "Client %s disconnected with error", socket.remoteAddress());
+                }
+                close();
+                return;
+            }
+            finishCommand();
+        }
+
+        private void finishCommand()
+        {
+            if (closed) {
+                return;
+            }
+            if (socket.writeQueueFull()) {
+                socket.drainHandler(ignored -> {
+                    socket.drainHandler(null);
+                    if (closed) {
                         return;
                     }
-                } else {
-                    if (LOG.isDebugEnabled()) {
-                        LOG.debugf(ar.cause(), "Client %s disconnected with error", socket.remoteAddress());
+                    processing = false;
+                    processBuffer();
+                    if (!processing && !closed) {
+                        socket.resume();
                     }
-                    close();
-                    return;
-                }
-                processBuffer();
-            });
+                });
+                return;
+            }
+            processing = false;
+            processBuffer();
+            if (!processing && !closed) {
+                socket.resume();
+            }
         }
 
         private int indexOfCrlf(Buffer buffer)

@@ -16,6 +16,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -196,6 +199,165 @@ class CacheEngineTest
             assertFalse(engine.exists("stale"), "Key should be removed after attempting CAS on expired entry");
             assertTrue(broker.events().stream().anyMatch(e -> e.startsWith("keyspace:del:stale")), "Broker should record delete event");
         }
+
+        @Test
+        void shouldRemoveTheOldTtlWhenCasUsesNoExpiration()
+        {
+            StoredValueCodec.StoredValue base = new StoredValueCodec.StoredValue(
+                    "v1".getBytes(StandardCharsets.UTF_8), 1, 17L, 0L);
+            assertTrue(engine.set("cas:forever", StoredValueCodec.encode(base), Duration.ofMillis(25)));
+
+            StoredValueCodec.StoredValue updated = base.withValue(
+                    "v2".getBytes(StandardCharsets.UTF_8), 18L);
+            assertTrue(engine.compareAndSwap(
+                    "cas:forever", StoredValueCodec.encode(updated), 17L, null));
+
+            sleep(60);
+            assertEquals(StoredValueCodec.encode(updated), engine.get("cas:forever"),
+                    "A null CAS TTL must replace, rather than preserve, the previous TTL");
+        }
+
+        @Test
+        void shouldConditionallyRemoveEntryWhenCasExpiresImmediately()
+        {
+            StoredValueCodec.StoredValue base = new StoredValueCodec.StoredValue(
+                    "v1".getBytes(StandardCharsets.UTF_8), 1, 23L, 0L);
+            assertTrue(engine.set("cas:expire-now", StoredValueCodec.encode(base)));
+
+            assertTrue(engine.compareAndSwap(
+                    "cas:expire-now", StoredValueCodec.encode(base), 23L, Duration.ZERO));
+            assertFalse(engine.exists("cas:expire-now"));
+        }
+
+        @Test
+        void shouldAtomicallyCreateOnlyWhenAbsent()
+        {
+            StoredValueCodec.StoredValue created = new StoredValueCodec.StoredValue(
+                    "created".getBytes(StandardCharsets.UTF_8), 0, 31L, 0L);
+            String encoded = StoredValueCodec.encode(created);
+
+            assertTrue(engine.compareAndSwap(
+                    "cas:add", encoded, NodeProtocol.CAS_EXPECT_ABSENT, null));
+            assertFalse(engine.compareAndSwap(
+                    "cas:add", "replacement", NodeProtocol.CAS_EXPECT_ABSENT, null));
+            assertEquals(encoded, engine.get("cas:add"));
+        }
+
+        @Test
+        void shouldTreatAnExpiredEntryAsAbsentForAtomicCreate()
+        {
+            StoredValueCodec.StoredValue stale = new StoredValueCodec.StoredValue(
+                    "stale".getBytes(StandardCharsets.UTF_8), 0, 37L, 0L);
+            assertTrue(engine.set("cas:add-expired", StoredValueCodec.encode(stale), Duration.ofMillis(10)));
+            sleep(30);
+
+            StoredValueCodec.StoredValue fresh = new StoredValueCodec.StoredValue(
+                    "fresh".getBytes(StandardCharsets.UTF_8), 0, 38L, 0L);
+            String encodedFresh = StoredValueCodec.encode(fresh);
+            assertTrue(engine.compareAndSwap(
+                    "cas:add-expired", encodedFresh, NodeProtocol.CAS_EXPECT_ABSENT, null));
+            assertEquals(encodedFresh, engine.get("cas:add-expired"));
+        }
+
+        @Test
+        void shouldAllowExactlyOneConcurrentAtomicCreate() throws Exception
+        {
+            String first = StoredValueCodec.encode(new StoredValueCodec.StoredValue(
+                    "first".getBytes(StandardCharsets.UTF_8), 0, 41L, 0L));
+            String second = StoredValueCodec.encode(new StoredValueCodec.StoredValue(
+                    "second".getBytes(StandardCharsets.UTF_8), 0, 42L, 0L));
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch start = new CountDownLatch(1);
+
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                Future<Boolean> firstResult = executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    return engine.compareAndSwap(
+                            "cas:add-race", first, NodeProtocol.CAS_EXPECT_ABSENT, null);
+                });
+                Future<Boolean> secondResult = executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    return engine.compareAndSwap(
+                            "cas:add-race", second, NodeProtocol.CAS_EXPECT_ABSENT, null);
+                });
+
+                ready.await();
+                start.countDown();
+                boolean firstWon = firstResult.get();
+                boolean secondWon = secondResult.get();
+
+                assertNotEquals(firstWon, secondWon, "Exactly one create-if-absent operation must win");
+                assertEquals(firstWon ? first : second, engine.get("cas:add-race"));
+            }
+        }
+    }
+
+    @Nested
+    class ResourceLimits
+    {
+        @Test
+        void shouldEvictByEncodedPayloadWeight()
+        {
+            replaceEngine(CacheEngine.<String, String>builder(StringCodec.UTF8, StringCodec.UTF8)
+                    .segments(1)
+                    .maxCapacity(10)
+                    .maxWeightBytes(5)
+                    .cleanerPollMillis(60_000)
+                    .vertx(vertx)
+                    .build());
+
+            assertTrue(engine.set("a", "123"));
+            assertTrue(engine.set("b", "456"));
+
+            assertNull(engine.get("a"));
+            assertEquals("456", engine.get("b"));
+            assertEquals(3L, engine.estimatedPayloadBytes());
+        }
+
+        @Test
+        void shouldRejectOversizedReplacementWithoutLosingExistingValue()
+        {
+            replaceEngine(CacheEngine.<String, String>builder(StringCodec.UTF8, StringCodec.UTF8)
+                    .segments(1)
+                    .maxCapacity(10)
+                    .maxWeightBytes(5)
+                    .cleanerPollMillis(60_000)
+                    .vertx(vertx)
+                    .build());
+
+            assertTrue(engine.set("key", "ok"));
+            assertFalse(engine.set("key", "too-big"));
+
+            assertEquals("ok", engine.get("key"));
+            assertEquals(2L, engine.estimatedPayloadBytes());
+        }
+
+        @Test
+        void shouldCompactStaleExpirationTasksForAHotKey()
+        {
+            replaceEngine(CacheEngine.<String, String>builder(StringCodec.UTF8, StringCodec.UTF8)
+                    .segments(1)
+                    .maxCapacity(8)
+                    .maxWeightBytes(1_024)
+                    .cleanerPollMillis(60_000)
+                    .vertx(vertx)
+                    .build());
+
+            for (int i = 0; i < 1_000; i++) {
+                assertTrue(engine.set("hot", "v" + i, Duration.ofHours(1)));
+            }
+
+            assertTrue(engine.scheduledExpirationCount() <= 128,
+                    "The synchronous safety valve must bound stale TTL tasks even before manual compaction");
+            engine.compactExpirationQueue();
+            assertEquals(1, engine.scheduledExpirationCount());
+
+            assertTrue(engine.delete("hot"));
+            engine.compactExpirationQueue();
+            assertEquals(0, engine.scheduledExpirationCount());
+        }
     }
 
     @Nested
@@ -250,6 +412,25 @@ class CacheEngineTest
                     () -> engine.replay(new byte[0], StringCodec.UTF8.encode("key"), new byte[0], 0L));
             assertThrows(IllegalArgumentException.class,
                     () -> engine.replay(new byte[]{99}, StringCodec.UTF8.encode("key"), new byte[0], 0L));
+        }
+
+        @Test
+        void shouldNotResurrectAnOlderValueWhenLatestReplayRecordDoesNotFit()
+        {
+            replaceEngine(CacheEngine.<String, String>builder(StringCodec.UTF8, StringCodec.UTF8)
+                    .segments(1)
+                    .maxCapacity(10)
+                    .maxWeightBytes(5)
+                    .cleanerPollMillis(60_000)
+                    .vertx(vertx)
+                    .build());
+
+            engine.replay(new byte[]{NodeProtocol.CMD_SET}, StringCodec.UTF8.encode("key"),
+                    StringCodec.UTF8.encode("old"), 0L);
+            engine.replay(new byte[]{NodeProtocol.CMD_SET}, StringCodec.UTF8.encode("key"),
+                    StringCodec.UTF8.encode("latest-is-too-large"), 0L);
+
+            assertNull(engine.get("key"));
         }
     }
 
@@ -403,6 +584,12 @@ class CacheEngineTest
                 .cleanerPollMillis(5)
                 .vertx(vertx)
                 .build();
+    }
+
+    private void replaceEngine(CacheEngine<String, String> replacement)
+    {
+        engine.close();
+        engine = replacement;
     }
 
     private static final class RecordingBroker extends Broker

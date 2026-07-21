@@ -7,9 +7,9 @@ import com.cancache.agent.cluster.HashFn;
 import com.cancache.agent.cluster.HintedHandoffService;
 import com.cancache.agent.cluster.Node;
 import com.cancache.agent.cluster.coordination.CoordinationService;
-import com.cancache.agent.cluster.coordination.DiscoveryStrategy; // Import eklendi
-import com.cancache.agent.cluster.coordination.MulticastDiscoveryStrategy; // Import eklendi
-import com.cancache.agent.cluster.coordination.gossip.GossipDiscoveryStrategy; // Import eklendi
+import com.cancache.agent.cluster.coordination.DiscoveryStrategy;
+import com.cancache.agent.cluster.coordination.MulticastDiscoveryStrategy;
+import com.cancache.agent.cluster.coordination.gossip.GossipDiscoveryStrategy;
 import com.cancache.agent.codec.StringCodec;
 import com.cancache.agent.core.CacheEngine;
 import com.cancache.agent.core.EvictionPolicyType;
@@ -23,7 +23,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Disposes;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
-import jakarta.inject.Named; // Import eklendi
+import jakarta.inject.Named;
 import jakarta.inject.Singleton;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -108,7 +108,7 @@ public class AppConfig {
     @Singleton
     public WorkerExecutor workerExecutor(Vertx vertx)
     {
-        int poolSize = Math.max(4, Runtime.getRuntime().availableProcessors());
+        int poolSize = Math.max(1, properties.network().workerThreads());
         return vertx.createSharedWorkerExecutor("can-cache-worker", poolSize, 1, TimeUnit.MINUTES);
     }
 
@@ -129,6 +129,7 @@ public class AppConfig {
         return CacheEngine.builder(StringCodec.UTF8, StringCodec.UTF8)
         .segments(cacheProps.segments())
         .maxCapacity(cacheProps.maxCapacity())
+        .maxWeightBytes(cacheProps.maxWeightBytes())
         .cleanerPollMillis(cacheProps.cleanerPollMillis())
         .evictionPolicy(EvictionPolicyType.fromConfig(cacheProps.evictionPolicy()))
         .metrics(metrics)
@@ -172,6 +173,10 @@ public class AppConfig {
         {
             @Override
             public boolean set(String k, String v, Duration ttl) {
+                if (ttl != null && (ttl.isZero() || ttl.isNegative())) {
+                    engine.delete(k);
+                    return true;
+                }
                 return engine.set(k, v, ttl);
             }
 
@@ -214,7 +219,8 @@ public class AppConfig {
     public HintedHandoffService hintedHandoffService(MetricsRegistry metrics)
     {
         return new HintedHandoffService(metrics,
-                properties.cluster().coordination().maxHintsPerNode());
+                properties.cluster().coordination().maxHintsPerNode(),
+                properties.cluster().coordination().maxHintBytesPerNode());
     }
 
     @Produces
@@ -249,5 +255,10 @@ public class AppConfig {
     ) {
         return new ClusterClient(ring, properties.cluster().replicationFactor(), StringCodec.UTF8,
                 hintedHandoffService);
+    }
+
+    void disposeClusterClient(@Disposes ClusterClient clusterClient)
+    {
+        clusterClient.close();
     }
 }

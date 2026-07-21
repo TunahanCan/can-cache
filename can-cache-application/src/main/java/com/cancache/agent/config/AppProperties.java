@@ -3,8 +3,8 @@ package com.cancache.agent.config;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
-import java.time.Duration; // Duration için import eklendi
-import java.util.List;   // List için import eklendi
+import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -51,6 +51,13 @@ public interface AppProperties
         @WithDefault("10000")
         int maxCapacity();
 
+        /**
+         * Approximate upper bound for encoded payload bytes retained by the cache.
+         * Entry metadata and JVM collection overhead are intentionally not included.
+         */
+        @WithDefault("268435456")
+        long maxWeightBytes();
+
         @WithDefault("100")
         long cleanerPollMillis();
 
@@ -68,12 +75,12 @@ public interface AppProperties
         Discovery discovery();
         Replication replication();
         Coordination coordination();
-        Gossip gossip(); // Yeni eklendi
+        Gossip gossip();
     }
 
     interface Discovery {
-        @WithDefault("MULTICAST") // Varsayılan keşif stratejisi
-        DiscoveryType type(); // Yeni eklendi
+        @WithDefault("MULTICAST")
+        DiscoveryType type();
 
         @WithDefault("230.0.0.1")
         String multicastGroup();
@@ -90,7 +97,6 @@ public interface AppProperties
         Optional<String> nodeId();
     }
 
-    // Yeni eklendi
     interface Gossip {
         @WithDefault("0.0.0.0")
         String bindHost();
@@ -110,7 +116,7 @@ public interface AppProperties
         @WithDefault("PT30S") // 30 saniye sonra ölü üyeyi temizle
         Duration deadMemberCleanupDelay();
 
-        @WithDefault("PT5S") // Yeni eklendi: Temizlik görevlerinin çalışma aralığı
+        @WithDefault("PT5S")
         Duration cleanupInterval();
 
         @WithDefault("localhost:45566") // Başlangıç tohum düğümleri
@@ -142,6 +148,12 @@ public interface AppProperties
         @WithDefault("128")
         int backlog();
 
+        @WithDefault("2048")
+        int maxConnections();
+
+        @WithDefault("300")
+        int idleTimeoutSeconds();
+
         @WithDefault("0")
         int eventLoopThreads();
 
@@ -163,6 +175,9 @@ public interface AppProperties
 
         @WithDefault("10000")
         int maxHintsPerNode();
+
+        @WithDefault("33554432")
+        long maxHintBytesPerNode();
     }
 
     interface Cancache
@@ -172,6 +187,12 @@ public interface AppProperties
 
         @WithDefault("16")
         int maxCasRetries();
+
+        @WithDefault("128")
+        int maxGetKeys();
+
+        @WithDefault("16777216")
+        int maxResponseSizeBytes();
     }
 
     interface Agent
@@ -204,7 +225,6 @@ public interface AppProperties
         boolean requiredOnStartup();
     }
 
-    // Yeni eklendi
     enum DiscoveryType {
         MULTICAST,
         DNS,

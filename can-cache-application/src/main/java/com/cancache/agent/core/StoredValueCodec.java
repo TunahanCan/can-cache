@@ -60,6 +60,17 @@ public final class StoredValueCodec {
         return Base64.getEncoder().encodeToString(buffer.array());
     }
 
+    /**
+     * Returns the encoded UTF-8 byte length for a value of the supplied size.
+     */
+    public static long encodedLength(int valueLength) {
+        if (valueLength < 0) {
+            throw new IllegalArgumentException("valueLength must not be negative");
+        }
+        long binaryLength = HEADER_SIZE + (long) valueLength;
+        return 4L * ((binaryLength + 2L) / 3L);
+    }
+
     private static StoredValue legacy(String raw) {
         byte[] bytes = raw.getBytes(StandardCharsets.UTF_8);
         return new StoredValue(bytes, 0, 0L, 0L, false);
@@ -86,6 +97,10 @@ public final class StoredValueCodec {
 
         public byte[] value() {
             return value.clone();
+        }
+
+        public int valueLength() {
+            return value.length;
         }
 
         public int flags() {

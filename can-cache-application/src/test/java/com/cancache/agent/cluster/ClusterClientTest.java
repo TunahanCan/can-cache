@@ -1,7 +1,9 @@
 package com.cancache.agent.cluster;
 
 import com.cancache.agent.codec.StringCodec;
+import com.cancache.agent.constants.NodeProtocol;
 import com.cancache.agent.metric.MetricsRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -34,6 +36,12 @@ class ClusterClientTest
         client = new ClusterClient(ring, 3, StringCodec.UTF8, handoff);
     }
 
+    @AfterEach
+    void cleanup()
+    {
+        client.close();
+    }
+
     @Nested
     class SetOperations
     {
@@ -45,17 +53,14 @@ class ClusterClientTest
         {
             // Given
             ConsistentHashRing<Node<String, String>> emptyRing = new ConsistentHashRing<>(new ControlledHash(), 1);
-            ClusterClient emptyClient = new ClusterClient(emptyRing, 3, StringCodec.UTF8, handoff);
-
-            // When
-            boolean result = emptyClient.set("clientKey", "value", null);
-
-            // Then
-            assertFalse(result, "Set should return false if no nodes are available in the ring");
+            try (ClusterClient emptyClient = new ClusterClient(emptyRing, 3, StringCodec.UTF8, handoff)) {
+                assertFalse(emptyClient.set("clientKey", "value", null),
+                        "Set should return false if no nodes are available in the ring");
+            }
         }
 
         /**
-         * Demonstrates that true is returned when the quorum is met, and a failed node is added to the handoff queue.
+         * A semantic rejection is not retried as a connectivity failure.
          */
         @Test
         void shouldReturnTrueWhenQuorumReachedOnSet()
@@ -68,19 +73,19 @@ class ClusterClientTest
 
             // Then
             assertTrue(result, "Set should return true when a quorum of nodes succeeds");
-            assertEquals(1, handoff.pendingFor(replica1.id()), "Hinted handoff should queue a message for the failed replica1");
+            assertEquals(0, handoff.pendingFor(replica1.id()), "Rejected writes must not consume handoff memory");
             assertEquals(0, handoff.pendingFor(replica2.id()), "No messages should be queued for the successful replica2");
             assertEquals(0, handoff.pendingFor(leader.id()), "No messages should be queued for the successful leader");
         }
 
         @Test
-        void shouldQueueLeaderHintWhenLeaderRejectsButReplicaQuorumSucceeds()
+        void shouldNotQueueLeaderHintWhenLeaderRejectsButReplicaQuorumSucceeds()
         {
             leader.failNextSet();
 
             assertTrue(client.set("clientKey", "value", Duration.ofSeconds(1)));
-            assertEquals(1, handoff.pendingFor(leader.id()),
-                    "A rejected owner write must be repaired even when replica quorum succeeds");
+            assertEquals(0, handoff.pendingFor(leader.id()),
+                    "A semantic rejection must not be replayed indefinitely");
         }
 
         @Test
@@ -88,10 +93,10 @@ class ClusterClientTest
         {
             ConsistentHashRing<Node<String, String>> partialRing = new ConsistentHashRing<>(new ControlledHash(), 1);
             partialRing.addNode(leader, bytes("leader"));
-            ClusterClient partialClient = new ClusterClient(partialRing, 3, StringCodec.UTF8, handoff);
-
-            assertFalse(partialClient.set("clientKey", "value", null),
-                    "RF=3 must not silently become quorum=1 during a partition");
+            try (ClusterClient partialClient = new ClusterClient(partialRing, 3, StringCodec.UTF8, handoff)) {
+                assertFalse(partialClient.set("clientKey", "value", null),
+                        "RF=3 must not silently become quorum=1 during a partition");
+            }
         }
 
         /**
@@ -111,8 +116,8 @@ class ClusterClientTest
             // Then
             assertTrue(ex.getMessage().contains("set"), "Exception message should indicate a set failure");
             assertEquals(1, handoff.pendingFor(leader.id()), "Hinted handoff should queue a message for the failed leader");
-            assertEquals(1, handoff.pendingFor(replica1.id()), "Hinted handoff should queue a message for the failed replica1");
-            assertEquals(1, handoff.pendingFor(replica2.id()), "Hinted handoff should queue a message for the failed replica2");
+            assertEquals(0, handoff.pendingFor(replica1.id()), "Rejected writes must not be retried as outages");
+            assertEquals(0, handoff.pendingFor(replica2.id()), "Rejected writes must not be retried as outages");
         }
     }
 
@@ -185,11 +190,11 @@ class ClusterClientTest
 
             // Then
             assertTrue(result, "Delete should succeed when quorum is met");
-            assertEquals(1, handoff.pendingFor(replica2.id()), "Failed replica should have a queued handoff item");
+            assertEquals(0, handoff.pendingFor(replica2.id()), "An already-absent delete needs no handoff hint");
         }
 
         /**
-         * Demonstrates that false is returned and a hint is saved when the quorum cannot be met.
+         * Demonstrates that false is returned without retaining no-op delete hints.
          */
         @Test
         void shouldReturnFalseWithoutQuorumOnDelete()
@@ -203,7 +208,7 @@ class ClusterClientTest
 
             // Then
             assertFalse(result, "Delete should fail when quorum is not met");
-            assertEquals(1, handoff.pendingFor(replica1.id()), "Handoff hint should be saved for replica1");
+            assertEquals(0, handoff.pendingFor(replica1.id()), "Absent-key deletes must not consume handoff memory");
             assertEquals(0, handoff.pendingFor(replica2.id()), "No handoff hint should be saved for successful replica2");
         }
     }
@@ -225,7 +230,7 @@ class ClusterClientTest
 
             // Then
             assertTrue(result, "CAS should succeed when quorum is met");
-            assertEquals(0, handoff.pendingFor(replica2.id()), "No hinted handoff queue expected for CAS"); // Wait, the original assertion checks for 0 here
+            assertEquals(0, handoff.pendingFor(replica2.id()), "Rejected CAS operations are not replayable hints");
         }
 
         /**
@@ -244,7 +249,16 @@ class ClusterClientTest
 
             // Then
             assertTrue(ex.getMessage().contains("cas"), "Exception message should indicate a CAS failure");
-            assertEquals(1, handoff.pendingFor(leader.id()), "Hinted handoff queued for leader (as per original logic)");
+            assertEquals(1, handoff.pendingFor(leader.id()), "Connectivity failures must retain a repair hint");
+        }
+
+        @Test
+        void shouldUseTheReservedCasTokenForAtomicAdd()
+        {
+            assertTrue(client.add("clientKey", "new", null));
+            assertEquals(NodeProtocol.CAS_EXPECT_ABSENT, leader.lastExpectedCas);
+            assertEquals(NodeProtocol.CAS_EXPECT_ABSENT, replica1.lastExpectedCas);
+            assertEquals(NodeProtocol.CAS_EXPECT_ABSENT, replica2.lastExpectedCas);
         }
     }
 
@@ -308,6 +322,7 @@ class ClusterClientTest
         private boolean throwGet;
         private String storedValue;
         private int clearCalls;
+        private long lastExpectedCas;
 
         FakeNode(String id)
         {
@@ -397,6 +412,7 @@ class ClusterClientTest
         @Override
         public boolean compareAndSwap(String key, String value, long expectedCas, Duration ttl)
         {
+            lastExpectedCas = expectedCas;
             if (throwCas)
             {
                 throwCas = false;

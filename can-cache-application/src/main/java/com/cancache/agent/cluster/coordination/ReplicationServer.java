@@ -501,7 +501,10 @@ public class ReplicationServer implements AutoCloseable
             long now = System.currentTimeMillis();
 
             boolean stored;
-            if (expireAt <= 0L) {
+            if (expireAt < 0L) {
+                engine.delete(key);
+                stored = true;
+            } else if (expireAt == 0L) {
                 stored = engine.set(key, value);
             } else if (expireAt <= now) {
                 engine.delete(key);
@@ -548,11 +551,12 @@ public class ReplicationServer implements AutoCloseable
             long now = System.currentTimeMillis();
 
             boolean stored;
-            if (expireAt <= 0L) {
+            if (expireAt < 0L) {
+                stored = engine.compareAndSwap(key, value, expectedCas, Duration.ZERO);
+            } else if (expireAt == 0L) {
                 stored = engine.compareAndSwap(key, value, expectedCas, null);
             } else if (expireAt <= now) {
-                engine.delete(key);
-                stored = true;
+                stored = engine.compareAndSwap(key, value, expectedCas, Duration.ZERO);
             } else {
                 long ttlMillis = expireAt - now;
                 stored = engine.compareAndSwap(key, value, expectedCas, Duration.ofMillis(ttlMillis));

@@ -19,4 +19,9 @@ public record CommandResult(Buffer response, boolean keepAlive)
     {
         return new CommandResult(null, false);
     }
+
+    public static CommandResult terminateWith(Buffer response)
+    {
+        return new CommandResult(response, false);
+    }
 }

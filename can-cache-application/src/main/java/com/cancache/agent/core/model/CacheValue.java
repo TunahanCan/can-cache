@@ -19,6 +19,11 @@ public record CacheValue(byte[] value, long expireAtMillis)
         return value.clone();
     }
 
+    public int sizeBytes()
+    {
+        return value.length;
+    }
+
     public boolean expired(long now)
     {
         return expireAtMillis > 0 && now >= expireAtMillis;

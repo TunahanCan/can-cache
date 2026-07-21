@@ -14,8 +14,8 @@ public record CasHint(String key, String value, long expectedCas, long expireAtM
     {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(value, "value");
-        if (expireAtMillis < 0L) {
-            throw new IllegalArgumentException("expireAtMillis must not be negative");
+        if (expireAtMillis < -1L) {
+            throw new IllegalArgumentException("expireAtMillis must be -1 or a non-negative timestamp");
         }
     }
 
@@ -25,12 +25,18 @@ public record CasHint(String key, String value, long expectedCas, long expireAtM
         if (expireAtMillis > 0L && expireAtMillis <= nowMillis) {
             return ReplayResult.SATISFIED;
         }
-        Duration remainingTtl = expireAtMillis == 0L
-                ? null
-                : Duration.ofMillis(expireAtMillis - nowMillis);
+        Duration remainingTtl = expireAtMillis < 0L
+                ? Duration.ZERO
+                : expireAtMillis == 0L ? null : Duration.ofMillis(expireAtMillis - nowMillis);
         return node.compareAndSwap(key, value, expectedCas, remainingTtl)
                 ? ReplayResult.APPLIED
                 : ReplayResult.SATISFIED;
+    }
+
+    @Override
+    public long estimatedBytes()
+    {
+        return 80L + 2L * (key.length() + value.length());
     }
 
     @Override

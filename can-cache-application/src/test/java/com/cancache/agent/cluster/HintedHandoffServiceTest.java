@@ -71,6 +71,20 @@ class HintedHandoffServiceTest
             service.replay("node", node);
             assertEquals(List.of("value-2", "value-3"), node.setValues());
         }
+
+        @Test
+        void shouldBoundHintPayloadBytesPerNode()
+        {
+            service = new HintedHandoffService(metrics, 10, 150L);
+            service.recordSet("node", "k", "a".repeat(20), null);
+            service.recordSet("node", "k", "b".repeat(20), null);
+
+            assertEquals(1, service.pendingFor("node"));
+            assertEquals(1L, metrics.counter("hinted_handoff_dropped_total").get());
+
+            service.replay("node", node);
+            assertEquals(List.of("b".repeat(20)), node.setValues());
+        }
     }
 
     @Nested

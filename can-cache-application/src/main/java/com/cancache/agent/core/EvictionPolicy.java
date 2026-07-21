@@ -19,15 +19,15 @@ interface EvictionPolicy<K>
      *
      * @param key       kabul edilmek istenen aday anahtar
      * @param map       segmentin erişim sırasına göre tutulan mevcut haritası
-     * @param capacity  segment için tanımlı maksimum giriş sayısı
+     * @param evictionRequired {@code true} when count or byte capacity requires a victim
      * @return anahtarın kabul edilip edilmeyeceğini ve gerekirse kurban anahtarı döndürür
      */
-    AdmissionDecision<K> admit(K key, LinkedHashMap<K, CacheValue> map, int capacity);
+    AdmissionDecision<K> admit(K key, LinkedHashMap<K, CacheValue> map, boolean evictionRequired);
 
     /** Belirtilen anahtarın segmentten çıkarıldığını bildirir. */
     void onRemove(K key);
 
-    /** {@link #admit(Object, LinkedHashMap, int)} çağrısının sonucunu kapsüller. */
+    /** {@link #admit(Object, LinkedHashMap, boolean)} çağrısının sonucunu kapsüller. */
     final class AdmissionDecision<K>
     {
         private static final AdmissionDecision<?> REJECT = new AdmissionDecision<>(false, null);
@@ -51,4 +51,3 @@ interface EvictionPolicy<K>
         static <K> AdmissionDecision<K> admit(K evictKey){ return new AdmissionDecision<>(true, evictKey); }
     }
 }
-

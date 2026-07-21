@@ -17,9 +17,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.DelayQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Anahtar-değer çiftlerini segmentlere bölerek depolayan önbellek motorudur.
@@ -44,11 +47,14 @@ public final class CacheEngine<K, V> implements AutoCloseable {
     // Sabitler
     // ========================================
     private static final long NO_EXPIRATION = 0L;
+    private static final int MIN_EXPIRATION_COMPACTION_THRESHOLD = 64;
 
     // ========================================
     // Yapılandırma Alanları
     // ========================================
     private final int segmentCount;
+    private final int maxCapacity;
+    private final long maxWeightBytes;
     private final long cleanerPollMillis;
     private final Codec<K> keyCodec;
     private final Codec<V> valueCodec;
@@ -58,6 +64,10 @@ public final class CacheEngine<K, V> implements AutoCloseable {
     // ========================================
     private final CacheSegment<K>[] segments;
     private final DelayQueue<ExpiringKey> expirationQueue;
+    private final int expirationCompactionThreshold;
+    private final int expirationHardLimit;
+    private final Object expirationMaintenanceLock = new Object();
+    private final AtomicBoolean expirationCompactionScheduled = new AtomicBoolean();
 
     // ========================================
     // Bağımlılıklar
@@ -89,7 +99,10 @@ public final class CacheEngine<K, V> implements AutoCloseable {
     @SuppressWarnings("unchecked")
     private CacheEngine(Builder<K, V> builder) {
         // Yapılandırma
-        this.segmentCount = Math.min(builder.segments, builder.maxCapacity);
+        this.segmentCount = (int) Math.min(builder.segments,
+                Math.min((long) builder.maxCapacity, builder.maxWeightBytes));
+        this.maxCapacity = builder.maxCapacity;
+        this.maxWeightBytes = builder.maxWeightBytes;
         this.cleanerPollMillis = builder.cleanerPollMillis;
         this.keyCodec = builder.keyCodec;
         this.valueCodec = builder.valueCodec;
@@ -101,6 +114,12 @@ public final class CacheEngine<K, V> implements AutoCloseable {
 
         // Veri yapıları
         this.expirationQueue = new DelayQueue<>();
+        long desiredCompactionThreshold = Math.max(MIN_EXPIRATION_COMPACTION_THRESHOLD,
+                (long) maxCapacity * 2L);
+        this.expirationCompactionThreshold = (int) Math.min(Integer.MAX_VALUE, desiredCompactionThreshold);
+        this.expirationHardLimit = (int) Math.min(Integer.MAX_VALUE,
+                Math.max((long) expirationCompactionThreshold + 1L,
+                        (long) expirationCompactionThreshold * 2L));
         this.removalListeners = new CopyOnWriteArrayList<>();
 
         // Segmentleri oluştur
@@ -123,11 +142,14 @@ public final class CacheEngine<K, V> implements AutoCloseable {
         CacheSegment<K>[] result = new CacheSegment[segmentCount];
         int capacityPerSegment = builder.maxCapacity / segmentCount;
         int remainder = builder.maxCapacity % segmentCount;
+        long weightPerSegment = builder.maxWeightBytes / segmentCount;
+        long weightRemainder = builder.maxWeightBytes % segmentCount;
 
         for (int i = 0; i < segmentCount; i++) {
             int segmentCapacity = capacityPerSegment + (i < remainder ? 1 : 0);
+            long segmentWeight = weightPerSegment + (i < weightRemainder ? 1L : 0L);
             EvictionPolicy<K> evictionPolicy = builder.evictionPolicy.create(segmentCapacity);
-            result[i] = new CacheSegment<>(segmentCapacity, evictionPolicy, this::onKeyRemoved);
+            result[i] = new CacheSegment<>(segmentCapacity, segmentWeight, evictionPolicy, this::onKeyRemoved);
         }
         return result;
     }
@@ -167,6 +189,7 @@ public final class CacheEngine<K, V> implements AutoCloseable {
         // Opsiyonel alanlar (varsayılan değerlerle)
         private int segments = 8;
         private int maxCapacity = 10_000;
+        private long maxWeightBytes = 256L * 1024L * 1024L;
         private long cleanerPollMillis = 100;
         private EvictionPolicyType evictionPolicy = EvictionPolicyType.LRU;
         private MetricsRegistry metricsRegistry;
@@ -197,6 +220,17 @@ public final class CacheEngine<K, V> implements AutoCloseable {
                 throw new IllegalArgumentException("Kapasite en az 1 olmalıdır");
             }
             this.maxCapacity = maxCapacity;
+            return this;
+        }
+
+        /**
+         * Sets the approximate encoded-payload budget retained by the cache.
+         */
+        public Builder<K, V> maxWeightBytes(long maxWeightBytes) {
+            if (maxWeightBytes < 1L) {
+                throw new IllegalArgumentException("Maksimum ağırlık en az 1 byte olmalıdır");
+            }
+            this.maxWeightBytes = maxWeightBytes;
             return this;
         }
 
@@ -294,7 +328,7 @@ public final class CacheEngine<K, V> implements AutoCloseable {
 
             // TTL varsa expiration queue'ya ekle
             if (expireAt > NO_EXPIRATION) {
-                expirationQueue.offer(new ExpiringKey(key, segmentIndex, expireAt));
+                scheduleExpiration(key, segmentIndex, expireAt);
             }
 
             // Event yayınla
@@ -387,7 +421,9 @@ public final class CacheEngine<K, V> implements AutoCloseable {
     public void clear() {
         // Clear scheduled tasks first. A concurrent TTL write that starts after this
         // point keeps its own task; entries already present are removed below.
-        expirationQueue.clear();
+        synchronized (expirationMaintenanceLock) {
+            expirationQueue.clear();
+        }
         for (CacheSegment<K> segment : segments) {
             segment.clear();
         }
@@ -404,6 +440,17 @@ public final class CacheEngine<K, V> implements AutoCloseable {
         return total;
     }
 
+    /**
+     * Returns the encoded payload bytes currently retained by all segments.
+     */
+    public long estimatedPayloadBytes() {
+        long total = 0L;
+        for (CacheSegment<K> segment : segments) {
+            total += segment.weight();
+        }
+        return total;
+    }
+
     // ========================================
     // Compare-And-Swap (CAS) Operasyonu
     // ========================================
@@ -414,7 +461,7 @@ public final class CacheEngine<K, V> implements AutoCloseable {
      * @param key         Anahtar
      * @param newValue    Yeni değer
      * @param expectedCas Beklenen CAS değeri
-     * @param ttl         Yeni TTL (null = mevcut TTL korunur)
+     * @param ttl         Yeni TTL ({@code null} = süresiz, zero/negative = hemen expire)
      * @return Başarılı ise true
      */
     public boolean compareAndSwap(K key, V newValue, long expectedCas, Duration ttl) {
@@ -428,14 +475,33 @@ public final class CacheEngine<K, V> implements AutoCloseable {
             long now = System.currentTimeMillis();
 
             CasResult result = segment.compareAndSwap(key, existing -> {
-                // Mevcut değer yoksa başarısız
+                boolean createIfAbsent = expectedCas == NodeProtocol.CAS_EXPECT_ABSENT;
+
                 if (existing == null) {
-                    return CasDecision.fail();
+                    if (!createIfAbsent) {
+                        return CasDecision.fail();
+                    }
+                    if (ttl != null && (ttl.isZero() || ttl.isNegative())) {
+                        return CasDecision.noValueSuccess();
+                    }
+                    long newExpireAt = ttl == null ? NO_EXPIRATION : calculateExpiration(ttl, now);
+                    return CasDecision.success(new CacheValue(valueCodec.encode(newValue), newExpireAt));
                 }
 
-                // Süre dolmuşsa başarısız
                 if (existing.expired(now)) {
+                    if (createIfAbsent) {
+                        if (ttl != null && (ttl.isZero() || ttl.isNegative())) {
+                            return CasDecision.removeSuccess();
+                        }
+                        long newExpireAt = ttl == null ? NO_EXPIRATION : calculateExpiration(ttl, now);
+                        return CasDecision.replaceExpired(
+                                new CacheValue(valueCodec.encode(newValue), newExpireAt));
+                    }
                     return CasDecision.expired();
+                }
+
+                if (createIfAbsent) {
+                    return CasDecision.fail();
                 }
 
                 // CAS değerini kontrol et
@@ -447,10 +513,12 @@ public final class CacheEngine<K, V> implements AutoCloseable {
                     return CasDecision.fail();
                 }
 
+                if (ttl != null && (ttl.isZero() || ttl.isNegative())) {
+                    return CasDecision.removeSuccess();
+                }
+
                 // Yeni expiration hesapla
-                long newExpireAt = (ttl != null)
-                        ? calculateExpiration(ttl, now)
-                        : existing.expireAtMillis();
+                long newExpireAt = ttl == null ? NO_EXPIRATION : calculateExpiration(ttl, now);
 
                 byte[] encodedNewValue = valueCodec.encode(newValue);
                 return CasDecision.success(new CacheValue(encodedNewValue, newExpireAt));
@@ -468,9 +536,11 @@ public final class CacheEngine<K, V> implements AutoCloseable {
 
     private void handleSuccessfulCas(K key, int segmentIndex, CacheValue newValue) {
         if (newValue != null && newValue.expireAtMillis() > NO_EXPIRATION) {
-            expirationQueue.offer(new ExpiringKey(key, segmentIndex, newValue.expireAtMillis()));
+            scheduleExpiration(key, segmentIndex, newValue.expireAtMillis());
         }
-        publishEvent("keyspace:set", key);
+        if (newValue != null) {
+            publishEvent("keyspace:set", key);
+        }
     }
 
     // ========================================
@@ -581,9 +651,16 @@ public final class CacheEngine<K, V> implements AutoCloseable {
             return;
         }
 
-        // Değeri zorla yaz (eviction'ı atla)
-        if (segment.putForce(key, new CacheValue(value, expireAt)) && expireAt > NO_EXPIRATION) {
-            expirationQueue.offer(new ExpiringKey(key, segmentIndex, expireAt));
+        // Admission history is ignored during replay, but configured memory
+        // bounds still apply. Never retain an older value when the latest log
+        // record cannot fit, as that would resurrect stale data.
+        if (!segment.putForce(key, new CacheValue(value, expireAt))) {
+            segment.remove(key);
+            LOG.warnf("Skipped replay value for key %s because it exceeds the cache byte budget", key);
+            return;
+        }
+        if (expireAt > NO_EXPIRATION) {
+            scheduleExpiration(key, segmentIndex, expireAt);
         }
     }
 
@@ -615,6 +692,67 @@ public final class CacheEngine<K, V> implements AutoCloseable {
         }
     }
 
+    private void scheduleExpiration(K key, int segmentIndex, long expireAtMillis) {
+        synchronized (expirationMaintenanceLock) {
+            expirationQueue.offer(new ExpiringKey(key, segmentIndex, expireAtMillis));
+            // The async compactor keeps the write path cheap under normal load. A
+            // synchronous safety valve prevents a hot key from allocating stale
+            // delay entries faster than the worker pool can compact them.
+            if (expirationQueue.size() > expirationHardLimit) {
+                compactExpirationQueueLocked();
+            }
+        }
+        requestExpirationCompactionIfNeeded();
+    }
+
+    private void requestExpirationCompactionIfNeeded() {
+        if (expirationQueue.size() <= expirationCompactionThreshold
+                || !expirationCompactionScheduled.compareAndSet(false, true)) {
+            return;
+        }
+        vertx.executeBlocking(() -> {
+            compactExpirationQueue();
+            return null;
+        }).onComplete(result -> {
+            expirationCompactionScheduled.set(false);
+            if (result.failed()) {
+                LOG.warn("Expiration queue compaction failed", result.cause());
+            }
+            if (expirationQueue.size() > expirationCompactionThreshold) {
+                requestExpirationCompactionIfNeeded();
+            }
+        });
+    }
+
+    void compactExpirationQueue() {
+        synchronized (expirationMaintenanceLock) {
+            compactExpirationQueueLocked();
+        }
+    }
+
+    private void compactExpirationQueueLocked() {
+        Set<ExpirationIdentity> live = new HashSet<>(Math.max(16, size()));
+        for (int i = 0; i < segments.length; i++) {
+            final int segmentIndex = i;
+            segments[i].forEach((key, value) -> {
+                if (value.expireAtMillis() > NO_EXPIRATION) {
+                    live.add(new ExpirationIdentity(key, segmentIndex, value.expireAtMillis()));
+                }
+            });
+        }
+
+        Set<ExpirationIdentity> retained = new HashSet<>(live.size());
+        expirationQueue.removeIf(expiringKey -> {
+            ExpirationIdentity identity = new ExpirationIdentity(
+                    expiringKey.key(), expiringKey.segmentIndex(), expiringKey.expireAtMillis());
+            return !live.contains(identity) || !retained.add(identity);
+        });
+    }
+
+    int scheduledExpirationCount() {
+        return expirationQueue.size();
+    }
+
     @SuppressWarnings("unchecked")
     private void evictExpiredKey(ExpiringKey expiredKey) {
         CacheSegment<K> segment = segments[expiredKey.segmentIndex()];
@@ -642,10 +780,19 @@ public final class CacheEngine<K, V> implements AutoCloseable {
             return NO_EXPIRATION;
         }
 
-        long expireAt = now + ttl.toMillis();
-
-        // Overflow koruması
-        return (expireAt <= 0L) ? Long.MAX_VALUE : expireAt;
+        long ttlMillis;
+        try {
+            ttlMillis = ttl.toMillis();
+        } catch (ArithmeticException overflow) {
+            return Long.MAX_VALUE;
+        }
+        if (ttlMillis <= 0L) {
+            return NO_EXPIRATION;
+        }
+        if (ttlMillis > Long.MAX_VALUE - now) {
+            return Long.MAX_VALUE;
+        }
+        return now + ttlMillis;
     }
 
     private void onKeyRemoved(K key) {
@@ -713,4 +860,6 @@ public final class CacheEngine<K, V> implements AutoCloseable {
     public interface EntryConsumer<K> {
         void accept(K key, byte[] value, long expireAtMillis);
     }
+
+    private record ExpirationIdentity(Object key, int segmentIndex, long expireAtMillis) {}
 }
