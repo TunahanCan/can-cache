@@ -4,6 +4,9 @@ agent:
   listen:
     host: 0.0.0.0
     port: 11211
+    max-connections: 10000
+    max-pending-connections: 1024
+    write-queue-max-bytes: 65536
 
   # Upstream discovery via Kubernetes DNS A records
   discovery:
@@ -17,28 +20,37 @@ agent:
 
   registration:
     enabled: true
-    host: 0.0.0.0
+    host: 127.0.0.1
     port: 11311
     ttl: PT15S
     cleanup-interval: PT2S
+    read-timeout: PT2S
+    max-connections: 128
+    max-nodes: 256
+    # Configure the same value as app.agent.registration-token on every cache node.
 
   # Health probing
   health:
     interval: PT2S
     connect-timeout: PT1.5S
+    healthy-threshold: 2
+    unhealthy-threshold: 3
+    passive-failure-threshold: 2
 
   # Selection policy: RR | LEAST_CONN
   selection:
     policy: RR
+    max-attempts: 2
 
   # Connection timeout behavior
   timeouts:
+    connect: PT3S
     idle: PT60S
 
   # Dashboard behavior
   dashboard:
     refresh: PT1S
-    mode: tui
+    mode: auto
     snapshot-interval: PT5S
 
   # Graceful shutdown timeout
@@ -47,5 +59,16 @@ agent:
 
 # Quarkus settings
 quarkus:
+  application:
+    name: can-cache-agent
+  http:
+    # Keep the unauthenticated operations surface local unless explicitly published
+    # behind a trusted network boundary or authenticated reverse proxy.
+    host: 127.0.0.1
+    port: 8080
   banner:
     enabled: true
+  micrometer:
+    export:
+      prometheus:
+        enabled: true

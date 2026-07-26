@@ -20,7 +20,7 @@
 ### What is in this repository?
 
 - `can-cache-application`: core cache server (protocol parser, in-memory engine, clustering, replication, hinted handoff, metrics).
-- `can-cache-agent`: TCP edge proxy + registration/discovery service for multi-node deployments.
+- `can-cache-agent`: hardened TCP edge proxy, registration/discovery service, and live operations dashboard.
 - `can-cache-integration-tests`: Docker-based protocol and metrics integration tests.
 - `can-cache-performance-tests`: JMeter sampler and load profiles (`small/medium/large/xl`).
 
@@ -76,8 +76,12 @@ app.agent.enabled=true
 app.agent.host=127.0.0.1
 app.agent.port=11211
 app.agent.registration-port=11311
+app.agent.registration-token=<shared-secret>
 app.agent.advertised-host=<instance-ip-or-dns>
 ```
+
+When registration crosses the local host, configure the shared token on both sides. Registration uses plain TCP, so
+use mTLS or an authenticated tunnel on untrusted networks.
 
 Run agent:
 
@@ -86,6 +90,10 @@ Run agent:
 ```
 
 Clients connect only to the agent (`agent.listen.port`), while agent balances traffic across healthy cache nodes.
+Open `http://localhost:8080/agent/` for the live dashboard. Health and Prometheus endpoints are available at
+`/q/health/live`, `/q/health/ready`, and `/q/metrics`.
+The HTTP operations surface binds to loopback by default. Put it behind an authenticated reverse proxy before
+exposing it outside a trusted host or network.
 
 Run one local agent + two local cache nodes:
 
@@ -114,7 +122,7 @@ Run one local agent + two local cache nodes:
 ### Bu repoda neler var?
 
 - `can-cache-application`: çekirdek cache sunucusu (protokol ayrıştırma, bellek motoru, kümeleme, replikasyon, hinted handoff, metrik).
-- `can-cache-agent`: çoklu node dağıtımları için TCP edge proxy + kayıt/keşif servisi.
+- `can-cache-agent`: çoklu node dağıtımları için sertleştirilmiş TCP edge proxy, kayıt/keşif servisi ve canlı operasyon paneli.
 - `can-cache-integration-tests`: Docker tabanlı protokol ve metrik entegrasyon testleri.
 - `can-cache-performance-tests`: JMeter sampler ve yük profilleri (`small/medium/large/xl`).
 
@@ -170,8 +178,12 @@ app.agent.enabled=true
 app.agent.host=127.0.0.1
 app.agent.port=11211
 app.agent.registration-port=11311
+app.agent.registration-token=<ortak-gizli-deger>
 app.agent.advertised-host=<instance-ip-veya-dns>
 ```
+
+Registration aynı host dışına çıkıyorsa ortak token'ı iki tarafta da ayarlayın. Kayıt trafiği düz TCP kullandığı
+için güvenilmeyen ağlarda mTLS veya kimlik doğrulamalı bir tünel kullanın.
 
 Agent çalıştırma:
 
@@ -180,6 +192,10 @@ Agent çalıştırma:
 ```
 
 İstemciler sadece agent'a bağlanır (`agent.listen.port`), agent sağlıklı cache node'ları arasında trafiği dağıtır.
+Canlı panel için `http://localhost:8080/agent/` adresini açın. Sağlık ve Prometheus endpoint'leri
+`/q/health/live`, `/q/health/ready` ve `/q/metrics` altında sunulur.
+HTTP operasyon yüzeyi varsayılan olarak yalnız loopback üzerinde dinler. Güvenilir host veya ağ dışına açmadan
+önce kimlik doğrulamalı bir reverse proxy arkasına alın.
 
 Localde 1 agent + 2 cache node ayağa kaldırma:
 

@@ -25,6 +25,12 @@ public class AgentStatusResource {
     @Inject
     ConnectionTracker tracker;
 
+    @Inject
+    TcpProxyServer proxyServer;
+
+    @Inject
+    RegistrationService registrationService;
+
     @GET
     @Path("/instances")
     public AgentStatusResponse status() {
@@ -48,7 +54,17 @@ public class AgentStatusResource {
                 metrics.dnsChanges(),
                 metrics.latestEvents(),
                 instances,
-                recentConnections
+                recentConnections,
+                proxyServer.lifecycleState(),
+                proxyServer.isListening(),
+                proxyServer.isAccepting(),
+                proxyServer.pendingConnections(),
+                metrics.totalConnections(),
+                metrics.rejectedConnections(),
+                metrics.dialFailures(),
+                metrics.failovers(),
+                metrics.idleTimeouts(),
+                registrationService.isListening()
         );
     }
 
@@ -57,6 +73,7 @@ public class AgentStatusResource {
                 node.address(),
                 node.state().name(),
                 node.activeConn(),
+                node.pendingConn(),
                 node.totalConn(),
                 node.bytesIn(),
                 node.bytesOut(),
@@ -91,7 +108,17 @@ public class AgentStatusResource {
             long dnsChanges,
             List<String> latestEvents,
             List<InstanceStatus> instances,
-            List<ConnectionSummary> recentConnections
+            List<ConnectionSummary> recentConnections,
+            String state,
+            boolean listening,
+            boolean accepting,
+            int pendingConnections,
+            long totalConnections,
+            long rejectedConnections,
+            long dialFailures,
+            long failovers,
+            long idleTimeouts,
+            boolean registrationListening
     ) {
     }
 
@@ -99,6 +126,7 @@ public class AgentStatusResource {
             String address,
             String state,
             int activeConnections,
+            int pendingConnections,
             long totalConnections,
             long bytesIn,
             long bytesOut,

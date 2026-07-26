@@ -4,6 +4,7 @@ import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
 import java.time.Duration;
+import java.util.Optional;
 
 @ConfigMapping(prefix = "agent")
 public interface AgentConfig {
@@ -33,6 +34,15 @@ public interface AgentConfig {
 
         @WithDefault("11211")
         int port();
+
+        @WithDefault("10000")
+        int maxConnections();
+
+        @WithDefault("1024")
+        int maxPendingConnections();
+
+        @WithDefault("65536")
+        int writeQueueMaxBytes();
     }
 
     interface Discovery {
@@ -57,11 +67,23 @@ public interface AgentConfig {
 
         @WithDefault("1500ms")
         Duration connectTimeout();
+
+        @WithDefault("2")
+        int healthyThreshold();
+
+        @WithDefault("3")
+        int unhealthyThreshold();
+
+        @WithDefault("2")
+        int passiveFailureThreshold();
     }
 
     interface Selection {
         @WithDefault("RR")
         Policy policy();
+
+        @WithDefault("2")
+        int maxAttempts();
     }
 
     enum Policy {
@@ -70,6 +92,9 @@ public interface AgentConfig {
     }
 
     interface Timeouts {
+        @WithDefault("3s")
+        Duration connect();
+
         @WithDefault("60s")
         Duration idle();
     }
@@ -89,7 +114,7 @@ public interface AgentConfig {
         @WithDefault("true")
         boolean enabled();
 
-        @WithDefault("0.0.0.0")
+        @WithDefault("127.0.0.1")
         String host();
 
         @WithDefault("11311")
@@ -100,6 +125,17 @@ public interface AgentConfig {
 
         @WithDefault("2s")
         Duration cleanupInterval();
+
+        @WithDefault("2s")
+        Duration readTimeout();
+
+        @WithDefault("128")
+        int maxConnections();
+
+        @WithDefault("256")
+        int maxNodes();
+
+        Optional<String> token();
     }
 
     interface Shutdown {

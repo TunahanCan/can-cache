@@ -20,6 +20,7 @@ AGENT_HOST="127.0.0.1"
 AGENT_PROXY_PORT="11211"
 AGENT_HTTP_PORT="8080"
 AGENT_REGISTRATION_PORT="11311"
+AGENT_REGISTRATION_TOKEN="local-setup-token"
 APP1_PORT="11212"
 APP2_PORT="11213"
 APP1_HTTP_PORT="8081"
@@ -207,6 +208,7 @@ start_all() {
     java \
     -Dagent.listen.port="${AGENT_PROXY_PORT}" \
     -Dagent.registration.port="${AGENT_REGISTRATION_PORT}" \
+    -Dagent.registration.token="${AGENT_REGISTRATION_TOKEN}" \
     -Dagent.discovery.enabled=false \
     -Dagent.dashboard.mode=off \
     -jar "${REPO_ROOT}/can-cache-agent/build/quarkus-app/quarkus-run.jar"
@@ -223,6 +225,7 @@ start_all() {
     -Dapp.agent.host="${AGENT_HOST}" \
     -Dapp.agent.port="${AGENT_PROXY_PORT}" \
     -Dapp.agent.registration-port="${AGENT_REGISTRATION_PORT}" \
+    -Dapp.agent.registration-token="${AGENT_REGISTRATION_TOKEN}" \
     -Dapp.agent.advertised-host="${AGENT_HOST}" \
     -jar "${REPO_ROOT}/can-cache-application/build/quarkus-app/quarkus-run.jar"
 
@@ -236,6 +239,7 @@ start_all() {
     -Dapp.agent.host="${AGENT_HOST}" \
     -Dapp.agent.port="${AGENT_PROXY_PORT}" \
     -Dapp.agent.registration-port="${AGENT_REGISTRATION_PORT}" \
+    -Dapp.agent.registration-token="${AGENT_REGISTRATION_TOKEN}" \
     -Dapp.agent.advertised-host="${AGENT_HOST}" \
     -jar "${REPO_ROOT}/can-cache-application/build/quarkus-app/quarkus-run.jar"
 
@@ -246,6 +250,7 @@ start_all() {
   echo
   echo "Local stack ready:"
   echo "  Agent endpoint: ${AGENT_HOST}:${AGENT_PROXY_PORT}"
+  echo "  Agent dashboard: http://${AGENT_HOST}:${AGENT_HTTP_PORT}/agent/"
   echo "  Cache nodes:    ${AGENT_HOST}:${APP1_PORT}, ${AGENT_HOST}:${APP2_PORT}"
   echo "  Logs:           ${LOG_DIR}"
 }

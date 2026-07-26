@@ -21,5 +21,5 @@ FROM eclipse-temurin:25-jre
 WORKDIR /opt/can-cache-agent
 COPY --from=build /workspace/app/can-cache-agent/build/quarkus-app ./quarkus-app
 
-EXPOSE 11211 11311
+EXPOSE 8080 11211 11311
 ENTRYPOINT ["java","-jar","/opt/can-cache-agent/quarkus-app/quarkus-run.jar"]

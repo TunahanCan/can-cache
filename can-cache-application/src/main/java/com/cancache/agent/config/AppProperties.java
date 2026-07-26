@@ -197,6 +197,11 @@ public interface AppProperties
         @WithDefault("11311")
         int registrationPort();
 
+        Optional<String> registrationToken();
+
+        @WithDefault("PT1S")
+        java.time.Duration registrationAckTimeout();
+
         @WithDefault("")
         String advertisedHost();
 

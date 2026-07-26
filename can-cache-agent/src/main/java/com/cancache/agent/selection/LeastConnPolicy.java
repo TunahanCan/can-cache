@@ -13,7 +13,7 @@ public class LeastConnPolicy implements SelectionPolicy
     public Optional<NodeStats> select(List<NodeStats> available)
     {
         return available.stream()
-                .min(Comparator.comparingInt(NodeStats::activeConn)
+                .min(Comparator.comparingInt(NodeStats::load)
                         .thenComparing(NodeStats::address));
     }
 }

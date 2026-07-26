@@ -133,8 +133,10 @@ services:
       AGENT_REGISTRATION_ENABLED: "true"
       AGENT_REGISTRATION_HOST: 0.0.0.0
       AGENT_REGISTRATION_PORT: "11311"
+      AGENT_REGISTRATION_TOKEN: "performance-test-token"
       AGENT_DISCOVERY_ENABLED: "false"
       AGENT_DASHBOARD_MODE: "off"
+      QUARKUS_HTTP_HOST: 0.0.0.0
       QUARKUS_LOG_LEVEL: INFO
 
 YAML
@@ -153,6 +155,7 @@ YAML
       APP_AGENT_HOST: can-cache-agent
       APP_AGENT_PORT: "11211"
       APP_AGENT_REGISTRATION_PORT: "11311"
+      APP_AGENT_REGISTRATION_TOKEN: "performance-test-token"
       APP_AGENT_ADVERTISED_HOST: can-cache-app-${index}
       APP_CLUSTER_DISCOVERY_NODE_ID: can-cache-app-${index}
       APP_CLUSTER_REPLICATION_FACTOR: "${replication_factor}"

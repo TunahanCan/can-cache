@@ -15,9 +15,11 @@ import org.jboss.logging.Logger;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
 
 /**
  * İsteğe bağlı can-cache-agent erişilebilirlik denetleyicisidir.
@@ -28,6 +30,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Singleton
 public class CanCacheAgentConnector {
     private static final Logger LOG = Logger.getLogger(CanCacheAgentConnector.class);
+    private static final int MAX_REGISTRATION_TOKEN_BYTES = 128;
+    private static final Pattern RESPONSE_CODE = Pattern.compile("[A-Z0-9_]+");
 
     private final Vertx vertx;
     private final AppProperties.Agent agentConfig;
@@ -37,8 +41,10 @@ public class CanCacheAgentConnector {
     private final AtomicBoolean probing = new AtomicBoolean(false);
     private final AtomicBoolean registering = new AtomicBoolean(false);
     private final AtomicBoolean registrationHealthy = new AtomicBoolean(false);
+    private final AtomicBoolean probeAttempted = new AtomicBoolean(false);
+    private final AtomicBoolean registrationAttempted = new AtomicBoolean(false);
 
-    private NetClient netClient;
+    private volatile NetClient netClient;
     private long timerId = -1L;
 
     @Inject
@@ -57,6 +63,7 @@ public class CanCacheAgentConnector {
         }
 
         Duration timeout = sanitizeDuration(agentConfig.connectTimeout(), Duration.ofSeconds(1));
+        validateRegistrationToken(agentConfig.registrationToken().orElse(""));
         NetClientOptions options = new NetClientOptions()
                 .setConnectTimeout((int) Math.min(Integer.MAX_VALUE, timeout.toMillis()))
                 .setTcpKeepAlive(true)
@@ -126,7 +133,8 @@ public class CanCacheAgentConnector {
     }
 
     private boolean tryConnectOnce(Duration timeout) {
-        if (netClient == null) {
+        NetClient activeClient = netClient;
+        if (activeClient == null) {
             return false;
         }
 
@@ -137,7 +145,7 @@ public class CanCacheAgentConnector {
             }
         });
 
-        netClient.connect(agentConfig.port(), agentConfig.host())
+        activeClient.connect(agentConfig.port(), agentConfig.host())
                 .onSuccess(socket -> {
                     socket.close();
                     vertx.cancelTimer(timeoutId);
@@ -152,11 +160,12 @@ public class CanCacheAgentConnector {
     }
 
     private void probeAgent() {
-        if (!agentConfig.enabled() || netClient == null || !probing.compareAndSet(false, true)) {
+        NetClient activeClient = netClient;
+        if (!agentConfig.enabled() || activeClient == null || !probing.compareAndSet(false, true)) {
             return;
         }
 
-        netClient.connect(agentConfig.port(), agentConfig.host())
+        activeClient.connect(agentConfig.port(), agentConfig.host())
                 .onSuccess(socket -> {
                     socket.close();
                     onProbeResult(true, null);
@@ -169,35 +178,102 @@ public class CanCacheAgentConnector {
     }
 
     private void registerToAgent() {
-        if (!agentConfig.enabled() || netClient == null || !registering.compareAndSet(false, true)) {
+        NetClient activeClient = netClient;
+        if (!agentConfig.enabled() || activeClient == null || !registering.compareAndSet(false, true)) {
             return;
         }
 
         String advertisedHost = resolveAdvertisedHost();
         int servicePort = networkConfig.port();
-        String registrationLine = "REGISTER " + advertisedHost + " " + servicePort + "\n";
+        String token = agentConfig.registrationToken().orElse("");
+        String registrationLine = "REGISTER " + advertisedHost + " " + servicePort
+                + (token == null || token.isBlank() ? "" : " " + token) + "\n";
 
-        netClient.connect(agentConfig.registrationPort(), agentConfig.host())
-                .onSuccess(socket -> socket.write(Buffer.buffer(registrationLine))
-                        .onComplete(done -> {
-                            socket.close();
-                            if (done.succeeded()) {
-                                onRegistrationResult(true, null, advertisedHost, servicePort);
-                            } else {
-                                onRegistrationResult(false, done.cause(), advertisedHost, servicePort);
-                            }
-                            registering.set(false);
-                        }))
+        activeClient.connect(agentConfig.registrationPort(), agentConfig.host())
+                .onSuccess(socket -> new RegistrationAttempt(socket, advertisedHost, servicePort).send(registrationLine))
                 .onFailure(error -> {
                     onRegistrationResult(false, error, advertisedHost, servicePort);
                     registering.set(false);
                 });
     }
 
+    private final class RegistrationAttempt {
+
+        private static final int MAX_RESPONSE_LENGTH = 512;
+
+        private final io.vertx.core.net.NetSocket socket;
+        private final String advertisedHost;
+        private final int servicePort;
+        private final StringBuilder response = new StringBuilder(128);
+        private final AtomicBoolean completed = new AtomicBoolean(false);
+        private long timeoutId = -1L;
+
+        private RegistrationAttempt(io.vertx.core.net.NetSocket socket, String advertisedHost, int servicePort) {
+            this.socket = socket;
+            this.advertisedHost = advertisedHost;
+            this.servicePort = servicePort;
+        }
+
+        private void send(String registrationLine) {
+            Duration ackTimeout = sanitizeDuration(agentConfig.registrationAckTimeout(), Duration.ofSeconds(1));
+            timeoutId = vertx.setTimer(Math.max(50L, ackTimeout.toMillis()),
+                    ignored -> finish(false, new IllegalStateException("Registration acknowledgement timed out")));
+
+            socket.handler(buffer -> {
+                if (completed.get()) {
+                    return;
+                }
+                response.append(buffer.toString(StandardCharsets.UTF_8));
+                if (response.length() > MAX_RESPONSE_LENGTH) {
+                    finish(false, new IllegalStateException("Registration acknowledgement was too large"));
+                    return;
+                }
+
+                int newline = response.indexOf("\n");
+                if (newline < 0) {
+                    return;
+                }
+
+                String line = response.substring(0, newline).strip();
+                if (line.startsWith("OK REGISTERED ")) {
+                    finish(true, null);
+                } else {
+                    finish(false, new IllegalStateException(
+                            "Agent rejected registration: " + safeResponseCode(line)));
+                }
+            });
+            socket.exceptionHandler(error -> finish(false, error));
+            socket.closeHandler(ignored -> {
+                if (!completed.get()) {
+                    finish(false, new IllegalStateException("Agent closed registration connection without acknowledgement"));
+                }
+            });
+            socket.write(Buffer.buffer(registrationLine))
+                    .onFailure(error -> finish(false, error));
+        }
+
+        private void finish(boolean success, Throwable error) {
+            if (!completed.compareAndSet(false, true)) {
+                return;
+            }
+            if (timeoutId != -1L) {
+                vertx.cancelTimer(timeoutId);
+                timeoutId = -1L;
+            }
+            socket.close();
+            onRegistrationResult(success, error, advertisedHost, servicePort);
+            registering.set(false);
+        }
+    }
+
     private void onRegistrationResult(boolean success, Throwable error, String advertisedHost, int servicePort) {
+        boolean firstAttempt = registrationAttempted.compareAndSet(false, true);
         boolean previous = registrationHealthy.getAndSet(success);
         if (previous == success) {
-            if (!success && LOG.isDebugEnabled()) {
+            if (!success && firstAttempt) {
+                LOG.warnf(error, "Initial can-cache-agent registration failed via %s:%d for %s:%d",
+                        agentConfig.host(), agentConfig.registrationPort(), advertisedHost, servicePort);
+            } else if (!success && LOG.isDebugEnabled()) {
                 LOG.debugf(error, "can-cache-agent registration still failing via %s:%d for %s:%d",
                         agentConfig.host(), agentConfig.registrationPort(), advertisedHost, servicePort);
             }
@@ -238,9 +314,13 @@ public class CanCacheAgentConnector {
     }
 
     private void onProbeResult(boolean isHealthy, Throwable error) {
+        boolean firstAttempt = probeAttempted.compareAndSet(false, true);
         boolean previous = healthy.getAndSet(isHealthy);
         if (previous == isHealthy) {
-            if (!isHealthy && LOG.isDebugEnabled()) {
+            if (!isHealthy && firstAttempt) {
+                LOG.warnf(error, "Initial can-cache-agent probe failed for %s:%d",
+                        agentConfig.host(), agentConfig.port());
+            } else if (!isHealthy && LOG.isDebugEnabled()) {
                 LOG.debugf(error, "can-cache-agent probe still failing for %s:%d",
                         agentConfig.host(), agentConfig.port());
             }
@@ -269,15 +349,41 @@ public class CanCacheAgentConnector {
         return configured;
     }
 
+    private static void validateRegistrationToken(String token) {
+        if (token != null && token.chars().anyMatch(Character::isWhitespace)) {
+            throw new IllegalArgumentException("app.agent.registration-token must not contain whitespace");
+        }
+        if (token != null && token.chars().anyMatch(character -> character < 0x21 || character > 0x7e)) {
+            throw new IllegalArgumentException(
+                    "app.agent.registration-token must contain printable ASCII only");
+        }
+        if (token != null && token.getBytes(StandardCharsets.UTF_8).length > MAX_REGISTRATION_TOKEN_BYTES) {
+            throw new IllegalArgumentException("app.agent.registration-token must not exceed "
+                    + MAX_REGISTRATION_TOKEN_BYTES + " UTF-8 bytes");
+        }
+    }
+
+    private static String safeResponseCode(String response) {
+        if (response == null || response.isBlank()) {
+            return "empty response";
+        }
+        String[] fields = response.strip().split("\\s+", 3);
+        if (fields.length >= 2 && "ERROR".equals(fields[0]) && RESPONSE_CODE.matcher(fields[1]).matches()) {
+            return fields[0] + " " + fields[1];
+        }
+        return "unexpected response";
+    }
+
     @PreDestroy
     void stop() {
         if (timerId >= 0) {
             vertx.cancelTimer(timerId);
             timerId = -1L;
         }
-        if (netClient != null) {
-            netClient.close();
-            netClient = null;
+        NetClient client = netClient;
+        netClient = null;
+        if (client != null) {
+            client.close();
         }
     }
 }

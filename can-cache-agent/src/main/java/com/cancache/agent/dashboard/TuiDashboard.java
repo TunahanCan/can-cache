@@ -5,7 +5,7 @@ import com.cancache.agent.service.ConnectionTracker;
 import com.cancache.agent.service.DiscoveryService;
 import com.cancache.agent.service.MetricsModel;
 import com.cancache.agent.service.UpstreamRegistry;
-import io.vertx.core.Vertx;
+import io.quarkus.runtime.Quarkus;
 import io.vertx.core.json.JsonObject;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -16,6 +16,7 @@ import java.io.InputStream;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @ApplicationScoped
@@ -23,23 +24,23 @@ public class TuiDashboard {
 
     private static final Logger LOG = Logger.getLogger(TuiDashboard.class);
 
-    @Inject Vertx vertx;
     @Inject AgentConfig config;
     @Inject UpstreamRegistry registry;
     @Inject MetricsModel metrics;
     @Inject ConnectionTracker tracker;
     @Inject DiscoveryService discoveryService;
 
-    private long timerId = -1;
+    private Thread dashboardThread;
     private Thread keyboardThread;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final AtomicBoolean stopped = new AtomicBoolean(true);
     private boolean tuiMode = false;
     private boolean compactLogMode = false;
     private final Object outputLock = new Object();
 
     public void start()
     {
-        String mode = config.dashboard().mode().toLowerCase();
+        String mode = config.dashboard().mode().toLowerCase(Locale.ROOT);
         if ("off".equals(mode) || "none".equals(mode)) {
             LOG.info("dashboard mode=off");
             return;
@@ -48,25 +49,27 @@ public class TuiDashboard {
         tuiMode = switch (mode) {
             case "tui" -> true;
             case "log", "compact" -> false;
-            default -> canUseTuiInAutoMode();
+            case "auto" -> canUseTuiInAutoMode();
+            default -> throw new IllegalArgumentException("Unsupported dashboard mode: " + mode);
         };
 
-        compactLogMode = "compact".equals(mode) || (!tuiMode && supportsInlineRefresh());
+        compactLogMode = "compact".equals(mode) && supportsInlineRefresh();
         running.set(true);
+        stopped.set(false);
 
         if (tuiMode) {
             if (initTui()) {
-                timerId = vertx.setPeriodic(config.dashboard().refresh().toMillis(), _ -> render());
+                startDashboardLoop(config.dashboard().refresh(), this::render);
                 startKeyboardListener();
                 LOG.info("dashboard mode=tui (ansi)");
             } else {
                 tuiMode = false;
-                compactLogMode = supportsInlineRefresh();
-                timerId = vertx.setPeriodic(config.dashboard().snapshotInterval().toMillis(), id -> logSnapshot());
+                compactLogMode = false;
+                startDashboardLoop(config.dashboard().snapshotInterval(), this::logSnapshot);
                 LOG.infov("dashboard fallback mode=log compact={0}", compactLogMode);
             }
         } else {
-            timerId = vertx.setPeriodic(config.dashboard().snapshotInterval().toMillis(), id -> logSnapshot());
+            startDashboardLoop(config.dashboard().snapshotInterval(), this::logSnapshot);
             LOG.infov("dashboard mode=log compact={0}", compactLogMode);
         }
     }
@@ -91,9 +94,12 @@ public class TuiDashboard {
 
     @PreDestroy
     public void stop() {
+        if (!stopped.compareAndSet(false, true)) {
+            return;
+        }
         running.set(false);
-        if (timerId != -1) {
-            vertx.cancelTimer(timerId);
+        if (dashboardThread != null) {
+            dashboardThread.interrupt();
         }
         if (keyboardThread != null) {
             keyboardThread.interrupt();
@@ -120,13 +126,7 @@ public class TuiDashboard {
     }
 
     private boolean canUseTuiInAutoMode() {
-        if (System.console() != null) {
-            return true;
-        }
-        if (isLikelyCiEnvironment()) {
-            return false;
-        }
-        return supportsInlineRefresh();
+        return System.console() != null && !isLikelyCiEnvironment() && supportsInlineRefresh();
     }
 
     private String discoveryLabel() {
@@ -180,8 +180,8 @@ public class TuiDashboard {
     }
 
     private int drawTitle(StringBuilder sb, int width, int startY) {
-        String title = "CAN⚡CACHE LIVE CONTROL CENTER";
-        appendAt(sb, startY, Math.max(0, (width - title.length()) / 2), cut(title, width));
+        String title = "◆ CAN⚡CACHE  ·  AGENT CONTROL CENTER ◆";
+        appendAt(sb, startY, Math.max(0, (width - title.length()) / 2), "\033[1;36m" + cut(title, width));
         return startY + 1;
     }
 
@@ -229,10 +229,17 @@ public class TuiDashboard {
             if (maxRows-- <= 0) {
                 break;
             }
-            String line = String.format("%-2d %-20s %-6s %-7s %-5d %-6d %-7s %-7s",
-                i++, cut(n.address(), 20), n.state(), Formatters.fmtSince(n.lastCheckAge()),
-                n.activeConn(), n.totalConn(), Formatters.humanBytes(n.bytesIn()), Formatters.humanBytes(n.bytesOut()));
-            appendAt(sb, y++, 0, cut(line, width));
+            String stateColor = switch (n.state()) {
+                case UP -> "\033[32m";
+                case DOWN -> "\033[31m";
+                case UNKNOWN -> "\033[33m";
+            };
+            int index = i++;
+            appendAt(sb, y++, 0, cut(String.format("%-2d %-20s ", index, cut(n.address(), 20)), width)
+                    + stateColor + String.format("%-6s", n.state()) + "\033[0m "
+                    + cut(String.format("%-7s %-5d %-6d %-7s %-7s",
+                    Formatters.fmtSince(n.lastCheckAge()), n.activeConn(), n.totalConn(),
+                    Formatters.humanBytes(n.bytesIn()), Formatters.humanBytes(n.bytesOut())), Math.max(0, width - 31)));
         }
         return y;
     }
@@ -295,7 +302,7 @@ public class TuiDashboard {
     }
 
     private void drawFooter(StringBuilder sb, int width, int y) {
-        appendAt(sb, y, 0, "\033[36m" + cut("[q] Quit   [r] Refresh DNS   [h] Help", width));
+        appendAt(sb, y, 0, "\033[36m" + cut("[q] Quit   [r] Refresh DNS   [h] Help   Web: http://localhost:8080/agent/", width));
     }
 
     private void appendIfVisible(StringBuilder sb, int row, int col, int contentBottom, String text) {
@@ -350,15 +357,13 @@ public class TuiDashboard {
                     }
                     int next = in.read();
                     if (next < 0 || next == 27) {
-                        running.set(false);
-                        cleanupTui();
-                        System.exit(0);
+                        Quarkus.asyncExit();
+                        return;
                     }
                     char ch = (char) next;
                     if (ch == 'q' || ch == 'Q') {
-                        running.set(false);
-                        cleanupTui();
-                        System.exit(0);
+                        Quarkus.asyncExit();
+                        return;
                     } else if (ch == 'r' || ch == 'R') {
                         discoveryService.refreshNowAsync();
                         metrics.addEvent("[INFO] DNS refresh triggered");
@@ -372,6 +377,21 @@ public class TuiDashboard {
                     if (running.get()) {
                         LOG.debug("Keyboard error", e);
                     }
+                }
+            }
+        });
+    }
+
+    private void startDashboardLoop(Duration interval, Runnable action) {
+        dashboardThread = Thread.ofVirtual().name("agent-dashboard").start(() -> {
+            long sleepMillis = Math.max(100L, interval.toMillis());
+            while (running.get()) {
+                action.run();
+                try {
+                    Thread.sleep(sleepMillis);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
                 }
             }
         });

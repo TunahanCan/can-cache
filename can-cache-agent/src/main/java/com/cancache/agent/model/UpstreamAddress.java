@@ -4,11 +4,12 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 public record UpstreamAddress(String host, int port) implements Comparable<UpstreamAddress> {
+    private static final int MAX_HOST_LENGTH = 253;
     private static final Pattern HOST = Pattern.compile("^[a-zA-Z0-9_.-]+$");
 
     public UpstreamAddress {
         host = normalizeHost(host);
-        if (!HOST.matcher(host).matches()) {
+        if (host.length() > MAX_HOST_LENGTH || !HOST.matcher(host).matches()) {
             throw new IllegalArgumentException("Invalid upstream host: " + host);
         }
         if (port < 1 || port > 65535) {

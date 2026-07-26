@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Can Cache Agent durum ve trafik paneli">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f5f7fb">
+    <title>Can Cache Agent</title>
+    <link rel="stylesheet" href="/agent/app.css">
+    <script src="/agent/app.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main-content">İçeriğe geç</a>
+
+<div class="ambient ambient--one" aria-hidden="true"></div>
+<div class="ambient ambient--two" aria-hidden="true"></div>
+
+<header class="topbar">
+    <a class="brand" href="/agent/" aria-label="Can Cache Agent ana sayfa">
+        <span class="brand__mark" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+        </span>
+        <span>
+            <strong>Can Cache</strong>
+            <small>Agent</small>
+        </span>
+    </a>
+
+    <div class="topbar__actions">
+        <div id="system-status" class="system-status system-status--loading" role="status" aria-live="polite">
+            <span class="system-status__dot" aria-hidden="true"></span>
+            <span id="system-status-label">Veri bekleniyor</span>
+        </div>
+
+        <button id="auto-refresh-button" class="icon-button icon-button--wide" type="button"
+                aria-pressed="true" title="Otomatik yenilemeyi duraklat">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 12a8 8 0 0 1-14.9 4M4 12A8 8 0 0 1 18.9 8M5 17H2v3M19 7h3V4"/>
+            </svg>
+            <span id="auto-refresh-label">Canlı</span>
+        </button>
+
+        <button id="refresh-button" class="icon-button" type="button" title="Şimdi yenile"
+                aria-label="Şimdi yenile">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 12a8 8 0 1 1-2.34-5.66L20 8.68M20 4v4.68h-4.68"/>
+            </svg>
+        </button>
+
+        <button id="theme-button" class="icon-button" type="button" title="Görünümü değiştir"
+                aria-label="Açık veya koyu görünümü değiştir">
+            <svg class="theme-icon theme-icon--sun" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4"></circle>
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/>
+            </svg>
+            <svg class="theme-icon theme-icon--moon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20.8 14.6A8.5 8.5 0 0 1 9.4 3.2 8.5 8.5 0 1 0 20.8 14.6Z"/>
+            </svg>
+        </button>
+    </div>
+</header>
+
+<main id="main-content">
+    <section class="intro" aria-labelledby="page-title">
+        <div>
+            <p class="eyebrow">SİSTEM GÖRÜNÜMÜ</p>
+            <h1 id="page-title">Önbellek trafiğiniz,<br><span>tek bakışta.</span></h1>
+            <p class="intro__copy">Düğümlerin sağlığını, açık bağlantıları ve veri akışını anlık izleyin.</p>
+        </div>
+        <div class="intro__meta">
+            <span>Son güncelleme</span>
+            <strong id="last-updated">—</strong>
+            <small id="next-refresh">Bağlanıyor…</small>
+        </div>
+    </section>
+
+    <div id="error-banner" class="notice notice--error" role="alert" hidden>
+        <span class="notice__icon" aria-hidden="true">!</span>
+        <div>
+            <strong>Panele ulaşılamıyor</strong>
+            <p id="error-message">Agent yanıt vermedi. Son veriler gösteriliyor.</p>
+        </div>
+        <button id="error-retry-button" class="text-button" type="button">Tekrar dene</button>
+    </div>
+
+    <section class="metrics" aria-label="Genel durum">
+        <article class="metric-card metric-card--health">
+            <div class="metric-card__top">
+                <span class="metric-card__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="m4 13 4 4L20 5"/></svg>
+                </span>
+                <span id="health-trend" class="metric-card__tag">Bekleniyor</span>
+            </div>
+            <p>Sağlıklı düğüm</p>
+            <div class="metric-card__value">
+                <strong id="healthy-instances">—</strong>
+                <span id="total-instances">/ —</span>
+            </div>
+            <div class="meter" aria-hidden="true"><span id="health-meter"></span></div>
+        </article>
+
+        <article class="metric-card metric-card--connections">
+            <div class="metric-card__top">
+                <span class="metric-card__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="9"/></svg>
+                </span>
+                <span class="pulse-label"><i aria-hidden="true"></i> Şu an</span>
+            </div>
+            <p>Açık bağlantı</p>
+            <div class="metric-card__value">
+                <strong id="active-connections">—</strong>
+            </div>
+            <small id="connection-summary">İstemci ile düğüm arasında</small>
+        </article>
+
+        <article class="metric-card metric-card--traffic">
+            <div class="metric-card__top">
+                <span class="metric-card__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M7 17V7m0 0-3 3m3-3 3 3M17 7v10m0 0 3-3m-3 3-3-3"/></svg>
+                </span>
+                <span id="total-traffic" class="metric-card__tag">Toplam —</span>
+            </div>
+            <p>Aktarılan veri</p>
+            <div class="metric-card__split">
+                <div><span>Gelen</span><strong id="bytes-in">—</strong></div>
+                <div><span>Giden</span><strong id="bytes-out">—</strong></div>
+            </div>
+        </article>
+
+        <article class="metric-card metric-card--uptime">
+            <div class="metric-card__top">
+                <span class="metric-card__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                </span>
+                <span id="started-at" class="metric-card__tag">—</span>
+            </div>
+            <p>Kesintisiz çalışma</p>
+            <div class="metric-card__value">
+                <strong id="uptime">—</strong>
+            </div>
+            <small id="dns-changes">Adres değişimi: —</small>
+        </article>
+    </section>
+
+    <section class="service-strip" aria-label="Agent çalışma durumu">
+        <div class="service-strip__lead">
+            <span id="lifecycle-indicator" class="service-light service-light--loading" aria-hidden="true"></span>
+            <div>
+                <span>Agent durumu</span>
+                <strong id="lifecycle-state">Bağlanıyor</strong>
+            </div>
+        </div>
+        <dl class="service-strip__services">
+            <div>
+                <dt>Trafik girişi</dt>
+                <dd id="listener-state"><i class="state-dot state-dot--unknown" aria-hidden="true"></i>Kontrol ediliyor</dd>
+            </div>
+            <div>
+                <dt>Düğüm kaydı</dt>
+                <dd id="registration-state"><i class="state-dot state-dot--unknown" aria-hidden="true"></i>Kontrol ediliyor</dd>
+            </div>
+        </dl>
+        <dl class="service-strip__numbers">
+            <div><dt>Toplam bağlantı</dt><dd id="all-connections">—</dd></div>
+            <div><dt>Alternatif düğüme geçiş</dt><dd id="failover-count">—</dd></div>
+            <div><dt>Reddedilen</dt><dd id="rejected-count">—</dd></div>
+            <div><dt>Bağlantı hatası</dt><dd id="dial-failure-count">—</dd></div>
+            <div><dt>Boşta kapanan</dt><dd id="idle-timeout-count">—</dd></div>
+        </dl>
+    </section>
+
+    <section class="dashboard-grid dashboard-grid--charts">
+        <article class="panel traffic-panel" aria-labelledby="traffic-title">
+            <header class="panel__header">
+                <div>
+                    <p class="eyebrow">VERİ AKIŞI</p>
+                    <h2 id="traffic-title">Anlık trafik</h2>
+                </div>
+                <div class="chart-legend" aria-label="Grafik açıklaması">
+                    <span><i class="legend-dot legend-dot--in" aria-hidden="true"></i>Gelen <strong id="rate-in">0 B/sn</strong></span>
+                    <span><i class="legend-dot legend-dot--out" aria-hidden="true"></i>Giden <strong id="rate-out">0 B/sn</strong></span>
+                </div>
+            </header>
+            <div class="chart-wrap">
+                <svg id="traffic-chart" class="traffic-chart" viewBox="0 0 640 200" preserveAspectRatio="none"
+                     role="img" aria-label="Anlık gelen ve giden veri grafiği">
+                    <defs>
+                        <linearGradient id="area-in-gradient" x1="0" x2="0" y1="0" y2="1">
+                            <stop offset="0%" stop-color="currentColor" stop-opacity=".22"/>
+                            <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
+                        </linearGradient>
+                    </defs>
+                    <g class="chart-grid" aria-hidden="true">
+                        <path d="M0 24H640M0 74H640M0 124H640M0 174H640"/>
+                    </g>
+                    <path id="traffic-area-in" class="chart-area" d=""></path>
+                    <path id="traffic-line-in" class="chart-line chart-line--in" d=""></path>
+                    <path id="traffic-line-out" class="chart-line chart-line--out" d=""></path>
+                </svg>
+                <div id="chart-empty" class="chart-empty">Grafik, trafik başladığında burada görünecek.</div>
+            </div>
+            <footer class="chart-footer">
+                <span>Yaklaşık son 90 saniye</span>
+                <span id="chart-peak">En yüksek: 0 B/sn</span>
+            </footer>
+        </article>
+
+        <article class="panel health-panel" aria-labelledby="distribution-title">
+            <header class="panel__header">
+                <div>
+                    <p class="eyebrow">DÜĞÜM DAĞILIMI</p>
+                    <h2 id="distribution-title">Genel sağlık</h2>
+                </div>
+            </header>
+            <div class="health-visual">
+                <div id="health-ring" class="health-ring" role="img" aria-label="Sağlıklı düğüm oranı">
+                    <div>
+                        <strong id="health-percent">—</strong>
+                        <span>sağlıklı</span>
+                    </div>
+                </div>
+                <dl class="health-breakdown">
+                    <div>
+                        <dt><i class="state-dot state-dot--up" aria-hidden="true"></i>Hazır</dt>
+                        <dd id="up-count">—</dd>
+                    </div>
+                    <div>
+                        <dt><i class="state-dot state-dot--down" aria-hidden="true"></i>Sorunlu</dt>
+                        <dd id="down-count">—</dd>
+                    </div>
+                    <div>
+                        <dt><i class="state-dot state-dot--unknown" aria-hidden="true"></i>Bekliyor</dt>
+                        <dd id="unknown-count">—</dd>
+                    </div>
+                </dl>
+            </div>
+            <p id="health-summary" class="health-summary">Düğüm bilgisi bekleniyor.</p>
+        </article>
+    </section>
+
+    <section class="panel nodes-panel" aria-labelledby="nodes-title">
+        <header class="panel__header panel__header--wrap">
+            <div>
+                <p class="eyebrow">ALTYAPI</p>
+                <h2 id="nodes-title">Düğümler</h2>
+            </div>
+            <div class="filter-group" role="group" aria-label="Düğüm filtresi">
+                <button class="filter-button is-active" type="button" data-node-filter="ALL" aria-pressed="true">Tümü</button>
+                <button class="filter-button" type="button" data-node-filter="UP" aria-pressed="false">Hazır</button>
+                <button class="filter-button" type="button" data-node-filter="ISSUE" aria-pressed="false">Sorunlu</button>
+            </div>
+        </header>
+
+        <div id="nodes-empty" class="empty-state" hidden>
+            <span class="empty-state__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M5 7h14v5H5zM5 15h14v4H5z"/><path d="M8 9.5h.01M8 17h.01"/></svg>
+            </span>
+            <strong>Henüz bir düğüm yok</strong>
+            <p>Bir düğüm kaydolduğunda sağlık ve trafik bilgileri burada görünecek.</p>
+        </div>
+
+        <div class="table-scroll">
+            <table id="nodes-table">
+                <thead>
+                <tr>
+                    <th scope="col">Durum</th>
+                    <th scope="col">Adres</th>
+                    <th scope="col">Açık bağlantı</th>
+                    <th scope="col">Toplam bağlantı</th>
+                    <th scope="col">Veri</th>
+                    <th scope="col">Son kontrol</th>
+                    <th scope="col">Hata</th>
+                </tr>
+                </thead>
+                <tbody id="nodes-body"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="dashboard-grid dashboard-grid--details">
+        <article class="panel" aria-labelledby="connections-title">
+            <header class="panel__header">
+                <div>
+                    <p class="eyebrow">TRAFİK GEÇMİŞİ</p>
+                    <h2 id="connections-title">Son bağlantılar</h2>
+                </div>
+                <span id="connection-count" class="panel__count">0 kayıt</span>
+            </header>
+            <div id="connections-empty" class="empty-state empty-state--compact">
+                <strong>Tamamlanan bağlantı yok</strong>
+                <p>İlk bağlantı tamamlandığında burada listelenecek.</p>
+            </div>
+            <div class="table-scroll">
+                <table id="connections-table" hidden>
+                    <thead>
+                    <tr>
+                        <th scope="col">İstemci</th>
+                        <th scope="col">Düğüm</th>
+                        <th scope="col">Süre</th>
+                        <th scope="col">Veri</th>
+                        <th scope="col">Bitiş</th>
+                    </tr>
+                    </thead>
+                    <tbody id="connections-body"></tbody>
+                </table>
+            </div>
+        </article>
+
+        <article class="panel events-panel" aria-labelledby="events-title">
+            <header class="panel__header">
+                <div>
+                    <p class="eyebrow">SİSTEM AKIŞI</p>
+                    <h2 id="events-title">Son olaylar</h2>
+                </div>
+                <span class="live-badge"><i aria-hidden="true"></i> CANLI</span>
+            </header>
+            <div id="events-empty" class="empty-state empty-state--compact">
+                <strong>Henüz bir olay yok</strong>
+                <p>Agent hareketleri burada zaman sırasıyla görünecek.</p>
+            </div>
+            <ol id="events-list" class="timeline" aria-live="polite"></ol>
+        </article>
+    </section>
+</main>
+
+<footer class="footer">
+    <span>Can Cache Agent</span>
+    <span id="footer-uptime">Çalışma süresi: —</span>
+</footer>
+
+<noscript>
+    <div class="noscript-message">Bu paneli kullanmak için JavaScript'i etkinleştirin.</div>
+</noscript>
+</body>
+</html>
