@@ -36,7 +36,7 @@ Environment overrides:
   RESULT_FILE            Result path under the repository
   JMETER_IMAGE           JMeter image (default: anasoid/jmeter:5.6.3-plugins-21-jre)
   JMETER_HEAP            JMeter JVM heap (default: -Xms64m -Xmx256m -XX:MaxMetaspaceSize=128m)
-  MVN_IMAGE              Maven/JDK image for sampler build
+  GRADLE_IMAGE           Gradle/JDK image for sampler build
   WAIT_TIMEOUT_SECONDS   Stack/data-transfer wait timeout (default: 120)
   ALLOW_JMETER_ERRORS    Set to 1 to keep exit code 0 when samples fail
   KEEP_STACK             Set to 1 to leave containers running after the test
@@ -98,8 +98,8 @@ esac
 plan="can-cache-performance-tests/jmeter/can-cache-${profile}.jmx"
 timestamp="$(date -u +%Y%m%d-%H%M%S)"
 result_file="${RESULT_FILE:-can-cache-performance-tests/results/can-cache-${profile}-${timestamp}.jtl}"
-sampler_jar="can-cache-performance-tests/target/can-cache-performance-test-0.0.1-SNAPSHOT.jar"
-mvn_image="${MVN_IMAGE:-maven:3.9.11-eclipse-temurin-21}"
+sampler_jar="can-cache-performance-tests/build/libs/can-cache-performance-test-0.0.1-SNAPSHOT.jar"
+gradle_image="${GRADLE_IMAGE:-gradle:9.5.1-jdk21}"
 jmeter_log="${result_file%.jtl}.log"
 connection_mode="${CONNECTION_MODE:-single}"
 target_host="${TARGET_HOST:-can-cache-agent}"
@@ -386,12 +386,14 @@ PY
 
 generate_compose_file "${compose_file}" "${app_count}"
 
-echo "[build] packaging JMeter sampler with ${mvn_image}" >&2
+echo "[build] packaging JMeter sampler with ${gradle_image}" >&2
 docker run --rm \
   -v "${repo_root}:/workspace" \
   -w /workspace \
-  "${mvn_image}" \
-  ./mvnw -q -f can-cache-performance-tests/pom.xml clean package
+  "${gradle_image}" \
+  ./gradlew --no-daemon -q \
+    :can-cache-performance-tests:clean \
+    :can-cache-performance-tests:jar
 
 if [[ ! -f "${repo_root}/${sampler_jar}" ]]; then
   echo "Sampler JAR not found at ${sampler_jar}" >&2

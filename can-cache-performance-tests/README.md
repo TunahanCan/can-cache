@@ -26,7 +26,7 @@ and then executes the selected `.jmx` profile from a JMeter container.
 ### Build sampler locally
 
 ```bash
-./mvnw -f can-cache-performance-tests/pom.xml package
+./gradlew :can-cache-performance-tests:build
 ```
 
 The sampler is compiled with Java 21 bytecode and the Docker flow uses the
@@ -114,7 +114,7 @@ doğrular ve seçilen `.jmx` profilini JMeter container'ında çalıştırır.
 ### Sampler'ı yerelde derleme
 
 ```bash
-./mvnw -f can-cache-performance-tests/pom.xml package
+./gradlew :can-cache-performance-tests:build
 ```
 
 Sampler Java 21 bytecode ile derlenir ve Docker akışı varsayılan olarak Java 21

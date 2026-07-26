@@ -682,13 +682,13 @@ Kapanışta:
 Tek node:
 
 ```bash
-./mvnw -f can-cache-application/pom.xml quarkus:dev
+./gradlew :can-cache-application:quarkusDev
 ```
 
 Agent:
 
 ```bash
-./mvnw -f can-cache-agent/pom.xml quarkus:dev
+./gradlew :can-cache-agent:quarkusDev
 ```
 
 Hazır script:

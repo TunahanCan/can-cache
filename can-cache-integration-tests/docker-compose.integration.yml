@@ -59,7 +59,8 @@ services:
 
   integration-tests:
     build:
-      context: .
+      context: ..
+      dockerfile: can-cache-integration-tests/Dockerfile
     depends_on:
       - can-cache-agent
       - can-cache-app-1
@@ -81,4 +82,4 @@ services:
       CAN_CACHE_APP2_HOST: can-cache-app-2
       CAN_CACHE_APP2_PORT: "11212"
       CAN_CACHE_APP2_REPLICATION_PORT: "18080"
-    command: ["mvn", "-B", "test"]
+    command: ["./gradlew", "--no-daemon", ":can-cache-integration-tests:test"]

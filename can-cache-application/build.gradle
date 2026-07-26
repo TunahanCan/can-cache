@@ -1,0 +1,47 @@
+plugins {
+    id 'io.quarkus'
+}
+
+def quarkusJvmArgs = [
+        '--add-opens=java.base/java.lang=ALL-UNNAMED',
+        '--add-opens=java.base/java.lang.invoke=ALL-UNNAMED'
+]
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+dependencies {
+    implementation enforcedPlatform(
+            "${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}")
+    implementation 'io.quarkus:quarkus-arc'
+    implementation 'io.quarkus:quarkus-vertx'
+    implementation 'io.quarkus:quarkus-micrometer-registry-prometheus'
+
+    testImplementation 'io.quarkus:quarkus-junit'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+quarkus {
+    buildForkOptions {
+        jvmArgs(quarkusJvmArgs)
+    }
+    codeGenForkOptions {
+        jvmArgs(quarkusJvmArgs)
+    }
+}
+
+tasks.withType(Test).configureEach {
+    systemProperty 'java.util.logging.manager', 'org.jboss.logmanager.LogManager'
+    jvmArgs(quarkusJvmArgs)
+}
+
+tasks.named('quarkusDev') {
+    jvmArguments.addAll(quarkusJvmArgs)
+}
+
+tasks.named('quarkusRun') {
+    jvmArguments.addAll(quarkusJvmArgs)
+}

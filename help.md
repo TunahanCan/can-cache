@@ -164,8 +164,8 @@ sequenceDiagram
 ## 6) Operasyon Rehberi
 
 ### Local geliştirme
-- Uygulama: `./mvnw -f can-cache-application/pom.xml quarkus:dev`
-- Agent: `./mvnw -f can-cache-agent/pom.xml quarkus:dev`
+- Uygulama: `./gradlew :can-cache-application:quarkusDev`
+- Agent: `./gradlew :can-cache-agent:quarkusDev`
 - Hazır script: `./local-setup.sh start|status|stop`
 
 ### Health ve gözlem

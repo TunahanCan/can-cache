@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${SCRIPT_DIR}"
-MVNW="${REPO_ROOT}/mvnw"
+GRADLEW="${REPO_ROOT}/gradlew"
 RUNTIME_DIR="${REPO_ROOT}/.local-runtime"
 LOG_DIR="${RUNTIME_DIR}/logs"
 PID_DIR="${RUNTIME_DIR}/pids"
@@ -110,10 +110,10 @@ stop_process() {
 
 build_apps() {
   echo "[build] packaging can-cache-agent"
-  "${MVNW}" -q -f "${REPO_ROOT}/can-cache-agent/pom.xml" clean package -DskipTests
+  "${GRADLEW}" -q :can-cache-agent:clean :can-cache-agent:build -x test
 
   echo "[build] packaging can-cache-application"
-  "${MVNW}" -q -f "${REPO_ROOT}/can-cache-application/pom.xml" clean package -DskipTests
+  "${GRADLEW}" -q :can-cache-application:clean :can-cache-application:build -x test
 }
 
 wait_for_port() {
@@ -209,7 +209,7 @@ start_all() {
     -Dagent.registration.port="${AGENT_REGISTRATION_PORT}" \
     -Dagent.discovery.enabled=false \
     -Dagent.dashboard.mode=off \
-    -jar "${REPO_ROOT}/can-cache-agent/target/quarkus-app/quarkus-run.jar"
+    -jar "${REPO_ROOT}/can-cache-agent/build/quarkus-app/quarkus-run.jar"
 
   wait_for_port "agent registration" "${AGENT_HOST}" "${AGENT_REGISTRATION_PORT}" 60
 
@@ -224,7 +224,7 @@ start_all() {
     -Dapp.agent.port="${AGENT_PROXY_PORT}" \
     -Dapp.agent.registration-port="${AGENT_REGISTRATION_PORT}" \
     -Dapp.agent.advertised-host="${AGENT_HOST}" \
-    -jar "${REPO_ROOT}/can-cache-application/target/quarkus-app/quarkus-run.jar"
+    -jar "${REPO_ROOT}/can-cache-application/build/quarkus-app/quarkus-run.jar"
 
   start_process "app-2" "${APP2_PID_FILE}" "${APP2_LOG}" \
     java \
@@ -237,7 +237,7 @@ start_all() {
     -Dapp.agent.port="${AGENT_PROXY_PORT}" \
     -Dapp.agent.registration-port="${AGENT_REGISTRATION_PORT}" \
     -Dapp.agent.advertised-host="${AGENT_HOST}" \
-    -jar "${REPO_ROOT}/can-cache-application/target/quarkus-app/quarkus-run.jar"
+    -jar "${REPO_ROOT}/can-cache-application/build/quarkus-app/quarkus-run.jar"
 
   wait_for_port "app-1 cache" "${AGENT_HOST}" "${APP1_PORT}" 60
   wait_for_port "app-2 cache" "${AGENT_HOST}" "${APP2_PORT}" 60

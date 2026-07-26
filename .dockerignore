@@ -1,5 +1,6 @@
-target
-integration-tests/target
+.gradle
+**/.gradle
+**/build
 .git
 .gitignore
 .idea

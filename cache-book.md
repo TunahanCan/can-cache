@@ -1679,12 +1679,12 @@ Event loop bloklanmamalıdır. CPU veya blocking iş worker/virtual thread taraf
 
 Metrics toplama için kullanılır. Prometheus endpoint ile operasyonel görünürlük sağlar.
 
-### 21.5. Maven
+### 21.5. Gradle
 
-Multi-module build yapısı vardır:
+Multi-project build yapısı vardır:
 
 ```text
-parent pom
+root Gradle build
   can-cache-application
   can-cache-agent
   can-cache-integration-tests

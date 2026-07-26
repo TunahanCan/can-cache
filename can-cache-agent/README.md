@@ -50,14 +50,14 @@ This endpoint returns current instance list, health state, active/total connecti
 ### Quick run
 
 ```bash
-./mvnw -f can-cache-agent/pom.xml quarkus:dev
+./gradlew :can-cache-agent:quarkusDev
 ```
 
 Package + run:
 
 ```bash
-./mvnw -f can-cache-agent/pom.xml package
-java -jar can-cache-agent/target/quarkus-app/quarkus-run.jar
+./gradlew :can-cache-agent:build
+java -jar can-cache-agent/build/quarkus-app/quarkus-run.jar
 ```
 
 ### Key configuration
@@ -116,14 +116,14 @@ Bu endpoint; anlık instance listesi, sağlık durumu, aktif/toplam bağlantı s
 ### Hızlı çalıştırma
 
 ```bash
-./mvnw -f can-cache-agent/pom.xml quarkus:dev
+./gradlew :can-cache-agent:quarkusDev
 ```
 
 Paketleyip çalıştırma:
 
 ```bash
-./mvnw -f can-cache-agent/pom.xml package
-java -jar can-cache-agent/target/quarkus-app/quarkus-run.jar
+./gradlew :can-cache-agent:build
+java -jar can-cache-agent/build/quarkus-app/quarkus-run.jar
 ```
 
 ### Önemli konfigürasyon alanları

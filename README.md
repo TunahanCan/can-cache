@@ -43,11 +43,11 @@
 
 ### Quick start
 
-Requirements: Java 25 + Maven Wrapper.
+Requirements: Java 25 + Gradle Wrapper.
 
 ```bash
 # run core server
-./mvnw -f can-cache-application/pom.xml quarkus:dev
+./gradlew :can-cache-application:quarkusDev
 
 # basic protocol test
 printf 'set foo 0 60 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
@@ -57,10 +57,10 @@ printf 'set foo 0 60 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
 
 ```bash
 # node A
-./mvnw -f can-cache-application/pom.xml quarkus:dev
+./gradlew :can-cache-application:quarkusDev
 
 # node B
-./mvnw -f can-cache-application/pom.xml quarkus:dev \
+./gradlew :can-cache-application:quarkusDev \
   -Dquarkus.http.port=0 \
   -Dapp.network.port=11212 \
   -Dapp.cluster.replication.port=18081 \
@@ -82,7 +82,7 @@ app.agent.advertised-host=<instance-ip-or-dns>
 Run agent:
 
 ```bash
-./mvnw -f can-cache-agent/pom.xml quarkus:dev
+./gradlew :can-cache-agent:quarkusDev
 ```
 
 Clients connect only to the agent (`agent.listen.port`), while agent balances traffic across healthy cache nodes.
@@ -137,11 +137,11 @@ Run one local agent + two local cache nodes:
 
 ### Hızlı başlangıç
 
-Gereksinimler: Java 25 + Maven Wrapper.
+Gereksinimler: Java 25 + Gradle Wrapper.
 
 ```bash
 # çekirdek sunucuyu çalıştır
-./mvnw -f can-cache-application/pom.xml quarkus:dev
+./gradlew :can-cache-application:quarkusDev
 
 # temel protokol testi
 printf 'set foo 0 60 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
@@ -151,10 +151,10 @@ printf 'set foo 0 60 3\r\nbar\r\nget foo\r\n' | nc 127.0.0.1 11211
 
 ```bash
 # node A
-./mvnw -f can-cache-application/pom.xml quarkus:dev
+./gradlew :can-cache-application:quarkusDev
 
 # node B
-./mvnw -f can-cache-application/pom.xml quarkus:dev \
+./gradlew :can-cache-application:quarkusDev \
   -Dquarkus.http.port=0 \
   -Dapp.network.port=11212 \
   -Dapp.cluster.replication.port=18081 \
@@ -176,7 +176,7 @@ app.agent.advertised-host=<instance-ip-veya-dns>
 Agent çalıştırma:
 
 ```bash
-./mvnw -f can-cache-agent/pom.xml quarkus:dev
+./gradlew :can-cache-agent:quarkusDev
 ```
 
 İstemciler sadece agent'a bağlanır (`agent.listen.port`), agent sağlıklı cache node'ları arasında trafiği dağıtır.

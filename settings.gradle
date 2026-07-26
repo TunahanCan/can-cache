@@ -1,0 +1,16 @@
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    plugins {
+        id "${quarkusPluginId}" version "${quarkusPluginVersion}"
+    }
+}
+
+rootProject.name = 'can-cache'
+
+include 'can-cache-application'
+include 'can-cache-agent'
+include 'can-cache-integration-tests'
+include 'can-cache-performance-tests'

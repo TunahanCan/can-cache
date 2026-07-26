@@ -1,27 +1,24 @@
 # syntax=docker/dockerfile:1
 
-FROM maven:3.9.11-eclipse-temurin-25 AS build
+FROM gradle:9.5.1-jdk25 AS build
+USER root
 WORKDIR /workspace/app
 
-COPY pom.xml ./
-COPY mvnw ./
-COPY .mvn .mvn
-COPY can-cache-application/pom.xml can-cache-application/pom.xml
-COPY can-cache-integration-tests/pom.xml can-cache-integration-tests/pom.xml
-COPY can-cache-performance-tests/pom.xml  can-cache-performance-tests/pom.xml
-COPY can-cache-agent/pom.xml can-cache-agent/pom.xml
+COPY build.gradle settings.gradle gradle.properties gradlew gradlew.bat ./
+COPY gradle gradle
+COPY can-cache-application/build.gradle can-cache-application/build.gradle
+COPY can-cache-integration-tests/build.gradle can-cache-integration-tests/build.gradle
+COPY can-cache-performance-tests/build.gradle can-cache-performance-tests/build.gradle
+COPY can-cache-agent/build.gradle can-cache-agent/build.gradle
 
-RUN chmod +x mvnw
-RUN ./mvnw -B -pl can-cache-application -am dependency:go-offline
+RUN chmod +x gradlew
+RUN ./gradlew --no-daemon :can-cache-application:quarkusGoOffline
 
 COPY can-cache-application/src can-cache-application/src
-RUN ./mvnw -B -pl can-cache-application -am package -DskipTests
-
-# Teşhis: target içeriğini ve varsa quarkus-app klasörünü listele
-RUN ls -la can-cache-application/target && (ls -la can-cache-application/target/quarkus-app || true)
+RUN ./gradlew --no-daemon :can-cache-application:build -x test
 
 FROM eclipse-temurin:25-jre
 WORKDIR /opt/can-cache
-COPY --from=build /workspace/app/can-cache-application/target/quarkus-app ./quarkus-app
+COPY --from=build /workspace/app/can-cache-application/build/quarkus-app ./quarkus-app
 EXPOSE 11211
 ENTRYPOINT ["java","-jar","/opt/can-cache/quarkus-app/quarkus-run.jar"]

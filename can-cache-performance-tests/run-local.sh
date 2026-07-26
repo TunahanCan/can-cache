@@ -51,30 +51,28 @@ if [[ ${1:-} == "--" ]]; then
 fi
 
 sampler_module="${repo_root}/can-cache-performance-tests"
-mvnw_path="${repo_root}/mvnw"
+gradlew_path="${repo_root}/gradlew"
 
 build_sampler_jar() {
-  if [[ -x ${mvnw_path} ]]; then
-    echo "Building Java sampler JAR" >&2
-    "${mvnw_path}" -q -f "${sampler_module}/pom.xml" clean package >&2
-    return 0
+  if [[ ! -x ${gradlew_path} ]]; then
+    echo "Gradle Wrapper is not executable at ${gradlew_path}." >&2
+    return 1
   fi
 
-  if command -v mvn >/dev/null 2>&1; then
-    echo "Building Java sampler JAR with system Maven" >&2
-    mvn -q -f "${sampler_module}/pom.xml" clean package >&2
-    return 0
-  fi
-
-  echo "Unable to locate mvnw or mvn to build the Java sampler." >&2
-  return 1
+  echo "Building Java sampler JAR with Gradle Wrapper" >&2
+  "${gradlew_path}" -q \
+    :can-cache-performance-tests:clean \
+    :can-cache-performance-tests:jar >&2
 }
 
 build_sampler_jar
 
-readarray -t sampler_jars < <(find "${sampler_module}/target" -maxdepth 1 -type f -name 'can-cache-performance-test-*.jar' | sort)
+readarray -t sampler_jars < <(
+  find "${sampler_module}/build/libs" -maxdepth 1 -type f \
+    -name 'can-cache-performance-test-*.jar' | sort
+)
 if [[ ${#sampler_jars[@]} -eq 0 ]]; then
-  echo "Java sampler JAR was not produced under ${sampler_module}/target." >&2
+  echo "Java sampler JAR was not produced under ${sampler_module}/build/libs." >&2
   exit 1
 fi
 

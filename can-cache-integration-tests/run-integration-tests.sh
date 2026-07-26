@@ -71,7 +71,8 @@ YAML
   cat >> "${file}" <<YAML
   integration-tests:
     build:
-      context: ${SCRIPT_DIR}
+      context: ${REPO_ROOT}
+      dockerfile: can-cache-integration-tests/Dockerfile
     depends_on:
       - can-cache-agent
 YAML
@@ -111,7 +112,7 @@ YAML
       CAN_CACHE_APP2_HOST: can-cache-app-2
       CAN_CACHE_APP2_PORT: "11212"
       CAN_CACHE_APP2_REPLICATION_PORT: "18080"
-    command: ["mvn", "-B", "test"]
+    command: ["./gradlew", "--no-daemon", ":can-cache-integration-tests:test"]
 YAML
 }
 

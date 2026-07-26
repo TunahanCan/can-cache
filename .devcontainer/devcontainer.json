@@ -1,23 +1,21 @@
 {
-  "name": "java-24-codespace",
+  "name": "java-25-gradle-codespace",
   "image": "mcr.microsoft.com/devcontainers/universal:2",
   "features": {
     "ghcr.io/devcontainers/features/java:1": {
-      "version": "24",          // JDK 24
+      "version": "25",          // JDK 25
       "jdkDistro": "tem",       // Temurin (isteğe bağlı: "ms" da olur)
-      "installMaven": "true",
-      "mavenVersion": "latest",
       "installGradle": "false"
     }
   },
-  "postCreateCommand": "java -version && mvn -v",
+  "postCreateCommand": "java -version && ./gradlew --version",
   "customizations": {
     "vscode": {
       "extensions": ["vscjava.vscode-java-pack"],
       "settings": {
         "java.configuration.runtimes": [
           {
-            "name": "JavaSE-24",
+            "name": "JavaSE-25",
             "path": "/usr/local/sdkman/candidates/java/current"
           }
         ],
@@ -26,4 +24,3 @@
     }
   }
 }
-
